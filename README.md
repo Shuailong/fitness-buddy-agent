@@ -148,7 +148,8 @@ AGENT_BACKEND=local DEV_AUTH_BYPASS=true uv run uvicorn web.main:app --port 8080
 1. **Bootstrap (once):** `deployment/terraform/bootstrap_cloud_build.sh <project-id>` - state
    bucket + `terraform-runner` service account.
 2. **Infrastructure:** Terraform runs on Cloud Build (plan is saved as a build artifact; add
-   `_APPLY=true` to apply):
+   `_APPLY=true` to apply). Pass the web sign-in settings on every apply; values containing commas
+   need gcloud's alternate delimiter syntax (`--substitutions=^~^_A=1~_ALLOWED_EMAILS=a@x.com,b@y.com`):
    ```bash
    gcloud builds submit --config deployment/terraform/cloudbuild.yaml \
      --substitutions=_STATE_BUCKET=<project-id>-tfstate,_GITHUB_REPOSITORY=<owner/repo>,_OAUTH_CLIENT_ID=<id>,_ALLOWED_EMAILS=<you@example.com>
