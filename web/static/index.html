@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="description" content="Fitness Buddy: your AI fitness coach.">
+  <title>Fitness Buddy</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%AA%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">💪</span> Fitness Buddy</div>
+    <div class="topbar-actions" id="user-actions" hidden>
+      <button class="ghost-btn" id="new-chat-btn" type="button" title="Start a new conversation">New chat</button>
+      <button class="ghost-btn" id="logout-btn" type="button" title="Sign out">Sign out</button>
+    </div>
+  </header>
+
+  <!-- Sign-in -->
+  <section id="signin-view" class="signin" hidden>
+    <div class="signin-card">
+      <div class="signin-hero" aria-hidden="true">🏋️</div>
+      <h1>Your AI fitness coach</h1>
+      <p>Plans built around your schedule, meals logged from one photo, workouts from one sentence.</p>
+      <div id="gis-button" class="gis-button"></div>
+      <p class="muted small" id="signin-error" role="alert"></p>
+    </div>
+  </section>
+
+  <!-- App -->
+  <main id="app-view" hidden>
+    <!-- Chat tab -->
+    <section id="chat-view" class="tab-panel" role="tabpanel" aria-labelledby="tab-chat">
+      <div id="messages" class="messages" aria-live="polite"></div>
+      <div id="activity" class="activity" hidden>
+        <span class="typing" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span id="activity-label">Coach is thinking...</span>
+      </div>
+      <form id="composer" class="composer" autocomplete="off">
+        <div id="photo-preview" class="photo-preview" hidden>
+          <img id="photo-preview-img" alt="Selected photo">
+          <button type="button" id="photo-remove" class="photo-remove" aria-label="Remove photo">×</button>
+        </div>
+        <div class="composer-row">
+          <label class="icon-btn" title="Take a photo">
+            <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+            <span aria-hidden="true">📷</span><span class="sr-only">Take a photo</span>
+          </label>
+          <label class="icon-btn" title="Choose from gallery">
+            <input type="file" id="gallery-input" accept="image/jpeg,image/png,image/webp,image/*" hidden>
+            <span aria-hidden="true">🖼️</span><span class="sr-only">Choose a photo</span>
+          </label>
+          <textarea id="message-input" rows="1" maxlength="4000" placeholder="Log a meal, a workout, or ask your coach..." aria-label="Message"></textarea>
+          <button type="submit" id="send-btn" class="send-btn" aria-label="Send">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/></svg>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Dashboard tab -->
+    <section id="dashboard-view" class="tab-panel" role="tabpanel" aria-labelledby="tab-dashboard" hidden>
+      <div id="dashboard" class="dashboard">
+        <p class="muted center">Loading your progress...</p>
+      </div>
+    </section>
+
+    <nav class="tabbar" role="tablist">
+      <button role="tab" id="tab-chat" class="tab active" aria-selected="true" data-tab="chat" type="button">
+        <span aria-hidden="true">💬</span> Chat
+      </button>
+      <button role="tab" id="tab-dashboard" class="tab" aria-selected="false" data-tab="dashboard" type="button">
+        <span aria-hidden="true">📈</span> Progress
+      </button>
+    </nav>
+  </main>
+</body>
+</html>

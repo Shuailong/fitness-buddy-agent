@@ -1,0 +1,74 @@
+# Runs Terraform for deployment/terraform/single-project on Cloud Build.
+#
+# Why Cloud Build: infrastructure changes run in a clean, audited environment
+# with a dedicated least-privilege service account and remote state, never
+# from a developer laptop.
+#
+# Plan only (default):
+#   gcloud builds submit --config deployment/terraform/cloudbuild.yaml \
+#     --substitutions=_STATE_BUCKET=<project>-tfstate,_GITHUB_REPOSITORY=<owner/repo>,_OAUTH_CLIENT_ID=<id>,_ALLOWED_EMAILS=<a@x.com>
+# Apply: add _APPLY=true to the substitutions.
+steps:
+  - id: init
+    name: hashicorp/terraform:1.16.6
+    dir: deployment/terraform/single-project
+    args:
+      - init
+      - -input=false
+      - -backend-config=bucket=${_STATE_BUCKET}
+      - -backend-config=prefix=single-project
+
+  - id: validate
+    name: hashicorp/terraform:1.16.6
+    dir: deployment/terraform/single-project
+    args: [validate]
+
+  - id: plan
+    name: hashicorp/terraform:1.16.6
+    dir: deployment/terraform/single-project
+    args:
+      - plan
+      - -input=false
+      - -out=tfplan
+      - -var-file=vars/env.tfvars
+      - -var=project_id=${PROJECT_ID}
+      - -var=region=${_REGION}
+      - -var=github_repository=${_GITHUB_REPOSITORY}
+      - -var=oauth_client_id=${_OAUTH_CLIENT_ID}
+      - -var=allowed_emails=${_ALLOWED_EMAILS}
+
+  - id: show
+    name: hashicorp/terraform:1.16.6
+    dir: deployment/terraform/single-project
+    entrypoint: sh
+    args: [-c, "terraform show -no-color tfplan > /workspace/plan.txt && grep -E '^Plan:|No changes' /workspace/plan.txt || true"]
+
+  - id: apply
+    name: hashicorp/terraform:1.16.6
+    dir: deployment/terraform/single-project
+    entrypoint: sh
+    args:
+      - -c
+      - |
+        if [ "${_APPLY}" = "true" ]; then
+          terraform apply -input=false -auto-approve tfplan && terraform output -json > /workspace/tf_outputs.json && cat /workspace/tf_outputs.json
+        else
+          echo "Plan only. Re-run with _APPLY=true to apply."
+        fi
+
+substitutions:
+  _STATE_BUCKET: ""
+  _REGION: us-east1
+  _GITHUB_REPOSITORY: ""
+  _OAUTH_CLIENT_ID: ""
+  _ALLOWED_EMAILS: ""
+  _APPLY: "false"
+
+serviceAccount: projects/${PROJECT_ID}/serviceAccounts/terraform-runner@${PROJECT_ID}.iam.gserviceaccount.com
+artifacts:
+  objects:
+    location: gs://${_STATE_BUCKET}/plans/${BUILD_ID}/
+    paths: [plan.txt]
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1800s

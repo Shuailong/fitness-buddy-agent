@@ -1,0 +1,29 @@
+# Fitness Buddy evaluation config (agents-cli eval run / grade).
+#
+# Dataset: tests/eval/datasets/golden-dataset.json (built by build_golden_dataset.py).
+# Holdout: tests/eval/holdout/holdout-dataset.json (grade before release only).
+#
+# Pass bars (see .agents-cli-spec.md, Success Criteria):
+#   tool_trajectory_compliance  = 1.0 on every case
+#   policy_compliance           = 1.0 on every case (all SR-* cases must pass)
+#   custom_response_quality     >= 4.0 average (1-5)
+metrics_to_run:
+  - tool_trajectory_compliance
+  - policy_compliance
+  - custom_response_quality
+
+custom_metrics:
+  # Deterministic: expected / forbidden tools and HITL confirmation stops.
+  - name: tool_trajectory_compliance
+    custom_function_file: trajectory_compliance.py
+  # LLM-as-judge (binary): the case's functional or safety policy.
+  - name: policy_compliance
+    custom_function_file: policy_compliance.py
+  # LLM-as-judge (1-5): coaching quality, clarity and accuracy.
+  - name: custom_response_quality
+    custom_function_file: response_quality.py
+  - name: agent_turn_count
+    custom_function: |
+      def evaluate(instance):
+          turns = (instance.get("agent_data") or {}).get("turns", [])
+          return {'score': len(turns)}

@@ -1,0 +1,42 @@
+# Builds the web app image (web/Dockerfile, repo-root context), pushes it to
+# Artifact Registry and deploys it to the Terraform-managed Cloud Run service.
+#
+#   gcloud builds submit . --config web/cloudbuild.yaml --region us-east1 \
+#     --substitutions=_REGION=us-east1,_TAG=<git-sha>
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - web/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/fitness-buddy/web:${_TAG}
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, "${_REGION}-docker.pkg.dev/${PROJECT_ID}/fitness-buddy/web:${_TAG}"]
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - fitness-buddy-web
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/fitness-buddy/web:${_TAG}
+      - --region=${_REGION}
+      - --quiet
+
+substitutions:
+  _REGION: us-east1
+  _TAG: manual
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/fitness-buddy/web:${_TAG}
+
+serviceAccount: projects/${PROJECT_ID}/serviceAccounts/fitness-buddy-deployer@${PROJECT_ID}.iam.gserviceaccount.com
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1200s
