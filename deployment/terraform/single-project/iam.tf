@@ -49,9 +49,11 @@ resource "google_project_iam_member" "vertex_ai_sa_permissions" {
   depends_on = [resource.google_project_service.services]
 }
 
-# An Agent Identity principal only exists once its engine does.
+# An Agent Identity principal only exists once its engine does. Fitness Buddy
+# runs the agent as a dedicated service account instead (see fitness_buddy.tf),
+# so these bindings are only created when use_agent_identity = true.
 resource "google_project_iam_member" "agent_identity_roles" {
-  for_each = toset(var.agent_identity_roles)
+  for_each = var.use_agent_identity ? toset(var.agent_identity_roles) : toset([])
 
   project = var.project_id
   role    = each.value
@@ -59,6 +61,7 @@ resource "google_project_iam_member" "agent_identity_roles" {
 }
 
 resource "google_storage_bucket_iam_member" "agent_identity_logs_bucket" {
+  count  = var.use_agent_identity ? 1 : 0
   bucket = google_storage_bucket.logs_data_bucket.name
   role   = "roles/storage.objectAdmin"
   member = "principal://${google_vertex_ai_reasoning_engine.app.spec[0].effective_identity}"

@@ -110,15 +110,10 @@ resource "google_vertex_ai_reasoning_engine" "app" {
   # overwrites the same source_code_spec with the real code. The deploy writes
   # source_code_spec, so the placeholder must use it too — a container_spec
   # placeholder would be left alongside it and Agent Runtime rejects the update.
-  # Ignore the spec and deployment_spec so Terraform never reverts the deployed agent.
+  # Ignore the whole spec so a Terraform apply never replaces the deployed agent
+  # code (placeholder source) or its runtime identity; agents-cli deploy owns them.
   lifecycle {
-    ignore_changes = [
-      spec[0].container_spec,
-      spec[0].source_code_spec,
-      spec[0].deployment_spec,
-      spec[0].service_account,
-      spec[0].identity_type,
-    ]
+    ignore_changes = [spec]
   }
 
   # Make dependencies conditional to avoid errors.

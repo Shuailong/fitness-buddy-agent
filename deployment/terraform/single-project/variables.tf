@@ -71,3 +71,9 @@ variable "agent_identity_roles" {
     "roles/modelarmor.user",  # prompt / response screening
   ]
 }
+
+variable "use_agent_identity" {
+  description = "Grant agent_identity_roles to the Agent Identity principal. Fitness Buddy runs the agent as a dedicated service account (Firestore and Model Armor reject Agent Identity credentials), so this is off by default."
+  type        = bool
+  default     = false
+}
