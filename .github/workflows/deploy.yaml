@@ -41,7 +41,10 @@ jobs:
       id-token: write
     env:
       GOOGLE_GENAI_USE_ENTERPRISE: 'true'
-      GOOGLE_CLOUD_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+      # Model calls (agent under test and LLM judges) may run in a dedicated
+      # Gemini project; falls back to the main project when unset.
+      GOOGLE_CLOUD_PROJECT: ${{ vars.GEMINI_PROJECT || vars.GCP_PROJECT_ID }}
+      GEMINI_PROJECT: ${{ vars.GEMINI_PROJECT }}
       GOOGLE_CLOUD_LOCATION: global
       FITNESS_STORAGE_BACKEND: memory
       FITNESS_EVAL_ISOLATION: 'true'
@@ -97,7 +100,7 @@ jobs:
             --region "${{ vars.GCP_REGION }}" \
             --no-agent-identity \
             --service-account "fitness-buddy-agent@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
-            --update-env-vars="FITNESS_GCP_PROJECT=${{ vars.GCP_PROJECT_ID }},FITNESS_STORAGE_BACKEND=firestore,MODEL_ARMOR_ENABLED=true,MODEL_ARMOR_LOCATION=${{ vars.GCP_REGION }},MODEL_ARMOR_TEMPLATE_ID=fitness-buddy-guard,DLP_ENABLED=true,HEALTH_JUDGE_ENABLED=true,OTEL_RESOURCE_ATTRIBUTES=service.version=${{ github.sha }}"
+            --update-env-vars="FITNESS_GCP_PROJECT=${{ vars.GCP_PROJECT_ID }},FITNESS_STORAGE_BACKEND=firestore,MODEL_ARMOR_ENABLED=true,MODEL_ARMOR_LOCATION=${{ vars.GCP_REGION }},MODEL_ARMOR_TEMPLATE_ID=fitness-buddy-guard,DLP_ENABLED=true,HEALTH_JUDGE_ENABLED=true,GEMINI_PROJECT=${{ vars.GEMINI_PROJECT }},OTEL_RESOURCE_ATTRIBUTES=service.version=${{ github.sha }}"
 
   deploy-web:
     needs: eval-gate

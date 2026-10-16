@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from typing import Any
 
 from google.adk.models import Gemini
 from google.genai import types
@@ -85,8 +86,29 @@ def thinking_config(level: str) -> types.ThinkingConfig | None:
     return types.ThinkingConfig(thinking_level=types.ThinkingLevel(level))
 
 
+def gemini_client_kwargs() -> dict[str, Any] | None:
+    """Client options when Gemini calls must run in a dedicated project.
+
+    ``GEMINI_PROJECT`` (and optional ``GEMINI_LOCATION``, default ``global``)
+    route model calls to another Google Cloud project, independent of the
+    project hosting Agent Runtime, Firestore and Model Armor. Unset means the
+    runtime's default project.
+    """
+    project = os.getenv("GEMINI_PROJECT", "").strip()
+    if not project:
+        return None
+    return {
+        "vertexai": True,
+        "project": project,
+        "location": os.getenv("GEMINI_LOCATION", "global").strip() or "global",
+    }
+
+
 def gemini(model_id: str) -> Gemini:
     """Builds a Gemini model with the shared retry policy."""
+    kwargs = gemini_client_kwargs()
+    if kwargs:
+        return Gemini(model=model_id, retry_options=RETRY_OPTIONS, client_kwargs=kwargs)
     return Gemini(model=model_id, retry_options=RETRY_OPTIONS)
 
 

@@ -36,7 +36,7 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from pydantic import BaseModel, Field
 
-from app.config import MODELS
+from app.config import MODELS, gemini_client_kwargs
 from app.observability.structured_logging import log_event
 from app.observability.tracing import domain_span
 
@@ -94,7 +94,7 @@ class HealthPolicyJudgePlugin(BasePlugin):
 
     def _get_client(self) -> genai.Client:
         if self._client is None:
-            self._client = genai.Client()
+            self._client = genai.Client(**(gemini_client_kwargs() or {}))
         return self._client
 
     async def judge(self, user_text: str, reply_text: str) -> HealthVerdict:

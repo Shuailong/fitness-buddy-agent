@@ -101,3 +101,16 @@ def test_target_change_on_existing_profile_requires_confirmation(memory_repo) ->
         assert same["status"] == "saved"
 
     asyncio.run(scenario())
+
+
+def test_gemini_project_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.config import gemini, gemini_client_kwargs
+
+    monkeypatch.delenv("GEMINI_PROJECT", raising=False)
+    assert gemini_client_kwargs() is None
+    assert gemini("gemini-test").client_kwargs is None
+
+    monkeypatch.setenv("GEMINI_PROJECT", "other-project")
+    expected = {"vertexai": True, "project": "other-project", "location": "global"}
+    assert gemini_client_kwargs() == expected
+    assert gemini("gemini-test").client_kwargs == expected
