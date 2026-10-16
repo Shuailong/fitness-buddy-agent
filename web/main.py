@@ -36,7 +36,7 @@ from typing import Annotated, Any
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -80,6 +80,20 @@ from web.observability import (
 load_dotenv(Path(__file__).parent / ".env")
 
 STATIC_DIR = Path(__file__).parent / "static"
+ASSET_VERSION_PLACEHOLDER = "__ASSET_VERSION__"
+
+
+def _asset_version() -> str:
+    """Content hash of the static files, appended to asset URLs (cache busting)."""
+    digest = hashlib.sha256()
+    for path in sorted(STATIC_DIR.rglob("*")):
+        if path.is_file():
+            digest.update(path.relative_to(STATIC_DIR).as_posix().encode())
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:12]
+
+
+ASSET_VERSION = _asset_version()
 MAX_TEXT_CHARS = 4000
 
 _IMAGE_SIGNATURES: list[tuple[str, bytes, int]] = [
@@ -202,6 +216,10 @@ def create_app(
             "/auth/"
         ):
             response.headers.setdefault("Cache-Control", "no-store")
+        elif request.url.path.startswith("/static/"):
+            # Always revalidate (cheap 304 via ETag) so a deploy never mixes a
+            # new index.html with stale cached scripts or styles.
+            response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
     def active_session_id(request: Request, user: CurrentUser) -> str:
@@ -214,11 +232,13 @@ def create_app(
         )
 
     # ---------------------------------------------------------------- pages
+    index_html = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace(
+        ASSET_VERSION_PLACEHOLDER, ASSET_VERSION
+    )
+
     @app.get("/", include_in_schema=False)
-    async def index() -> FileResponse:
-        return FileResponse(
-            STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"}
-        )
+    async def index() -> HTMLResponse:
+        return HTMLResponse(index_html, headers={"Cache-Control": "no-cache"})
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

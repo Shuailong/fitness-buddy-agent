@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -914,3 +915,9 @@ def test_static_index_served_with_security_headers() -> None:
     assert resp.status_code == 200 and "Fitness Buddy" in resp.text
     assert "accounts.google.com/gsi/client" in resp.headers["content-security-policy"]
     assert client.get("/static/app.js").status_code == 200
+    # Cache busting: asset URLs carry a content hash and static files always
+    # revalidate, so a deploy never mixes new HTML with stale cached JS/CSS.
+    assert "__ASSET_VERSION__" not in resp.text
+    assert re.search(r'/static/app\.js\?v=[0-9a-f]{12}"', resp.text)
+    assert resp.headers["cache-control"] == "no-cache"
+    assert client.get("/static/styles.css").headers["cache-control"] == "no-cache"
