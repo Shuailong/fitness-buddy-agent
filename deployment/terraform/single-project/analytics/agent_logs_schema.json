@@ -28,7 +28,9 @@
       { "name": "status",        "type": "STRING", "mode": "NULLABLE" },
       { "name": "latency_ms",    "type": "FLOAT",  "mode": "NULLABLE" },
       { "name": "session_id",    "type": "STRING", "mode": "NULLABLE" },
-      { "name": "invocation_id", "type": "STRING", "mode": "NULLABLE" }
+      { "name": "invocation_id", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "call_id",             "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "result",              "type": "STRING",  "mode": "NULLABLE" }
     ]
   }
 ]

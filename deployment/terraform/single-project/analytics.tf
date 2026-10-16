@@ -267,9 +267,11 @@ resource "google_bigquery_dataset" "analytics" {
 }
 
 # Tables are pre-created (day-partitioned on timestamp, as the sink expects) so
-# the views below can be created before the first log entry arrives. Only the
-# columns the views use are declared; Cloud Logging appends the rest, hence
-# ignore_changes on schema (otherwise Terraform would try to drop them).
+# the views below can be created before the first log entry arrives. The JSON
+# schema files are only the INITIAL schema (the columns the views use plus the
+# jsonPayload fields known today). Cloud Logging appends new columns as entries
+# arrive, so ignore_changes on schema is required: without it Terraform would
+# try to drop those columns or replace the table (losing the exported data).
 resource "google_bigquery_table" "analytics_web_events" {
   project             = var.project_id
   dataset_id          = google_bigquery_dataset.analytics.dataset_id

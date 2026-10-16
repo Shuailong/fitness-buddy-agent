@@ -35,7 +35,18 @@
       { "name": "has_comment", "type": "BOOLEAN", "mode": "NULLABLE" },
       { "name": "lang",        "type": "STRING",  "mode": "NULLABLE" },
       { "name": "name",        "type": "STRING",  "mode": "NULLABLE" },
-      { "name": "scope",       "type": "STRING",  "mode": "NULLABLE" }
+      { "name": "scope",       "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "request",             "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "is_new",              "type": "BOOLEAN", "mode": "NULLABLE" },
+      { "name": "tab",                 "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "theme",               "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "page",                "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "index",               "type": "FLOAT",   "mode": "NULLABLE" },
+      { "name": "event_id",            "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "text_events",         "type": "FLOAT",   "mode": "NULLABLE" },
+      { "name": "activity_events",     "type": "FLOAT",   "mode": "NULLABLE" },
+      { "name": "confirmation_events", "type": "FLOAT",   "mode": "NULLABLE" },
+      { "name": "error_events",        "type": "FLOAT",   "mode": "NULLABLE" }
     ]
   }
 ]
