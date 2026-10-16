@@ -119,9 +119,11 @@ async def build_dashboard(
     )
     week_dates = {w.local_date for w in week_workouts}
     weekday = WEEKDAYS[today.weekday()]
-    today_session = next(
-        (s for s in plan.sessions if s.day_of_week == weekday), None
-    ) if plan else None
+    today_session = (
+        next((s for s in plan.sessions if s.day_of_week == weekday), None)
+        if plan
+        else None
+    )
     meals_today = sorted(
         (m for m in meals if m.local_date == today.isoformat()),
         key=lambda m: m.logged_at,
@@ -197,7 +199,9 @@ async def build_dashboard(
             "history": workout_history,
         },
         "plan": plan.model_dump(mode="json") if plan else None,
-        "today_session": today_session.model_dump(mode="json") if today_session else None,
+        "today_session": today_session.model_dump(mode="json")
+        if today_session
+        else None,
         "today_session_done": today.isoformat() in week_dates,
         "latest_review": review.model_dump(mode="json") if review else None,
     }

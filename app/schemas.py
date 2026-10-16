@@ -41,12 +41,20 @@ class FitnessProfileInput(StrictModel):
     """Onboarding answers. Units are normalized to metric by the tool."""
 
     goal: FitnessGoal = Field(description="Primary goal.")
-    sex: Sex = Field(description="Biological sex, used for the BMR formula and calorie floor.")
-    age: int = Field(ge=16, le=90, description="Age in years. Users under 16 are not supported.")
+    sex: Sex = Field(
+        description="Biological sex, used for the BMR formula and calorie floor."
+    )
+    age: int = Field(
+        ge=16, le=90, description="Age in years. Users under 16 are not supported."
+    )
     height_value: float = Field(gt=0, description="Height as stated by the user.")
     height_unit: LengthUnit = Field(default="cm", description="Unit of height_value.")
-    weight_value: float = Field(gt=0, description="Current body weight as stated by the user.")
-    weight_unit: WeightUnit = Field(default="kg", description="Unit of weight_value; 'jin' is 0.5 kg.")
+    weight_value: float = Field(
+        gt=0, description="Current body weight as stated by the user."
+    )
+    weight_unit: WeightUnit = Field(
+        default="kg", description="Unit of weight_value; 'jin' is 0.5 kg."
+    )
     body_fat_percent: float | None = Field(default=None, ge=3, le=60)
     waist_value: float | None = Field(default=None, gt=0)
     waist_unit: LengthUnit = Field(default="cm")
@@ -54,15 +62,23 @@ class FitnessProfileInput(StrictModel):
     minutes_per_session: int = Field(ge=15, le=180)
     preferred_training_days: list[Weekday] = Field(default_factory=list)
     equipment: list[Equipment] = Field(
-        default_factory=lambda: ["bodyweight"], description="All equipment the user can access."
+        default_factory=lambda: ["bodyweight"],
+        description="All equipment the user can access.",
     )
-    dietary_preferences: list[str] = Field(default_factory=list, description="e.g. 'vegetarian', 'no pork'.")
+    dietary_preferences: list[str] = Field(
+        default_factory=list, description="e.g. 'vegetarian', 'no pork'."
+    )
     allergies: list[str] = Field(default_factory=list)
-    injuries: list[str] = Field(default_factory=list, description="Injuries in the user's words.")
-    injury_areas: list[InjuryArea] = Field(
-        default_factory=list, description="Body areas affected by the injuries, mapped from 'injuries'."
+    injuries: list[str] = Field(
+        default_factory=list, description="Injuries in the user's words."
     )
-    timezone: str = Field(default="UTC", description="IANA time zone, e.g. 'Asia/Shanghai'.")
+    injury_areas: list[InjuryArea] = Field(
+        default_factory=list,
+        description="Body areas affected by the injuries, mapped from 'injuries'.",
+    )
+    timezone: str = Field(
+        default="UTC", description="IANA time zone, e.g. 'Asia/Shanghai'."
+    )
 
 
 class MealLogResult(StrictModel):
@@ -75,7 +91,9 @@ class MealLogResult(StrictModel):
     meal_totals: MealTotals | None = None
     remaining_calories_kcal: float | None = None
     remaining_protein_g: float | None = None
-    note_for_user: str = Field(default="", max_length=400, description="Short note, e.g. estimate caveats.")
+    note_for_user: str = Field(
+        default="", max_length=400, description="Short note, e.g. estimate caveats."
+    )
 
 
 class PlanTaskResult(StrictModel):
@@ -84,7 +102,9 @@ class PlanTaskResult(StrictModel):
     status: Literal["saved", "rejected_by_user", "needs_user_input", "failed"]
     plan_title: str | None = None
     sessions_per_week: int | None = None
-    summary_for_user: str = Field(max_length=1200, description="Day-by-day overview of the plan.")
+    summary_for_user: str = Field(
+        max_length=1200, description="Day-by-day overview of the plan."
+    )
 
 
 class PlanCritique(StrictModel):
@@ -102,7 +122,8 @@ class AdjustmentProposal(StrictModel):
     proposal: str = Field(max_length=300)
     rationale: str = Field(max_length=300)
     proposed_daily_calories_kcal: int | None = Field(
-        default=None, description="Only for kind='calorie_target'. Must respect the safety floor."
+        default=None,
+        description="Only for kind='calorie_target'. Must respect the safety floor.",
     )
 
 

@@ -49,7 +49,9 @@ FAT_CALORIE_FRACTION = 0.25
 MIN_FAT_G_PER_KG = 0.6
 
 
-def mifflin_st_jeor_bmr(sex: Sex, weight_kg: float, height_cm: float, age: int) -> float:
+def mifflin_st_jeor_bmr(
+    sex: Sex, weight_kg: float, height_cm: float, age: int
+) -> float:
     """Computes basal metabolic rate with the Mifflin-St Jeor equation.
 
     Args:
@@ -156,7 +158,9 @@ def calculate_energy_targets(
         daily = round(target / 10) * 10
 
     protein = round(weight_kg * PROTEIN_G_PER_KG[goal])
-    fat = max(round(daily * FAT_CALORIE_FRACTION / 9), round(weight_kg * MIN_FAT_G_PER_KG))
+    fat = max(
+        round(daily * FAT_CALORIE_FRACTION / 9), round(weight_kg * MIN_FAT_G_PER_KG)
+    )
     carbs = max(0, round((daily - protein * 4 - fat * 9) / 4))
 
     return EnergyTargets(

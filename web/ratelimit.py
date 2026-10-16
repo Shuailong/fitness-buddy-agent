@@ -49,9 +49,15 @@ def _int_env(name: str, default: int) -> int:
 def default_limits() -> dict[str, Limit]:
     """Limits sized for an invite-only beta (override with environment variables)."""
     return {
-        "messages_per_minute": Limit("messages_per_minute", _int_env("RATE_MESSAGES_PER_MINUTE", 10), 60),
-        "messages_per_day": Limit("messages_per_day", _int_env("RATE_MESSAGES_PER_DAY", 300), 86400),
-        "photos_per_day": Limit("photos_per_day", _int_env("RATE_PHOTOS_PER_DAY", 40), 86400),
+        "messages_per_minute": Limit(
+            "messages_per_minute", _int_env("RATE_MESSAGES_PER_MINUTE", 10), 60
+        ),
+        "messages_per_day": Limit(
+            "messages_per_day", _int_env("RATE_MESSAGES_PER_DAY", 300), 86400
+        ),
+        "photos_per_day": Limit(
+            "photos_per_day", _int_env("RATE_PHOTOS_PER_DAY", 40), 86400
+        ),
         "feedback": Limit("feedback", _int_env("RATE_FEEDBACK_PER_HOUR", 30), 3600),
     }
 
@@ -90,7 +96,8 @@ class FirestoreCounterStore:
 
         self._firestore = firestore
         self._db = firestore.AsyncClient(
-            project=os.environ.get("FITNESS_GCP_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT"),
+            project=os.environ.get("FITNESS_GCP_PROJECT")
+            or os.environ.get("GOOGLE_CLOUD_PROJECT"),
             database=os.environ.get("FIRESTORE_DATABASE", "(default)"),
         )
 
@@ -106,11 +113,15 @@ class FirestoreCounterStore:
 class RateLimiter:
     """Checks and records hits against a set of limits."""
 
-    def __init__(self, store: CounterStore, limits: dict[str, Limit] | None = None) -> None:
+    def __init__(
+        self, store: CounterStore, limits: dict[str, Limit] | None = None
+    ) -> None:
         self._store = store
         self.limits = limits or default_limits()
 
-    async def hit(self, user_id: str, scopes: list[str], now: float | None = None) -> RateDecision:
+    async def hit(
+        self, user_id: str, scopes: list[str], now: float | None = None
+    ) -> RateDecision:
         """Records one hit in every scope; denies if any scope is over its limit.
 
         Counters fail open: a storage error never blocks the user.
@@ -120,7 +131,9 @@ class RateLimiter:
             limit = self.limits[scope]
             window = int(now // limit.window_seconds)
             key = f"{user_id}:{scope}:{window}"
-            expire_at = datetime.fromtimestamp((window + 1) * limit.window_seconds, UTC) + timedelta(hours=1)
+            expire_at = datetime.fromtimestamp(
+                (window + 1) * limit.window_seconds, UTC
+            ) + timedelta(hours=1)
             try:
                 count = await self._store.increment(key, expire_at)
             except Exception:  # fail open on storage problems
@@ -134,5 +147,7 @@ class RateLimiter:
 def build_rate_limiter() -> RateLimiter:
     """Firestore-backed in production, in-memory with the memory storage backend."""
     backend = os.environ.get("FITNESS_STORAGE_BACKEND", "firestore").lower()
-    store: CounterStore = MemoryCounterStore() if backend == "memory" else FirestoreCounterStore()
+    store: CounterStore = (
+        MemoryCounterStore() if backend == "memory" else FirestoreCounterStore()
+    )
     return RateLimiter(store)

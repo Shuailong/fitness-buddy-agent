@@ -67,7 +67,14 @@ class HealthVerdict(BaseModel):
     """Structured verdict from the health-policy judge."""
 
     verdict: Literal["SAFE", "VIOLATION"]
-    category: Literal["none", "calorie_floor", "loss_rate", "red_flag_symptom", "eating_disorder", "dosing"] = "none"
+    category: Literal[
+        "none",
+        "calorie_floor",
+        "loss_rate",
+        "red_flag_symptom",
+        "eating_disorder",
+        "dosing",
+    ] = "none"
     reason: str = Field(default="", max_length=300)
     safe_response: str = Field(default="", max_length=2000)
 
@@ -84,11 +91,15 @@ class HealthPolicyJudgePlugin(BasePlugin):
 
     SKIP_AGENTS = frozenset({"plan_critic", "weekly_reviewer"})
 
-    def __init__(self, model: str | None = None, fail_closed: bool | None = None) -> None:
+    def __init__(
+        self, model: str | None = None, fail_closed: bool | None = None
+    ) -> None:
         super().__init__(name="health_policy_judge")
         self._model = model or MODELS.safety_judge
         self._fail_closed = (
-            fail_closed if fail_closed is not None else os.getenv("HEALTH_JUDGE_FAIL_CLOSED", "false").lower() == "true"
+            fail_closed
+            if fail_closed is not None
+            else os.getenv("HEALTH_JUDGE_FAIL_CLOSED", "false").lower() == "true"
         )
         self._client: genai.Client | None = None
 
@@ -114,7 +125,11 @@ class HealthPolicyJudgePlugin(BasePlugin):
     async def after_model_callback(
         self, *, callback_context: CallbackContext, llm_response: LlmResponse
     ) -> LlmResponse | None:
-        if llm_response.partial or not llm_response.content or not llm_response.content.parts:
+        if (
+            llm_response.partial
+            or not llm_response.content
+            or not llm_response.content.parts
+        ):
             return None
         if callback_context.agent_name in self.SKIP_AGENTS:
             return None
@@ -125,18 +140,30 @@ class HealthPolicyJudgePlugin(BasePlugin):
         if len(reply.strip()) < 20:
             return None
         user_content = callback_context.user_content
-        user_text = "\n".join(p.text for p in (user_content.parts or []) if p.text) if user_content else ""
+        user_text = (
+            "\n".join(p.text for p in (user_content.parts or []) if p.text)
+            if user_content
+            else ""
+        )
 
-        with domain_span("health_policy_judge", agent=callback_context.agent_name) as span:
+        with domain_span(
+            "health_policy_judge", agent=callback_context.agent_name
+        ) as span:
             try:
                 verdict = await self.judge(user_text, reply)
             except Exception as exc:
-                log_event("health_judge_error", severity=logging.WARNING, error_type=type(exc).__name__,
-                          fail_closed=self._fail_closed)
+                log_event(
+                    "health_judge_error",
+                    severity=logging.WARNING,
+                    error_type=type(exc).__name__,
+                    fail_closed=self._fail_closed,
+                )
                 span.set_attribute("fitness_buddy.judge_error", type(exc).__name__)
                 if not self._fail_closed:
                     return None
-                verdict = HealthVerdict(verdict="VIOLATION", category="none", reason="judge unavailable")
+                verdict = HealthVerdict(
+                    verdict="VIOLATION", category="none", reason="judge unavailable"
+                )
             span.set_attribute("fitness_buddy.verdict", verdict.verdict)
             span.set_attribute("fitness_buddy.category", verdict.category)
 
@@ -152,6 +179,11 @@ class HealthPolicyJudgePlugin(BasePlugin):
         )
         return LlmResponse(
             content=types.Content(
-                role="model", parts=[types.Part.from_text(text=verdict.safe_response or _FALLBACK_MESSAGE)]
+                role="model",
+                parts=[
+                    types.Part.from_text(
+                        text=verdict.safe_response or _FALLBACK_MESSAGE
+                    )
+                ],
             )
         )

@@ -221,7 +221,9 @@ class AgentRuntimeClient:
         host = f"https://{self._location}-aiplatform.googleapis.com/v1beta1"
         return AuthorizedSession(credentials), host
 
-    def _iter_user_memories(self, http: Any, host: str, user_id: str) -> list[dict[str, Any]]:
+    def _iter_user_memories(
+        self, http: Any, host: str, user_id: str
+    ) -> list[dict[str, Any]]:
         """All Memory Bank memories whose scope is exactly this user."""
         found: list[dict[str, Any]] = []
         page_token, use_filter = "", True
@@ -231,7 +233,9 @@ class AgentRuntimeClient:
                 params["filter"] = f'scope.user_id="{user_id}"'
             if page_token:
                 params["pageToken"] = page_token
-            resp = http.get(f"{host}/{self._resource}/memories", params=params, timeout=30)
+            resp = http.get(
+                f"{host}/{self._resource}/memories", params=params, timeout=30
+            )
             if resp.status_code == 400 and use_filter:
                 # Filter expression not supported: list everything, check scope below.
                 use_filter, page_token = False, ""
@@ -240,7 +244,8 @@ class AgentRuntimeClient:
             body = resp.json()
             # Never trust the filter alone: check the scope explicitly.
             found += [
-                m for m in body.get("memories", [])
+                m
+                for m in body.get("memories", [])
                 if (m.get("scope") or {}).get("user_id") == user_id
             ]
             page_token = body.get("nextPageToken", "")

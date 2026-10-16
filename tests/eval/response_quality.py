@@ -41,14 +41,18 @@ def _user_visible_reply(instance) -> str:
     """
     response = instance.get("response") or ""
     if isinstance(response, dict):
-        response = " ".join(p.get("text", "") for p in response.get("parts", []) if isinstance(p, dict))
+        response = " ".join(
+            p.get("text", "") for p in response.get("parts", []) if isinstance(p, dict)
+        )
     last_card = None
     for turn in (instance.get("agent_data") or {}).get("turns", []) or []:
         for event in turn.get("events", []) or []:
             for part in (event.get("content") or {}).get("parts", []) or []:
                 call = part.get("function_call") if isinstance(part, dict) else None
                 if call and call.get("name") == "adk_request_confirmation":
-                    payload = ((call.get("args") or {}).get("toolConfirmation") or {}).get("payload") or {}
+                    payload = (
+                        (call.get("args") or {}).get("toolConfirmation") or {}
+                    ).get("payload") or {}
                     last_card = payload
     if last_card:
         card = json.dumps(last_card, ensure_ascii=False)[:3000]

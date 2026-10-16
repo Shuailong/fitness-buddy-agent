@@ -46,7 +46,9 @@ class Exercise(BaseModel):
     name: str
     category: str
     muscles: list[str]
-    equipment: list[Equipment] = Field(description="All required equipment; empty = bodyweight.")
+    equipment: list[Equipment] = Field(
+        description="All required equipment; empty = bodyweight."
+    )
     contraindications: list[InjuryArea]
 
 
@@ -115,8 +117,15 @@ def search_exercises(
 
 def estimate_exercise_seconds(ex: PlannedExercise) -> int:
     """Estimates working plus rest time for one planned exercise."""
-    work = ex.duration_seconds if ex.duration_seconds else (ex.reps or 10) * SECONDS_PER_REP
-    return ex.sets * (work + SET_TRANSITION_SECONDS) + max(ex.sets - 1, 0) * ex.rest_seconds
+    work = (
+        ex.duration_seconds
+        if ex.duration_seconds
+        else (ex.reps or 10) * SECONDS_PER_REP
+    )
+    return (
+        ex.sets * (work + SET_TRANSITION_SECONDS)
+        + max(ex.sets - 1, 0) * ex.rest_seconds
+    )
 
 
 def estimate_session_minutes(session: PlannedSession) -> int:
@@ -143,7 +152,9 @@ class PlanValidationResult(BaseModel):
     estimated_minutes_by_day: dict[str, int]
 
 
-def validate_training_plan(plan: TrainingPlan, profile: FitnessProfile) -> PlanValidationResult:
+def validate_training_plan(
+    plan: TrainingPlan, profile: FitnessProfile
+) -> PlanValidationResult:
     """Checks a plan against the user's equipment, time limit, days and injuries.
 
     Args:

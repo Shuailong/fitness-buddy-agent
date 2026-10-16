@@ -101,10 +101,14 @@ class IntentOutcomeAuditPlugin(BasePlugin):
                 severity=logging.WARNING if status == "error" else logging.INFO,
                 **self._base_fields(tool, tool_context),
                 status=status,
-                latency_ms=round((time.monotonic() - started) * 1000, 1) if started else None,
+                latency_ms=round((time.monotonic() - started) * 1000, 1)
+                if started
+                else None,
                 result=await redact_text_async(_preview(result)),
             )
-            trace.get_current_span().add_event("tool_outcome", {"tool": tool.name, "status": status})
+            trace.get_current_span().add_event(
+                "tool_outcome", {"tool": tool.name, "status": status}
+            )
         except Exception:
             logging.getLogger(__name__).debug("outcome logging failed", exc_info=True)
         return None

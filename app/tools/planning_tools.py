@@ -71,7 +71,9 @@ async def search_exercise_library(
     }
 
 
-async def validate_training_plan_constraints(plan: TrainingPlan, tool_context: ToolContext) -> dict[str, Any]:
+async def validate_training_plan_constraints(
+    plan: TrainingPlan, tool_context: ToolContext
+) -> dict[str, Any]:
     """Deterministically checks a draft plan against the user's constraints.
 
     Checks equipment, injury contraindications, session count vs. training days,
@@ -93,7 +95,9 @@ async def validate_training_plan_constraints(plan: TrainingPlan, tool_context: T
     return {"status": "ok", **result.model_dump()}
 
 
-async def save_weekly_training_plan(plan: TrainingPlan, tool_context: ToolContext) -> dict[str, Any]:
+async def save_weekly_training_plan(
+    plan: TrainingPlan, tool_context: ToolContext
+) -> dict[str, Any]:
     """Saves a plan as the user's current plan (requires user confirmation).
 
     The plan is re-validated in code first; an invalid plan is never shown to
@@ -125,7 +129,9 @@ async def save_weekly_training_plan(plan: TrainingPlan, tool_context: ToolContex
     stop = confirmation_gate(
         tool_context,
         action="replace_training_plan",
-        title="Replace your current training plan?" if current else "Save this training plan?",
+        title="Replace your current training plan?"
+        if current
+        else "Save this training plan?",
         summary=f"{plan.title}: {overview}"
         + (f". This replaces '{current.title}'." if current else "."),
         details={
@@ -135,7 +141,10 @@ async def save_weekly_training_plan(plan: TrainingPlan, tool_context: ToolContex
                     "day": s.day_of_week,
                     "focus": s.focus,
                     "minutes": result.estimated_minutes_by_day[s.day_of_week],
-                    "exercises": [f"{e.name} {e.sets}x{e.reps or str(e.duration_seconds) + 's'}" for e in s.exercises],
+                    "exercises": [
+                        f"{e.name} {e.sets}x{e.reps or str(e.duration_seconds) + 's'}"
+                        for e in s.exercises
+                    ],
                 }
                 for s in plan.sessions
             ],
@@ -158,5 +167,8 @@ async def get_current_training_plan(tool_context: ToolContext) -> dict[str, Any]
     """
     plan = await repository().get_current_plan(storage_user_id(tool_context))
     if plan is None:
-        return tool_error("No training plan saved yet.", "Offer to create one with the workout planner.")
+        return tool_error(
+            "No training plan saved yet.",
+            "Offer to create one with the workout planner.",
+        )
     return {"status": "ok", "plan": plan.model_dump(mode="json", exclude_none=True)}

@@ -43,5 +43,8 @@ def domain_span(name: str, **attributes: Any) -> Iterator[trace.Span]:
     with _tracer.start_as_current_span(f"fitness_buddy.{name}") as span:
         for key, value in attributes.items():
             if value is not None:
-                span.set_attribute(f"fitness_buddy.{key}", value if isinstance(value, (bool, int, float, str)) else str(value))
+                span.set_attribute(
+                    f"fitness_buddy.{key}",
+                    value if isinstance(value, (bool, int, float, str)) else str(value),
+                )
         yield span

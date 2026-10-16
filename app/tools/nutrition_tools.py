@@ -65,9 +65,14 @@ async def log_meal_entry(
     day = meal_date or today.isoformat()
     try:
         if date.fromisoformat(day) > today:
-            return tool_error("The meal date is in the future.", "Omit meal_date or ask which day was meant.")
+            return tool_error(
+                "The meal date is in the future.",
+                "Omit meal_date or ask which day was meant.",
+            )
     except ValueError:
-        return tool_error(f"'{day}' is not a valid date.", "Use YYYY-MM-DD or omit meal_date.")
+        return tool_error(
+            f"'{day}' is not a valid date.", "Use YYYY-MM-DD or omit meal_date."
+        )
     try:
         entry = MealEntry(
             entry_id=replaces_entry_id or new_entry_id(),
@@ -83,9 +88,15 @@ async def log_meal_entry(
         return validation_error(exc, "meal")
 
     repo = repository()
-    with domain_span("firestore.add_meal", items=len(items), replaced=bool(replaces_entry_id)):
+    with domain_span(
+        "firestore.add_meal", items=len(items), replaced=bool(replaces_entry_id)
+    ):
         await repo.add_entry(storage_user_id(tool_context), "meal", entry)
-    summary = daily_nutrition_summary(day, await repo.list_meals(storage_user_id(tool_context), day, day), profile.targets if profile else None)
+    summary = daily_nutrition_summary(
+        day,
+        await repo.list_meals(storage_user_id(tool_context), day, day),
+        profile.targets if profile else None,
+    )
     return {
         "status": "logged",
         "entry_id": entry.entry_id,
@@ -94,11 +105,15 @@ async def log_meal_entry(
         "meal_totals": entry.totals.model_dump(),
         "is_estimate": True,
         "daily_summary": summary.model_dump(),
-        "advisory": None if profile and profile.targets else "No targets yet: suggest finishing onboarding.",
+        "advisory": None
+        if profile and profile.targets
+        else "No targets yet: suggest finishing onboarding.",
     }
 
 
-async def get_daily_nutrition_summary(tool_context: ToolContext, day: str | None = None) -> dict[str, Any]:
+async def get_daily_nutrition_summary(
+    tool_context: ToolContext, day: str | None = None
+) -> dict[str, Any]:
     """Returns calories and macros eaten on a day versus the user's targets.
 
     Args:
@@ -111,5 +126,7 @@ async def get_daily_nutrition_summary(tool_context: ToolContext, day: str | None
     day = day or local_today(profile).isoformat()
     with domain_span("daily_nutrition_summary"):
         meals = await repository().list_meals(storage_user_id(tool_context), day, day)
-        summary = daily_nutrition_summary(day, meals, profile.targets if profile else None)
+        summary = daily_nutrition_summary(
+            day, meals, profile.targets if profile else None
+        )
     return {"status": "ok", "summary": summary.model_dump()}

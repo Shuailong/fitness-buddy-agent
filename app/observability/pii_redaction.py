@@ -35,7 +35,12 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("EMAIL_ADDRESS", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
     ("CREDIT_CARD_NUMBER", re.compile(r"\b(?:\d[ -]?){13,19}\b")),
     ("CHINA_RESIDENT_ID_NUMBER", re.compile(r"\b\d{17}[\dXx]\b")),
-    ("PHONE_NUMBER", re.compile(r"(?<!\w)(?:\+?\d{1,3}[ -]?)?(?:\(?\d{2,4}\)?[ -]?)?\d{3,4}[ -]?\d{4}(?!\w)")),
+    (
+        "PHONE_NUMBER",
+        re.compile(
+            r"(?<!\w)(?:\+?\d{1,3}[ -]?)?(?:\(?\d{2,4}\)?[ -]?)?\d{3,4}[ -]?\d{4}(?!\w)"
+        ),
+    ),
     ("IP_ADDRESS", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")),
 ]
 
@@ -98,7 +103,13 @@ async def redact_text_async(text: str) -> str:
                 "inspect_config": {"info_types": [{"name": n} for n in DLP_INFO_TYPES]},
                 "deidentify_config": {
                     "info_type_transformations": {
-                        "transformations": [{"primitive_transformation": {"replace_with_info_type_config": {}}}]
+                        "transformations": [
+                            {
+                                "primitive_transformation": {
+                                    "replace_with_info_type_config": {}
+                                }
+                            }
+                        ]
                     }
                 },
                 "item": {"value": scrubbed},
@@ -107,5 +118,7 @@ async def redact_text_async(text: str) -> str:
         )
         return response.item.value
     except Exception as exc:
-        logger.warning("DLP redaction failed; using regex redaction only: %s", type(exc).__name__)
+        logger.warning(
+            "DLP redaction failed; using regex redaction only: %s", type(exc).__name__
+        )
         return scrubbed

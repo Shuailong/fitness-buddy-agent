@@ -119,7 +119,9 @@ class FitnessProfile(StrictModel):
     allergies: list[str] = Field(default_factory=list)
     injuries: list[str] = Field(default_factory=list)
     injury_areas: list[InjuryArea] = Field(default_factory=list)
-    timezone: str = Field(default="UTC", description="IANA time zone, e.g. Asia/Shanghai.")
+    timezone: str = Field(
+        default="UTC", description="IANA time zone, e.g. Asia/Shanghai."
+    )
     measurement_interval_days: int = Field(default=7, ge=1, le=31)
     targets: EnergyTargets | None = None
     created_at: datetime = Field(default_factory=utc_now)
@@ -141,7 +143,9 @@ class WorkoutSession(StrictModel):
 
     entry_id: str
     user_id: str
-    local_date: str = Field(description="Session date in the user's time zone, YYYY-MM-DD.")
+    local_date: str = Field(
+        description="Session date in the user's time zone, YYYY-MM-DD."
+    )
     performed_at: datetime
     exercises: list[WorkoutSet] = Field(min_length=1)
     perceived_effort: PerceivedEffort | None = None
@@ -201,9 +205,14 @@ class PlannedExercise(StrictModel):
     exercise_id: str = Field(description="ID from the exercise library.")
     name: str
     sets: int = Field(ge=1, le=10)
-    reps: int | None = Field(default=None, ge=1, le=50, description="Target reps per set.")
+    reps: int | None = Field(
+        default=None, ge=1, le=50, description="Target reps per set."
+    )
     duration_seconds: int | None = Field(
-        default=None, ge=10, le=3600, description="Work time per set for timed exercises."
+        default=None,
+        ge=10,
+        le=3600,
+        description="Work time per set for timed exercises.",
     )
     rest_seconds: int = Field(default=90, ge=0, le=600)
     target_rpe: int | None = Field(default=None, ge=1, le=10)

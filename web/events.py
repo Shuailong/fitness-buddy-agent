@@ -250,7 +250,9 @@ def simplify_event(
         call = _function_call(part)
         if call:
             if call.get("name") == CONFIRMATION_CALL:
-                out.append({**confirmation_from_call(call), "event_id": event.get("id")})
+                out.append(
+                    {**confirmation_from_call(call), "event_id": event.get("id")}
+                )
             elif label := activity_label(call, lang):
                 out.append({"type": "activity", "label": label})
             continue
@@ -260,7 +262,12 @@ def simplify_event(
             continue
         if text := _coach_text(event, part):
             out.append(
-                {"type": "text", "author": author, "text": text, "event_id": event.get("id")}
+                {
+                    "type": "text",
+                    "author": author,
+                    "text": text,
+                    "event_id": event.get("id"),
+                }
             )
     return out
 

@@ -200,5 +200,7 @@ def verify_google_credential(credential: str, settings: WebSettings) -> CurrentU
         email=email,
         given_name=str(claims.get("given_name") or "")[:60],
         # Only Google-hosted avatars are allowed by the CSP (img-src).
-        picture=picture if picture.startswith("https://lh3.googleusercontent.com/") else "",
+        picture=picture
+        if picture.startswith("https://lh3.googleusercontent.com/")
+        else "",
     )

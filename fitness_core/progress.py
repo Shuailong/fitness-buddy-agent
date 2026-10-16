@@ -109,13 +109,25 @@ def weekly_progress_snapshot(
         daily_nutrition_summary(day, week_meals, targets)
         for day in sorted({m.local_date for m in week_meals})
     ]
-    avg_kcal = round(sum(d.consumed.calories_kcal for d in daily) / len(daily), 1) if daily else None
+    avg_kcal = (
+        round(sum(d.consumed.calories_kcal for d in daily) / len(daily), 1)
+        if daily
+        else None
+    )
     target_kcal = targets.daily_calories_kcal if targets else None
-    gap = round(avg_kcal - target_kcal, 1) if avg_kcal is not None and target_kcal else None
+    gap = (
+        round(avg_kcal - target_kcal, 1)
+        if avg_kcal is not None and target_kcal
+        else None
+    )
 
     measurements = list(measurements)
-    end_trend = weight_trend([m for m in measurements if m.local_date <= week_end.isoformat()])
-    start_trend = weight_trend([m for m in measurements if m.local_date < week_start.isoformat()])
+    end_trend = weight_trend(
+        [m for m in measurements if m.local_date <= week_end.isoformat()]
+    )
+    start_trend = weight_trend(
+        [m for m in measurements if m.local_date < week_start.isoformat()]
+    )
     start_avg = start_trend.latest_moving_average_kg
     end_avg = end_trend.latest_moving_average_kg
     return WeeklyProgressSnapshot(
@@ -123,7 +135,9 @@ def weekly_progress_snapshot(
         week_end=week_end.isoformat(),
         planned_sessions=planned,
         completed_sessions=completed,
-        workout_completion_rate=round(min(completed / planned, 1.0), 2) if planned else None,
+        workout_completion_rate=round(min(completed / planned, 1.0), 2)
+        if planned
+        else None,
         days_with_meals_logged=len(daily),
         average_daily_calories_kcal=avg_kcal,
         target_calories_kcal=target_kcal,
@@ -131,7 +145,9 @@ def weekly_progress_snapshot(
         protein_target_hit_days=sum(1 for d in daily if d.protein_target_hit),
         weight_moving_average_start_kg=start_avg,
         weight_moving_average_end_kg=end_avg,
-        weight_change_kg=round(end_avg - start_avg, 2) if start_avg and end_avg else None,
+        weight_change_kg=round(end_avg - start_avg, 2)
+        if start_avg and end_avg
+        else None,
     )
 
 
@@ -189,7 +205,9 @@ def due_check_ins(
                 )
 
     weights = [m for m in measurements if m.weight_kg is not None]
-    last_weigh_in = max((date.fromisoformat(m.local_date) for m in weights), default=None)
+    last_weigh_in = max(
+        (date.fromisoformat(m.local_date) for m in weights), default=None
+    )
     reference = last_weigh_in or profile.created_at.date()
     if (today - reference).days >= profile.measurement_interval_days:
         items.append(

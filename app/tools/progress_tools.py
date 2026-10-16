@@ -32,7 +32,9 @@ from fitness_core.models import utc_now
 from fitness_core.progress import due_check_ins, weekly_progress_snapshot
 
 
-async def get_weekly_progress_snapshot(tool_context: ToolContext, week_end: str | None = None) -> dict[str, Any]:
+async def get_weekly_progress_snapshot(
+    tool_context: ToolContext, week_end: str | None = None
+) -> dict[str, Any]:
     """Returns deterministic weekly aggregates for the 7 days ending on ``week_end``.
 
     Includes workout completion (done / planned), average daily calories vs.
@@ -50,15 +52,21 @@ async def get_weekly_progress_snapshot(tool_context: ToolContext, week_end: str 
     try:
         end = date.fromisoformat(week_end) if week_end else local_today(profile)
     except ValueError:
-        return tool_error(f"'{week_end}' is not a valid date.", "Use YYYY-MM-DD or omit week_end.")
+        return tool_error(
+            f"'{week_end}' is not a valid date.", "Use YYYY-MM-DD or omit week_end."
+        )
     repo = repository()
     start = (end - timedelta(days=60)).isoformat()
     with domain_span("weekly_snapshot"):
         snapshot = weekly_progress_snapshot(
             profile=profile,
             plan=await repo.get_current_plan(storage_user_id(tool_context)),
-            workouts=await repo.list_workouts(storage_user_id(tool_context), start, end.isoformat()),
-            meals=await repo.list_meals(storage_user_id(tool_context), start, end.isoformat()),
+            workouts=await repo.list_workouts(
+                storage_user_id(tool_context), start, end.isoformat()
+            ),
+            meals=await repo.list_meals(
+                storage_user_id(tool_context), start, end.isoformat()
+            ),
             measurements=await repo.list_measurements(storage_user_id(tool_context)),
             week_end=end,
         )
@@ -83,7 +91,11 @@ async def list_due_check_ins(tool_context: ToolContext) -> dict[str, Any]:
     """
     profile = await load_profile(tool_context)
     if profile is None:
-        return {"status": "ok", "check_ins": [], "note": "No profile yet: start onboarding."}
+        return {
+            "status": "ok",
+            "check_ins": [],
+            "note": "No profile yet: start onboarding.",
+        }
     repo = repository()
     today = local_today(profile)
     state = await repo.get_check_in_state(storage_user_id(tool_context))
@@ -93,9 +105,13 @@ async def list_due_check_ins(tool_context: ToolContext) -> dict[str, Any]:
         items = due_check_ins(
             profile=profile,
             plan=await repo.get_current_plan(storage_user_id(tool_context)),
-            workouts=await repo.list_workouts(storage_user_id(tool_context), monday.isoformat(), today.isoformat()),
+            workouts=await repo.list_workouts(
+                storage_user_id(tool_context), monday.isoformat(), today.isoformat()
+            ),
             measurements=await repo.list_measurements(storage_user_id(tool_context)),
-            latest_review_date=date.fromisoformat(latest_review.week_end) if latest_review else None,
+            latest_review_date=date.fromisoformat(latest_review.week_end)
+            if latest_review
+            else None,
             state=state,
             today=today,
         )

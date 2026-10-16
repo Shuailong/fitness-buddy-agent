@@ -76,13 +76,27 @@ class FitnessRepository(Protocol):
     async def get_profile(self, user_id: str) -> FitnessProfile | None: ...
     async def save_profile(self, profile: FitnessProfile) -> None: ...
     async def get_current_plan(self, user_id: str) -> TrainingPlan | None: ...
-    async def save_current_plan(self, user_id: str, plan: TrainingPlan) -> TrainingPlan: ...
-    async def add_entry(self, user_id: str, kind: EntryKind, entry: BaseModel) -> None: ...
-    async def list_workouts(self, user_id: str, start: str | None = None, end: str | None = None) -> list[WorkoutSession]: ...
-    async def list_meals(self, user_id: str, start: str | None = None, end: str | None = None) -> list[MealEntry]: ...
-    async def list_measurements(self, user_id: str, start: str | None = None, end: str | None = None) -> list[BodyMeasurement]: ...
-    async def delete_entry(self, user_id: str, kind: EntryKind, entry_id: str) -> bool: ...
-    async def add_weekly_review(self, user_id: str, review: WeeklyReviewRecord) -> None: ...
+    async def save_current_plan(
+        self, user_id: str, plan: TrainingPlan
+    ) -> TrainingPlan: ...
+    async def add_entry(
+        self, user_id: str, kind: EntryKind, entry: BaseModel
+    ) -> None: ...
+    async def list_workouts(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[WorkoutSession]: ...
+    async def list_meals(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[MealEntry]: ...
+    async def list_measurements(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[BodyMeasurement]: ...
+    async def delete_entry(
+        self, user_id: str, kind: EntryKind, entry_id: str
+    ) -> bool: ...
+    async def add_weekly_review(
+        self, user_id: str, review: WeeklyReviewRecord
+    ) -> None: ...
     async def latest_weekly_review(self, user_id: str) -> WeeklyReviewRecord | None: ...
     async def get_check_in_state(self, user_id: str) -> CheckInState: ...
     async def save_check_in_state(self, user_id: str, state: CheckInState) -> None: ...
@@ -93,7 +107,9 @@ class FitnessRepository(Protocol):
 
 def _sort_key(entry: BaseModel) -> str:
     """Chronological key for any stored record (weekly reviews have no local_date)."""
-    return str(getattr(entry, "local_date", None) or getattr(entry, "week_start", None) or "")
+    return str(
+        getattr(entry, "local_date", None) or getattr(entry, "week_start", None) or ""
+    )
 
 
 def _in_range(local_date: str, start: str | None, end: str | None) -> bool:
@@ -123,7 +139,9 @@ class InMemoryFitnessRepository:
     async def save_current_plan(self, user_id: str, plan: TrainingPlan) -> TrainingPlan:
         if user_id in self._plans:
             self._archived_plans.setdefault(user_id, []).append(self._plans[user_id])
-        stored = plan.model_copy(update={"plan_id": plan.plan_id or new_entry_id(), "created_at": utc_now()})
+        stored = plan.model_copy(
+            update={"plan_id": plan.plan_id or new_entry_id(), "created_at": utc_now()}
+        )
         self._plans[user_id] = stored
         return stored
 
@@ -133,21 +151,36 @@ class InMemoryFitnessRepository:
     async def add_entry(self, user_id: str, kind: EntryKind, entry: BaseModel) -> None:
         self._bucket(user_id, _COLLECTION_BY_KIND[kind])[entry.entry_id] = entry  # type: ignore[attr-defined]
 
-    def _list(self, user_id: str, collection: str, start: str | None, end: str | None) -> list:
-        items = [e for e in self._bucket(user_id, collection).values() if _in_range(e.local_date, start, end)]  # type: ignore[attr-defined]
+    def _list(
+        self, user_id: str, collection: str, start: str | None, end: str | None
+    ) -> list:
+        items = [
+            e
+            for e in self._bucket(user_id, collection).values()
+            if _in_range(e.local_date, start, end)
+        ]  # type: ignore[attr-defined]
         return sorted(items, key=lambda e: e.local_date)  # type: ignore[attr-defined]
 
-    async def list_workouts(self, user_id: str, start: str | None = None, end: str | None = None) -> list[WorkoutSession]:
+    async def list_workouts(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[WorkoutSession]:
         return self._list(user_id, "workout_logs", start, end)
 
-    async def list_meals(self, user_id: str, start: str | None = None, end: str | None = None) -> list[MealEntry]:
+    async def list_meals(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[MealEntry]:
         return self._list(user_id, "meal_logs", start, end)
 
-    async def list_measurements(self, user_id: str, start: str | None = None, end: str | None = None) -> list[BodyMeasurement]:
+    async def list_measurements(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[BodyMeasurement]:
         return self._list(user_id, "body_measurements", start, end)
 
     async def delete_entry(self, user_id: str, kind: EntryKind, entry_id: str) -> bool:
-        return self._bucket(user_id, _COLLECTION_BY_KIND[kind]).pop(entry_id, None) is not None
+        return (
+            self._bucket(user_id, _COLLECTION_BY_KIND[kind]).pop(entry_id, None)
+            is not None
+        )
 
     async def add_weekly_review(self, user_id: str, review: WeeklyReviewRecord) -> None:
         self._bucket(user_id, "weekly_reviews")[review.entry_id] = review
@@ -199,7 +232,9 @@ class FirestoreFitnessRepository:
         from google.cloud import firestore
 
         self._db = firestore.AsyncClient(
-            project=project or os.environ.get("FITNESS_GCP_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT"),
+            project=project
+            or os.environ.get("FITNESS_GCP_PROJECT")
+            or os.environ.get("GOOGLE_CLOUD_PROJECT"),
             database=database or os.environ.get("FIRESTORE_DATABASE", "(default)"),
         )
 
@@ -214,7 +249,12 @@ class FirestoreFitnessRepository:
         await self._user(profile.user_id).set(profile.model_dump(mode="json"))
 
     async def get_current_plan(self, user_id: str) -> TrainingPlan | None:
-        snap = await self._user(user_id).collection("training_plans").document("current").get()
+        snap = (
+            await self._user(user_id)
+            .collection("training_plans")
+            .document("current")
+            .get()
+        )
         return TrainingPlan.model_validate(snap.to_dict()) if snap.exists else None
 
     async def save_current_plan(self, user_id: str, plan: TrainingPlan) -> TrainingPlan:
@@ -223,17 +263,26 @@ class FirestoreFitnessRepository:
         if previous.exists:
             old = previous.to_dict()
             await plans.document(old.get("plan_id") or new_entry_id()).set(old)
-        stored = plan.model_copy(update={"plan_id": plan.plan_id or new_entry_id(), "created_at": utc_now()})
+        stored = plan.model_copy(
+            update={"plan_id": plan.plan_id or new_entry_id(), "created_at": utc_now()}
+        )
         await plans.document("current").set(stored.model_dump(mode="json"))
         return stored
 
     async def add_entry(self, user_id: str, kind: EntryKind, entry: BaseModel) -> None:
         collection = _COLLECTION_BY_KIND[kind]
-        await self._user(user_id).collection(collection).document(entry.entry_id).set(  # type: ignore[attr-defined]
-            entry.model_dump(mode="json")
+        await (
+            self._user(user_id)
+            .collection(collection)
+            .document(entry.entry_id)
+            .set(  # type: ignore[attr-defined]
+                entry.model_dump(mode="json")
+            )
         )
 
-    async def _list(self, user_id: str, collection: str, start: str | None, end: str | None) -> list:
+    async def _list(
+        self, user_id: str, collection: str, start: str | None, end: str | None
+    ) -> list:
         query = self._user(user_id).collection(collection)
         if start:
             query = query.where("local_date", ">=", start)
@@ -243,25 +292,36 @@ class FirestoreFitnessRepository:
         items = [model.model_validate(doc.to_dict()) async for doc in query.stream()]
         return sorted(items, key=_sort_key)
 
-    async def list_workouts(self, user_id: str, start: str | None = None, end: str | None = None) -> list[WorkoutSession]:
+    async def list_workouts(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[WorkoutSession]:
         return await self._list(user_id, "workout_logs", start, end)
 
-    async def list_meals(self, user_id: str, start: str | None = None, end: str | None = None) -> list[MealEntry]:
+    async def list_meals(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[MealEntry]:
         return await self._list(user_id, "meal_logs", start, end)
 
-    async def list_measurements(self, user_id: str, start: str | None = None, end: str | None = None) -> list[BodyMeasurement]:
+    async def list_measurements(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[BodyMeasurement]:
         return await self._list(user_id, "body_measurements", start, end)
 
     async def delete_entry(self, user_id: str, kind: EntryKind, entry_id: str) -> bool:
-        ref = self._user(user_id).collection(_COLLECTION_BY_KIND[kind]).document(entry_id)
+        ref = (
+            self._user(user_id).collection(_COLLECTION_BY_KIND[kind]).document(entry_id)
+        )
         if not (await ref.get()).exists:
             return False
         await ref.delete()
         return True
 
     async def add_weekly_review(self, user_id: str, review: WeeklyReviewRecord) -> None:
-        await self._user(user_id).collection("weekly_reviews").document(review.entry_id).set(
-            review.model_dump(mode="json")
+        await (
+            self._user(user_id)
+            .collection("weekly_reviews")
+            .document(review.entry_id)
+            .set(review.model_dump(mode="json"))
         )
 
     async def latest_weekly_review(self, user_id: str) -> WeeklyReviewRecord | None:
@@ -269,12 +329,24 @@ class FirestoreFitnessRepository:
         return max(reviews, key=lambda r: r.created_at, default=None)
 
     async def get_check_in_state(self, user_id: str) -> CheckInState:
-        snap = await self._user(user_id).collection("meta").document("check_in_state").get()
-        return CheckInState.model_validate(snap.to_dict()) if snap.exists else CheckInState()
+        snap = (
+            await self._user(user_id)
+            .collection("meta")
+            .document("check_in_state")
+            .get()
+        )
+        return (
+            CheckInState.model_validate(snap.to_dict())
+            if snap.exists
+            else CheckInState()
+        )
 
     async def save_check_in_state(self, user_id: str, state: CheckInState) -> None:
-        await self._user(user_id).collection("meta").document("check_in_state").set(
-            state.model_dump(mode="json")
+        await (
+            self._user(user_id)
+            .collection("meta")
+            .document("check_in_state")
+            .set(state.model_dump(mode="json"))
         )
 
     async def export_user_data(self, user_id: str) -> dict[str, Any]:
@@ -284,7 +356,8 @@ class FirestoreFitnessRepository:
         data: dict[str, Any] = {"profile": snap.to_dict() if snap.exists else None}
         async for collection in user.collections():
             data[collection.id] = [
-                {"_id": doc.id, **(doc.to_dict() or {})} async for doc in collection.stream()
+                {"_id": doc.id, **(doc.to_dict() or {})}
+                async for doc in collection.stream()
             ]
         return data
 

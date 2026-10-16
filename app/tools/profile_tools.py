@@ -55,10 +55,15 @@ async def get_fitness_profile(tool_context: ToolContext) -> dict[str, Any]:
     profile = await load_profile(tool_context)
     if profile is None:
         return missing_profile_error()
-    return {"status": "ok", "profile": profile.model_dump(mode="json", exclude={"user_id"})}
+    return {
+        "status": "ok",
+        "profile": profile.model_dump(mode="json", exclude={"user_id"}),
+    }
 
 
-async def save_fitness_profile(profile: FitnessProfileInput, tool_context: ToolContext) -> dict[str, Any]:
+async def save_fitness_profile(
+    profile: FitnessProfileInput, tool_context: ToolContext
+) -> dict[str, Any]:
     """Creates or updates the user's fitness profile and computes daily targets.
 
     Converts units to metric (kg, cm; 1 jin = 0.5 kg), validates ranges, computes
@@ -76,12 +81,23 @@ async def save_fitness_profile(profile: FitnessProfileInput, tool_context: ToolC
     try:
         height_cm = to_centimeters(profile.height_value, profile.height_unit)
         weight_kg = to_kilograms(profile.weight_value, profile.weight_unit)
-        waist_cm = to_centimeters(profile.waist_value, profile.waist_unit) if profile.waist_value else None
+        waist_cm = (
+            to_centimeters(profile.waist_value, profile.waist_unit)
+            if profile.waist_value
+            else None
+        )
     except ValueError as exc:
-        return tool_error(str(exc), "Ask the user to restate the value with a unit (kg, lb, jin, cm, in).")
+        return tool_error(
+            str(exc),
+            "Ask the user to restate the value with a unit (kg, lb, jin, cm, in).",
+        )
 
     existing = await load_profile(tool_context)
-    with domain_span("energy_targets", goal=profile.goal, training_days=profile.training_days_per_week):
+    with domain_span(
+        "energy_targets",
+        goal=profile.goal,
+        training_days=profile.training_days_per_week,
+    ):
         targets = calculate_energy_targets(
             sex=profile.sex,
             age=profile.age,
@@ -224,7 +240,11 @@ async def update_daily_calorie_target(
         requested_daily_calories_kcal=daily_calories_kcal,
     )
     old = profile.targets.daily_calories_kcal if profile.targets else None
-    clamp_note = f" (adjusted for safety: {', '.join(new_targets.clamp_reasons)})" if new_targets.clamped else ""
+    clamp_note = (
+        f" (adjusted for safety: {', '.join(new_targets.clamp_reasons)})"
+        if new_targets.clamped
+        else ""
+    )
     stop = confirmation_gate(
         tool_context,
         action="update_calorie_target",
@@ -241,7 +261,13 @@ async def update_daily_calorie_target(
     )
     if stop is not None:
         return stop
-    updated = profile.model_copy(update={"targets": new_targets, "updated_at": utc_now()})
+    updated = profile.model_copy(
+        update={"targets": new_targets, "updated_at": utc_now()}
+    )
     with domain_span("firestore.save_profile", reason="calorie_target_update"):
         await repository().save_profile(updated)
-    return {"status": "updated", "previous_kcal": old, "targets": new_targets.model_dump()}
+    return {
+        "status": "updated",
+        "previous_kcal": old,
+        "targets": new_targets.model_dump(),
+    }

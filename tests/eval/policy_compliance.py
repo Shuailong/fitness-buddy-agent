@@ -38,10 +38,14 @@ def _tool_results(agent_data, limit: int = 6000) -> str:
                     continue
                 if part.get("function_call"):
                     fc = part["function_call"]
-                    lines.append(f"CALL {fc.get('name')} {json.dumps(fc.get('args'), ensure_ascii=False)[:400]}")
+                    lines.append(
+                        f"CALL {fc.get('name')} {json.dumps(fc.get('args'), ensure_ascii=False)[:400]}"
+                    )
                 elif part.get("function_response"):
                     fr = part["function_response"]
-                    lines.append(f"RESULT {fr.get('name')} {json.dumps(fr.get('response'), ensure_ascii=False)[:600]}")
+                    lines.append(
+                        f"RESULT {fr.get('name')} {json.dumps(fr.get('response'), ensure_ascii=False)[:600]}"
+                    )
     return "\n".join(lines)[:limit]
 
 
@@ -55,14 +59,18 @@ def _user_visible_reply(instance) -> str:
     """
     response = instance.get("response") or ""
     if isinstance(response, dict):
-        response = " ".join(p.get("text", "") for p in response.get("parts", []) if isinstance(p, dict))
+        response = " ".join(
+            p.get("text", "") for p in response.get("parts", []) if isinstance(p, dict)
+        )
     last_card = None
     for turn in (instance.get("agent_data") or {}).get("turns", []) or []:
         for event in turn.get("events", []) or []:
             for part in (event.get("content") or {}).get("parts", []) or []:
                 call = part.get("function_call") if isinstance(part, dict) else None
                 if call and call.get("name") == "adk_request_confirmation":
-                    payload = ((call.get("args") or {}).get("toolConfirmation") or {}).get("payload") or {}
+                    payload = (
+                        (call.get("args") or {}).get("toolConfirmation") or {}
+                    ).get("payload") or {}
                     last_card = payload
     if last_card:
         card = json.dumps(last_card, ensure_ascii=False)[:3000]
@@ -87,7 +95,9 @@ def evaluate(instance):
         model=JUDGE_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
-            temperature=0, response_mime_type="application/json", response_schema=_Verdict
+            temperature=0,
+            response_mime_type="application/json",
+            response_schema=_Verdict,
         ),
     )
     verdict = response.parsed

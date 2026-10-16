@@ -83,7 +83,9 @@ class _NoOpMemoryService(BaseMemoryService):
     async def add_events_to_memory(self, **kwargs) -> None:
         return None
 
-    async def search_memory(self, *, app_name: str, user_id: str, query: str) -> SearchMemoryResponse:
+    async def search_memory(
+        self, *, app_name: str, user_id: str, query: str
+    ) -> SearchMemoryResponse:
         return SearchMemoryResponse(memories=[])
 
 

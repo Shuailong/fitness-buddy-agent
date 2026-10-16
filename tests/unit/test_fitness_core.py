@@ -40,19 +40,19 @@ from fitness_core.units import to_centimeters, to_kilograms
 
 
 def _profile(**overrides) -> FitnessProfile:
-    data = dict(
-        user_id="u1",
-        goal="fat_loss",
-        sex="male",
-        age=35,
-        height_cm=178,
-        starting_weight_kg=82,
-        training_days_per_week=3,
-        minutes_per_session=45,
-        equipment=["dumbbells", "pull_up_bar"],
-        injury_areas=["knee"],
-        created_at=datetime(2026, 10, 1, tzinfo=UTC),
-    )
+    data = {
+        "user_id": "u1",
+        "goal": "fat_loss",
+        "sex": "male",
+        "age": 35,
+        "height_cm": 178,
+        "starting_weight_kg": 82,
+        "training_days_per_week": 3,
+        "minutes_per_session": 45,
+        "equipment": ["dumbbells", "pull_up_bar"],
+        "injury_areas": ["knee"],
+        "created_at": datetime(2026, 10, 1, tzinfo=UTC),
+    }
     data.update(overrides)
     return FitnessProfile(**data)
 
@@ -63,7 +63,12 @@ def test_bmr_matches_spec_example():
 
 def test_energy_targets_fat_loss_default():
     t = calculate_energy_targets(
-        sex="male", age=35, height_cm=178, weight_kg=82, training_days_per_week=3, goal="fat_loss"
+        sex="male",
+        age=35,
+        height_cm=178,
+        weight_kg=82,
+        training_days_per_week=3,
+        goal="fat_loss",
     )
     assert t.tdee_kcal == pytest.approx(2423.4, abs=0.1)
     assert t.daily_calories_kcal == 1940
@@ -73,18 +78,30 @@ def test_energy_targets_fat_loss_default():
 
 def test_calorie_floor_enforced_for_unsafe_request():
     t = calculate_energy_targets(
-        sex="female", age=30, height_cm=160, weight_kg=55, training_days_per_week=2,
-        goal="fat_loss", requested_daily_calories_kcal=800,
+        sex="female",
+        age=30,
+        height_cm=160,
+        weight_kg=55,
+        training_days_per_week=2,
+        goal="fat_loss",
+        requested_daily_calories_kcal=800,
     )
     assert t.daily_calories_kcal >= 1200
     assert t.clamped
-    assert "calorie_floor" in t.clamp_reasons or "max_weight_loss_rate" in t.clamp_reasons
+    assert (
+        "calorie_floor" in t.clamp_reasons or "max_weight_loss_rate" in t.clamp_reasons
+    )
 
 
 def test_max_loss_rate_enforced():
     t = calculate_energy_targets(
-        sex="male", age=35, height_cm=178, weight_kg=82, training_days_per_week=3,
-        goal="fat_loss", requested_daily_calories_kcal=1500,
+        sex="male",
+        age=35,
+        height_cm=178,
+        weight_kg=82,
+        training_days_per_week=3,
+        goal="fat_loss",
+        requested_daily_calories_kcal=1500,
     )
     # TDEE 2423.4 - max deficit 902 = 1521.4 -> rounded up to 1530.
     assert t.daily_calories_kcal == 1530
@@ -100,15 +117,32 @@ def test_unit_conversion():
 
 
 def test_meal_totals_and_daily_summary():
-    item = MealItem(name="Beef noodle soup", portion_grams=550, calories_kcal=620, protein_g=32, carbs_g=75, fat_g=18)
+    item = MealItem(
+        name="Beef noodle soup",
+        portion_grams=550,
+        calories_kcal=620,
+        protein_g=32,
+        carbs_g=75,
+        fat_g=18,
+    )
     totals = sum_meal_items([item, item])
     assert totals.calories_kcal == 1240
     targets = calculate_energy_targets(
-        sex="male", age=35, height_cm=178, weight_kg=82, training_days_per_week=3, goal="fat_loss"
+        sex="male",
+        age=35,
+        height_cm=178,
+        weight_kg=82,
+        training_days_per_week=3,
+        goal="fat_loss",
     )
     meal = MealEntry(
-        entry_id="m1", user_id="u1", local_date="2026-10-15", logged_at=datetime.now(UTC),
-        meal_type="lunch", items=[item], totals=sum_meal_items([item]),
+        entry_id="m1",
+        user_id="u1",
+        local_date="2026-10-15",
+        logged_at=datetime.now(UTC),
+        meal_type="lunch",
+        items=[item],
+        totals=sum_meal_items([item]),
     )
     s = daily_nutrition_summary("2026-10-15", [meal], targets)
     assert s.remaining_calories_kcal == 1940 - 620
@@ -119,8 +153,11 @@ def test_weight_trend_moving_average():
     base = date(2026, 10, 1)
     ms = [
         BodyMeasurement(
-            entry_id=str(i), user_id="u1", local_date=(base + timedelta(days=i)).isoformat(),
-            measured_at=datetime(2026, 10, 1, tzinfo=UTC) + timedelta(days=i), weight_kg=82 - 0.1 * i,
+            entry_id=str(i),
+            user_id="u1",
+            local_date=(base + timedelta(days=i)).isoformat(),
+            measured_at=datetime(2026, 10, 1, tzinfo=UTC) + timedelta(days=i),
+            weight_kg=82 - 0.1 * i,
         )
         for i in range(10)
     ]
@@ -133,16 +170,33 @@ def test_weight_trend_moving_average():
 
 def _plan(exercises: list[PlannedExercise], day="monday") -> TrainingPlan:
     return TrainingPlan(
-        title="Test", goal="fat_loss",
-        sessions=[PlannedSession(day_of_week=day, focus="Full body", exercises=exercises, estimated_minutes=40)],
+        title="Test",
+        goal="fat_loss",
+        sessions=[
+            PlannedSession(
+                day_of_week=day,
+                focus="Full body",
+                exercises=exercises,
+                estimated_minutes=40,
+            )
+        ],
     )
 
 
 def test_plan_validation_flags_equipment_and_injury():
-    plan = _plan([
-        PlannedExercise(exercise_id="barbell_back_squat", name="Barbell Back Squat", sets=3, reps=8),
-        PlannedExercise(exercise_id="goblet_squat", name="Goblet Squat", sets=3, reps=10),
-    ])
+    plan = _plan(
+        [
+            PlannedExercise(
+                exercise_id="barbell_back_squat",
+                name="Barbell Back Squat",
+                sets=3,
+                reps=8,
+            ),
+            PlannedExercise(
+                exercise_id="goblet_squat", name="Goblet Squat", sets=3, reps=10
+            ),
+        ]
+    )
     result = validate_training_plan(plan, _profile())
     rules = {v.rule for v in result.violations}
     assert "missing_equipment" in rules  # no barbell
@@ -151,18 +205,43 @@ def test_plan_validation_flags_equipment_and_injury():
 
 
 def test_plan_validation_passes_safe_plan():
-    plan = _plan([
-        PlannedExercise(exercise_id="glute_bridge", name="Glute Bridge", sets=3, reps=12, rest_seconds=60),
-        PlannedExercise(exercise_id="one_arm_dumbbell_row", name="Row", sets=3, reps=10, rest_seconds=60),
-        PlannedExercise(exercise_id="dumbbell_floor_press", name="Floor Press", sets=3, reps=10, rest_seconds=60),
-    ])
+    plan = _plan(
+        [
+            PlannedExercise(
+                exercise_id="glute_bridge",
+                name="Glute Bridge",
+                sets=3,
+                reps=12,
+                rest_seconds=60,
+            ),
+            PlannedExercise(
+                exercise_id="one_arm_dumbbell_row",
+                name="Row",
+                sets=3,
+                reps=10,
+                rest_seconds=60,
+            ),
+            PlannedExercise(
+                exercise_id="dumbbell_floor_press",
+                name="Floor Press",
+                sets=3,
+                reps=10,
+                rest_seconds=60,
+            ),
+        ]
+    )
     result = validate_training_plan(plan, _profile())
     assert result.is_valid, result.violations
     assert result.estimated_minutes_by_day["monday"] <= 45
 
 
 def test_search_exercises_respects_equipment_and_injuries():
-    names = {e.id for e in search_exercises(available_equipment=["dumbbells"], injury_areas=["knee"])}
+    names = {
+        e.id
+        for e in search_exercises(
+            available_equipment=["dumbbells"], injury_areas=["knee"]
+        )
+    }
     assert "goblet_squat" not in names
     assert "pull_up" not in names
     assert "glute_bridge" in names
@@ -171,30 +250,74 @@ def test_search_exercises_respects_equipment_and_injuries():
 def test_due_check_ins_dedup_and_cap():
     profile = _profile()
     plan = TrainingPlan(
-        title="P", goal="fat_loss",
+        title="P",
+        goal="fat_loss",
         sessions=[
-            PlannedSession(day_of_week=d, focus="x", estimated_minutes=30,
-                           exercises=[PlannedExercise(exercise_id="glute_bridge", name="GB", sets=2, reps=10)])
+            PlannedSession(
+                day_of_week=d,
+                focus="x",
+                estimated_minutes=30,
+                exercises=[
+                    PlannedExercise(
+                        exercise_id="glute_bridge", name="GB", sets=2, reps=10
+                    )
+                ],
+            )
             for d in ("monday", "tuesday", "wednesday")
         ],
     )
     today = date(2026, 10, 15)  # Thursday
-    items = due_check_ins(profile=profile, plan=plan, workouts=[], measurements=[], latest_review_date=None,
-                          state=CheckInState(), today=today)
+    items = due_check_ins(
+        profile=profile,
+        plan=plan,
+        workouts=[],
+        measurements=[],
+        latest_review_date=None,
+        state=CheckInState(),
+        today=today,
+    )
     assert len(items) == 3
-    again = due_check_ins(profile=profile, plan=plan, workouts=[], measurements=[], latest_review_date=None,
-                          state=CheckInState(raised_keys=[i.key for i in items]), today=today)
+    again = due_check_ins(
+        profile=profile,
+        plan=plan,
+        workouts=[],
+        measurements=[],
+        latest_review_date=None,
+        state=CheckInState(raised_keys=[i.key for i in items]),
+        today=today,
+    )
     assert all(i.key not in {x.key for x in items} for i in again)
 
 
 def test_weekly_snapshot_completion():
-    profile = _profile(targets=calculate_energy_targets(
-        sex="male", age=35, height_cm=178, weight_kg=82, training_days_per_week=3, goal="fat_loss"))
-    plan = _plan([PlannedExercise(exercise_id="glute_bridge", name="GB", sets=2, reps=10)])
-    w = WorkoutSession(entry_id="w1", user_id="u1", local_date="2026-10-13", performed_at=datetime.now(UTC),
-                       exercises=[WorkoutSet(exercise_name="Glute Bridge", sets=2, reps=10)])
-    snap = weekly_progress_snapshot(profile=profile, plan=plan, workouts=[w], meals=[], measurements=[],
-                                    week_end=date(2026, 10, 15))
+    profile = _profile(
+        targets=calculate_energy_targets(
+            sex="male",
+            age=35,
+            height_cm=178,
+            weight_kg=82,
+            training_days_per_week=3,
+            goal="fat_loss",
+        )
+    )
+    plan = _plan(
+        [PlannedExercise(exercise_id="glute_bridge", name="GB", sets=2, reps=10)]
+    )
+    w = WorkoutSession(
+        entry_id="w1",
+        user_id="u1",
+        local_date="2026-10-13",
+        performed_at=datetime.now(UTC),
+        exercises=[WorkoutSet(exercise_name="Glute Bridge", sets=2, reps=10)],
+    )
+    snap = weekly_progress_snapshot(
+        profile=profile,
+        plan=plan,
+        workouts=[w],
+        meals=[],
+        measurements=[],
+        week_end=date(2026, 10, 15),
+    )
     assert snap.completed_sessions == 1
     assert snap.workout_completion_rate == 1.0
 

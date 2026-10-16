@@ -80,7 +80,9 @@ workout_planner = Agent(
         "equipment and injuries, validates it, gets it reviewed, and saves it after the "
         "user confirms. Include the user's request and relevant context."
     ),
-    instruction=PLANNER_INSTRUCTION.replace("{max_rounds}", str(SETTINGS.planner_max_critique_rounds)),
+    instruction=PLANNER_INSTRUCTION.replace(
+        "{max_rounds}", str(SETTINGS.planner_max_critique_rounds)
+    ),
     output_schema=PlanTaskResult,
     generate_content_config=types.GenerateContentConfig(
         thinking_config=thinking_config(THINKING.planner)
@@ -106,7 +108,12 @@ nutrition_coach = Agent(
     ),
     instruction=NUTRITION_INSTRUCTION,
     output_schema=MealLogResult,
-    tools=[get_fitness_profile, log_meal_entry, get_daily_nutrition_summary, list_recent_log_entries],
+    tools=[
+        get_fitness_profile,
+        log_meal_entry,
+        get_daily_nutrition_summary,
+        list_recent_log_entries,
+    ],
 )
 
 
@@ -128,12 +135,21 @@ async def persist_weekly_review(callback_context: CallbackContext) -> None:
                 created_at=utc_now(),
                 summary=review.headline,
                 proposed_daily_calories_kcal=next(
-                    (p.proposed_daily_calories_kcal for p in review.proposals if p.proposed_daily_calories_kcal), None
+                    (
+                        p.proposed_daily_calories_kcal
+                        for p in review.proposals
+                        if p.proposed_daily_calories_kcal
+                    ),
+                    None,
                 ),
             ),
         )
     except Exception as exc:
-        log_event("weekly_review_persist_failed", severity=logging.WARNING, error_type=type(exc).__name__)
+        log_event(
+            "weekly_review_persist_failed",
+            severity=logging.WARNING,
+            error_type=type(exc).__name__,
+        )
     return None
 
 
@@ -150,6 +166,10 @@ weekly_reviewer = Agent(
     output_key=WEEKLY_REVIEW_STATE_KEY,
     disallow_transfer_to_parent=True,
     disallow_transfer_to_peers=True,
-    tools=[get_fitness_profile, get_weekly_progress_snapshot, get_body_measurement_trend],
+    tools=[
+        get_fitness_profile,
+        get_weekly_progress_snapshot,
+        get_body_measurement_trend,
+    ],
     after_agent_callback=persist_weekly_review,
 )

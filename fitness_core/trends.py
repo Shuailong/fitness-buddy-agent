@@ -62,7 +62,11 @@ def _daily_weights(measurements: Iterable[BodyMeasurement]) -> dict[date, float]
 
 
 def _window_average(daily: dict[date, float], end: date) -> float | None:
-    window = [w for d, w in daily.items() if end - timedelta(days=MOVING_AVERAGE_DAYS - 1) <= d <= end]
+    window = [
+        w
+        for d, w in daily.items()
+        if end - timedelta(days=MOVING_AVERAGE_DAYS - 1) <= d <= end
+    ]
     return round(sum(window) / len(window), 2) if window else None
 
 
@@ -95,11 +99,17 @@ def weight_trend(
     with_fat = [m for m in measurements if m.body_fat_percent is not None]
     with_waist = [m for m in measurements if m.waist_cm is not None]
     if with_fat:
-        trend.latest_body_fat_percent = max(with_fat, key=lambda m: m.measured_at).body_fat_percent
+        trend.latest_body_fat_percent = max(
+            with_fat, key=lambda m: m.measured_at
+        ).body_fat_percent
     if with_waist:
         trend.latest_waist_cm = max(with_waist, key=lambda m: m.measured_at).waist_cm
 
-    start = starting_weight_kg if starting_weight_kg is not None else (daily[days[0]] if days else None)
+    start = (
+        starting_weight_kg
+        if starting_weight_kg is not None
+        else (daily[days[0]] if days else None)
+    )
     trend.starting_weight_kg = start
     if not days:
         return trend
@@ -112,5 +122,7 @@ def weight_trend(
     month_ago = _window_average(daily, last - timedelta(days=LAST_MONTH_OFFSET_DAYS))
     trend.moving_average_last_month_kg = month_ago
     if month_ago is not None and trend.latest_moving_average_kg is not None:
-        trend.change_vs_last_month_kg = round(trend.latest_moving_average_kg - month_ago, 2)
+        trend.change_vs_last_month_kg = round(
+            trend.latest_moving_average_kg - month_ago, 2
+        )
     return trend

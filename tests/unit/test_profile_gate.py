@@ -85,7 +85,9 @@ def test_target_change_on_existing_profile_requires_confirmation(memory_repo) ->
         assert stored.training_days_per_week == 4  # nothing written yet
 
         # Rejected: still nothing written.
-        rejected = await save_fitness_profile(_answers(3), FakeToolContext(confirmed=False))
+        rejected = await save_fitness_profile(
+            _answers(3), FakeToolContext(confirmed=False)
+        )
         assert rejected["status"] == "rejected_by_user"
         assert (await memory_repo.get_profile("u-gate")).training_days_per_week == 4
 

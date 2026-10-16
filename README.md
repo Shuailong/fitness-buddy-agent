@@ -29,8 +29,10 @@ totals, remaining calories, trends and adherence are computed by the determinist
 chat and the dashboard always agree. The only model-generated numbers are per-item food estimates,
 which are labeled as estimates.
 
-Users interact through a mobile-friendly **web app** (Google Sign-In + allowlist) with chat, photo
-upload, Confirm/Reject cards for high-stakes changes, and a progress dashboard.
+Users interact through a mobile-first **web app** (Google Sign-In + allowlist, English/Chinese,
+dark/light, installable to the home screen): a Today home page, chat with photo upload and live
+progress, structured meal and plan-approval cards, Progress and Plan views, onboarding, and
+in-app feedback. Live preview (invite-only): <https://fitnessbuddy.online>.
 
 ## Architecture
 
@@ -57,7 +59,7 @@ flowchart TD
     RR["Reflect-and-retry for tool errors"]
   end
   subgraph Ops["AgentOps"]
-    OT["OpenTelemetry -> Cloud Trace"]
+    OTEL["OpenTelemetry -> Cloud Trace"]
     LG["Structured JSON logs -> Cloud Logging"]
     EV["Golden-dataset eval gate in CI"]
     TF["Terraform on Cloud Build + WIF deploys"]
@@ -82,24 +84,24 @@ validation → `plan_critic` review → refine (bounded rounds).
 
 | # | Criterion | Where to look |
 | --- | --- | --- |
-| 1 | **Comprehensive tool docstrings** | Every tool documents purpose, each argument and the return shape, e.g. [`save_fitness_profile`](app/tools/profile_tools.py#L61), [`log_meal_entry`](app/tools/nutrition_tools.py#L37), [`save_weekly_training_plan`](app/tools/planning_tools.py#L96) |
+| 1 | **Comprehensive tool docstrings** | Every tool documents purpose, each argument and the return shape, e.g. [`save_fitness_profile`](app/tools/profile_tools.py#L64), [`log_meal_entry`](app/tools/nutrition_tools.py#L37), [`save_weekly_training_plan`](app/tools/planning_tools.py#L98) |
 | 2 | **Descriptive naming** | Verb + object tool names: `calculate_daily_energy_targets`, `log_workout_session`, `record_body_measurement`, `validate_training_plan_constraints`, `update_daily_calorie_target`, `list_due_check_ins` ([app/tools/](app/tools/)) |
 | 3 | **Explicit JSON schemas** | Strict Pydantic models with ranges/enums and `extra="forbid"` ([fitness_core/models.py](fitness_core/models.py#L71)), tool inputs ([app/schemas.py](app/schemas.py)), and typed specialist hand-offs via `output_schema` + `finish_task` ([app/sub_agents.py](app/sub_agents.py)) |
-| 4 | **Guided error handling** | [`tool_error`](app/tools/_common.py#L31) / [`validation_error`](app/tools/_common.py#L45) return `error_message` + `recovery_hint`; plan violations include a `suggested_fix` ([fitness_core/plans.py](fitness_core/plans.py#L146)); unexpected exceptions become guided errors in [`on_tool_error_callback`](app/plugins/intent_outcome_audit.py#L56); `ReflectAndRetryToolPlugin` ([app/agent.py](app/agent.py)) |
+| 4 | **Guided error handling** | [`tool_error`](app/tools/_common.py#L31) / [`validation_error`](app/tools/_common.py#L52) return `error_message` + `recovery_hint`; plan violations include a `suggested_fix` ([fitness_core/plans.py](fitness_core/plans.py#L155)); unexpected exceptions become guided errors in [`on_tool_error_callback`](app/plugins/intent_outcome_audit.py#L56); `ReflectAndRetryToolPlugin` ([app/agent.py](app/agent.py)) |
 | 5 | **Robust system instructions** | Shared "constitution" (persona, domain knowledge, 10 hard rules) plus per-agent roles: [app/prompts.py](app/prompts.py) |
 | 6 | **History compaction** | Token-based `EventsCompactionConfig` with a Flash-Lite `LlmEventSummarizer`, optional context caching: [app/agent.py](app/agent.py) |
 | 7 | **Persistent session state** | Agent Runtime Sessions + Firestore repository (per-user documents): [app/app_utils/services.py](app/app_utils/services.py), [fitness_core/repository.py](fitness_core/repository.py) |
-| 8 | **Async memory operations** | After each turn, this turn's text is PII-redacted and sent to Memory Bank in a background task: [`schedule_redacted_memory_ingest`](app/memory/memory_bank.py#L70); recall via `PreloadMemoryTool` |
+| 8 | **Async memory operations** | After each turn, this turn's text is PII-redacted and sent to Memory Bank in a background task: [`schedule_redacted_memory_ingest`](app/memory/memory_bank.py#L81); recall via `PreloadMemoryTool` |
 | 9 | **Multi-agent patterns** | Coordinator + task-mode specialists + evaluator-optimizer critic loop: [app/sub_agents.py](app/sub_agents.py), [app/agent.py](app/agent.py) |
-| 10 | **Strategic model routing** | Per-role model tiers (Pro for planning/review, Flash for chat/vision, Flash-Lite for critic/judge/summarizer), env-overridable: [`ModelRouting`](app/config.py) |
-| 11 | **Guardrails & policy plugins** | Runner-wide [`ModelArmorGuardPlugin`](app/plugins/model_armor_guard.py#L61) and [`HealthPolicyJudgePlugin`](app/plugins/health_policy_judge.py#L79) (LLM-as-judge with structured verdict); safety clamps in code ([fitness_core/energy.py](fitness_core/energy.py#L98)); planner self-critique |
-| 12 | **Human-in-the-loop hooks** | [`confirmation_gate`](app/tools/_common.py#L94) pauses runs with `adk_request_confirmation` before replacing the plan, changing calorie targets or deleting history; `ResumabilityConfig`; Confirm/Reject cards in [web/events.py](web/events.py) and [web/static/app.js](web/static/app.js) |
+| 10 | **Strategic model routing** | Per-role model tiers (Pro for planning/review, Flash for chat/vision, Flash-Lite for critic/judge/summarizer) plus per-role thinking levels tuned from Cloud Trace latency data (coordinator `low`, planner `medium`), all env-overridable: [`ModelRouting`](app/config.py#L48), [`ThinkingRouting`](app/config.py#L78) |
+| 11 | **Guardrails & policy plugins** | Runner-wide [`ModelArmorGuardPlugin`](app/plugins/model_armor_guard.py#L65) and [`HealthPolicyJudgePlugin`](app/plugins/health_policy_judge.py#L89) (LLM-as-judge with structured verdict); safety clamps in code ([fitness_core/energy.py](fitness_core/energy.py#L100)); planner self-critique |
+| 12 | **Human-in-the-loop hooks** | [`confirmation_gate`](app/tools/_common.py#L102) pauses runs with `adk_request_confirmation` before replacing the plan, changing calorie targets (including as a side effect of a profile edit) or deleting history; `ResumabilityConfig`; Confirm/Reject cards in [web/events.py](web/events.py) and [`confirmationCard`](web/static/js/cards.js#L230) |
 | 13 | **Structured JSON logging** | `google-cloud-logging` `StructuredLogHandler`, no prints: [app/observability/structured_logging.py](app/observability/structured_logging.py), [web/observability.py](web/observability.py) |
 | 14 | **Intent vs. outcome capture** | `tool_intent` before / `tool_outcome` after every tool call, correlated by `call_id`: [`IntentOutcomeAuditPlugin`](app/plugins/intent_outcome_audit.py#L56); per-turn intent/outcome in [web/main.py](web/main.py) |
 | 15 | **Distributed tracing** | OpenTelemetry → Cloud Trace (ADK spans + custom domain spans): [`domain_span`](app/observability/tracing.py#L33), [web/observability.py](web/observability.py) |
 | 16 | **PII redaction** | Regex + Cloud DLP `deidentify_content` before logs and Memory Bank writes: [app/observability/pii_redaction.py](app/observability/pii_redaction.py) |
-| 17 | **Automated evaluation suite** | `agents-cli eval` with a 19-case golden dataset (every FR and SR) + 4-case holdout, deterministic trajectory metric and LLM-judge metrics, CI gate: [tests/eval/](tests/eval/), [check_thresholds.py](tests/eval/check_thresholds.py) |
-| 18 | **Infrastructure as Code** | Terraform for APIs, Agent Runtime, Firestore, Model Armor, Secret Manager, Cloud Run, IAM, WIF, telemetry - applied via Cloud Build: [deployment/terraform/](deployment/terraform/); scaffolded and deployed with `agents-cli` |
+| 17 | **Automated evaluation suite** | `agents-cli eval` with a 21-case golden dataset (every FR and SR, English and Chinese) + 4-case holdout, deterministic trajectory metric and LLM-judge metrics, CI gate that runs in a dedicated eval project: [tests/eval/](tests/eval/), [check_thresholds.py](tests/eval/check_thresholds.py) |
+| 18 | **Infrastructure as Code** | Terraform for APIs, Agent Runtime, Firestore (PITR, backups, TTL), Model Armor, Secret Manager, Cloud Run, IAM, WIF, log metrics, alert policies, uptime check, dashboards and a BigQuery analytics sink - applied via Cloud Build: [deployment/terraform/](deployment/terraform/); scaffolded and deployed with `agents-cli` |
 | 19 | **Secure secret management** | Session signing key generated by Terraform into Secret Manager and injected into Cloud Run at runtime; keyless CI via Workload Identity Federation; only `.env.example` in the repo: [fitness_buddy.tf](deployment/terraform/single-project/fitness_buddy.tf) |
 
 ## Evaluation
@@ -113,8 +115,8 @@ uv run python tests/eval/check_thresholds.py       # CI gate
 | Metric | Type | Bar | Latest |
 | --- | --- | --- | --- |
 | `tool_trajectory_compliance` | deterministic (expected / forbidden tools, HITL stop) | 1.0 every case | **1.00** |
-| `policy_compliance` | LLM judge, binary, per-case functional or safety policy | 1.0 on every safety case, mean ≥ 0.9 | **1.00** (2 consecutive runs; holdout 4/4) |
-| `custom_response_quality` | LLM judge, 1-5 | mean ≥ 4.0 | **4.95-5.00** |
+| `policy_compliance` | LLM judge, binary, per-case functional or safety policy | 1.0 on every safety case, mean ≥ 0.9 | **1.00** (golden 21/21; holdout 4/4) |
+| `custom_response_quality` | LLM judge, 1-5 | mean ≥ 4.0 | **4.95** golden, **5.00** holdout |
 
 Cases are defined in readable form in [build_golden_dataset.py](tests/eval/build_golden_dataset.py)
 and cover onboarding, targets, planning with confirmation, meal photos, workout and measurement
@@ -122,7 +124,21 @@ logging (incl. unit conversion), weekly review, check-ins, preferences, the 8 sa
 (medical, calorie floor, loss rate, red-flag symptoms, eating-disorder signals, dosing, prompt
 injection in menus, PII) and language mirroring. Holdout cases stay out of the iteration loop.
 
-Deterministic logic has unit tests (`uv run pytest tests/unit`); LLM behavior is only tested in eval.
+Deterministic logic and the web backend have unit tests (`uv run pytest tests/unit`, 44 tests);
+LLM behavior is only tested in eval.
+
+## Operating it (beta readiness)
+
+| Concern | Implementation |
+| --- | --- |
+| Feedback from day 1 | 👍/👎 with reasons on every reply and card, a CSAT + category feedback dialog, and a once-a-day prompt; stored PII-redacted and pseudonymous via [`POST /api/feedback`](web/main.py#L727) |
+| Product analytics | Allowlisted UI events (onboarding funnel, tabs, quick actions) + per-turn intent/outcome/latency logs, exported to BigQuery views (DAU, D1/D7 retention, feature usage, latency, feedback) and a Cloud Monitoring dashboard: [operations.tf](deployment/terraform/single-project/operations.tf), [analytics.tf](deployment/terraform/single-project/analytics.tf) |
+| Alerting | Uptime, 5xx ratio, p95 latency, agent errors, Gemini rejections, failed-turn ratio, each linked to a runbook |
+| Abuse & cost | Per-user Firestore-backed rate limits ([`RateLimiter`](web/ratelimit.py#L113)), timeouts on every backend call, a billing budget |
+| Data protection | Firestore PITR + delete protection + daily backups; self-service data export and account deletion ([`/api/account/*`](web/main.py#L792)) covering Firestore, conversations and Memory Bank; [privacy page](web/static/privacy.html) |
+| Resilience | Model calls can be routed to a dedicated Gemini project ([`gemini_client_kwargs`](app/config.py#L105)); evals never run in the production project |
+
+Runbooks, rollback and restore procedures: [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Run locally
 
@@ -159,7 +175,7 @@ AGENT_BACKEND=local DEV_AUTH_BYPASS=true uv run uvicorn web.main:app --port 8080
 4. **Web app:** `gcloud builds submit . --config web/cloudbuild.yaml`.
 5. **CI/CD:** [.github/workflows/deploy.yaml](.github/workflows/deploy.yaml) runs CI → eval gate →
    agent + web deploys on every push to `main`, authenticating keylessly via Workload Identity
-   Federation.
+   Federation. Web-only changes skip the eval gate and the agent deploy.
 
 Manual, one-time: create the project and link billing; create an OAuth web client (Google
 Sign-In) and add the web app URL as an authorized JavaScript origin.
@@ -172,6 +188,7 @@ fitness_core/        deterministic domain logic + Firestore repository (shared w
 web/                 FastAPI web app + static frontend (deployed to Cloud Run)
 tests/unit/          deterministic unit tests      tests/eval/   golden + holdout evals, metrics, gate
 deployment/terraform/ IaC (single-project) + Cloud Build runner
+docs/                operations runbook
 scripts/             local smoke test
 ```
 

@@ -97,7 +97,11 @@ def _build_plugins() -> list:
     if SETTINGS.health_judge_enabled:
         plugins.append(HealthPolicyJudgePlugin())
     plugins.append(IntentOutcomeAuditPlugin())
-    plugins.append(ReflectAndRetryToolPlugin(max_retries=2, throw_exception_if_retry_exceeded=False))
+    plugins.append(
+        ReflectAndRetryToolPlugin(
+            max_retries=2, throw_exception_if_retry_exceeded=False
+        )
+    )
     return plugins
 
 

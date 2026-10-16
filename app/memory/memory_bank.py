@@ -46,12 +46,19 @@ async def _redacted_copy(event: Event) -> Event | None:
         return None
     redacted = [await redact_text_async(t) for t in texts]
     return event.model_copy(
-        update={"content": types.Content(role=event.content.role, parts=[types.Part.from_text(text=t) for t in redacted])},
+        update={
+            "content": types.Content(
+                role=event.content.role,
+                parts=[types.Part.from_text(text=t) for t in redacted],
+            )
+        },
         deep=True,
     )
 
 
-async def _ingest(memory_service, app_name: str, user_id: str, session_id: str, events: list[Event]) -> None:
+async def _ingest(
+    memory_service, app_name: str, user_id: str, session_id: str, events: list[Event]
+) -> None:
     redacted = [e for e in [await _redacted_copy(ev) for ev in events] if e is not None]
     if not redacted:
         return
@@ -64,7 +71,11 @@ async def _ingest(memory_service, app_name: str, user_id: str, session_id: str, 
 def _log_task_result(task: asyncio.Task) -> None:
     _BACKGROUND_TASKS.discard(task)
     if not task.cancelled() and task.exception() is not None:
-        log_event("memory_ingest_failed", severity=logging.WARNING, error_type=type(task.exception()).__name__)
+        log_event(
+            "memory_ingest_failed",
+            severity=logging.WARNING,
+            error_type=type(task.exception()).__name__,
+        )
 
 
 async def schedule_redacted_memory_ingest(callback_context: CallbackContext) -> None:
@@ -78,11 +89,15 @@ async def schedule_redacted_memory_ingest(callback_context: CallbackContext) -> 
     if memory_service is None:
         return None
     session = invocation.session
-    turn_events = [e for e in session.events if e.invocation_id == callback_context.invocation_id]
+    turn_events = [
+        e for e in session.events if e.invocation_id == callback_context.invocation_id
+    ]
     if not turn_events:
         return None
     task = asyncio.create_task(
-        _ingest(memory_service, session.app_name, session.user_id, session.id, turn_events),
+        _ingest(
+            memory_service, session.app_name, session.user_id, session.id, turn_events
+        ),
         name=f"memory-ingest-{callback_context.invocation_id}",
     )
     _BACKGROUND_TASKS.add(task)

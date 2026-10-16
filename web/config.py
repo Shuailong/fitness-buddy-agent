@@ -36,6 +36,7 @@ def normalize_lang(value: str | None) -> str:
     lang = (value or "").strip().lower().split("-")[0]
     return lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
 
+
 MAX_IMAGE_BYTES = 6 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp")
 

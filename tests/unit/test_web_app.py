@@ -24,7 +24,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -48,9 +48,9 @@ from fitness_core.progress import user_local_date
 from fitness_core.trends import weight_trend
 from web.config import GREETING_TEXT, GREETING_TEXTS, WebSettings, normalize_lang
 from web.dashboard import logging_streak
-from web.ratelimit import Limit, MemoryCounterStore, RateLimiter
 from web.events import build_history, simplify_event
 from web.main import create_app
+from web.ratelimit import Limit, MemoryCounterStore, RateLimiter
 
 CONFIRM_ID = "adk-confirm-1"
 
@@ -229,7 +229,7 @@ class FakeAgentClient:
     async def delete_session(self, user_id: str, session_id: str) -> None:
         self.sessions.get(user_id, {}).pop(session_id, None)
 
-    memories: dict[str, list[dict[str, Any]]] = {}
+    memories: ClassVar[dict[str, list[dict[str, Any]]]] = {}
 
     async def list_user_memories(self, user_id: str) -> list[dict[str, Any]]:
         return list(self.memories.get(user_id, []))
@@ -517,7 +517,12 @@ def test_simplify_event_accepts_snake_case_and_errors() -> None:
     }
     assert simplify_event(event) == [
         {"type": "activity", "label": "Logging your workout..."},
-        {"type": "text", "author": "fitness_coach", "text": "Logged!", "event_id": None},
+        {
+            "type": "text",
+            "author": "fitness_coach",
+            "text": "Logged!",
+            "event_id": None,
+        },
     ]
     assert (
         simplify_event(
@@ -627,12 +632,14 @@ def test_ui_language_localizes_activity_labels_and_hides_greetings() -> None:
     assert build_history(events)["messages"] == []
 
     # The chat endpoint forwards the UI language to the label localizer.
-    client, agent = _dev_client()
+    client, _ = _dev_client()
     client.post("/api/session")
     body = client.post("/api/chat", data={"text": "Plan please", "lang": "zh"}).text
     labels = [e["label"] for e in _parse_sse(body) if e["type"] == "activity"]
     assert labels and all(not label.startswith("Asking") for label in labels)
-    assert client.get("/api/config").json()["greeting_texts"]["zh"] == GREETING_TEXTS["zh"]
+    assert (
+        client.get("/api/config").json()["greeting_texts"]["zh"] == GREETING_TEXTS["zh"]
+    )
 
 
 def test_history_and_confirm_endpoints() -> None:
@@ -892,9 +899,19 @@ def test_meal_log_result_becomes_card_in_stream_and_history() -> None:
                 "confidence": "medium",
             }
         ],
-        "meal_totals": {"calories_kcal": 850, "protein_g": 48, "carbs_g": 92, "fat_g": 30},
+        "meal_totals": {
+            "calories_kcal": 850,
+            "protein_g": 48,
+            "carbs_g": 92,
+            "fat_g": 30,
+        },
         "daily_summary": {
-            "consumed": {"calories_kcal": 1170, "protein_g": 74, "carbs_g": 150, "fat_g": 40},
+            "consumed": {
+                "calories_kcal": 1170,
+                "protein_g": 74,
+                "carbs_g": 150,
+                "fat_g": 40,
+            },
             "target_calories_kcal": 2300,
             "target_protein_g": 150,
             "remaining_calories_kcal": 1130,
@@ -906,7 +923,13 @@ def test_meal_log_result_becomes_card_in_stream_and_history() -> None:
         "content": {
             "role": "user",
             "parts": [
-                {"function_response": {"id": "c1", "name": "log_meal_entry", "response": response}}
+                {
+                    "function_response": {
+                        "id": "c1",
+                        "name": "log_meal_entry",
+                        "response": response,
+                    }
+                }
             ],
         },
     }
@@ -961,7 +984,9 @@ def test_rate_limit_returns_429_with_retry_after() -> None:
     )
     client = TestClient(
         create_app(
-            _settings(dev_auth_bypass_requested=True), agent_client=agent, rate_limiter=limiter
+            _settings(dev_auth_bypass_requested=True),
+            agent_client=agent,
+            rate_limiter=limiter,
         )
     )
     client.post("/api/session")
@@ -985,14 +1010,18 @@ def test_rate_limiter_windows_reset_and_fail_open() -> None:
     assert run(limiter.hit("u", ["messages_per_minute"], now=120.0)).allowed
     denied = run(limiter.hit("u", ["messages_per_minute"], now=150.0))
     assert not denied.allowed and denied.retry_after == 31
-    assert run(limiter.hit("u", ["messages_per_minute"], now=181.0)).allowed  # next window
+    assert run(
+        limiter.hit("u", ["messages_per_minute"], now=181.0)
+    ).allowed  # next window
     assert run(limiter.hit("other", ["messages_per_minute"], now=150.0)).allowed
 
     class BrokenStore:
         async def increment(self, key, expire_at):
             raise RuntimeError("firestore down")
 
-    assert run(RateLimiter(BrokenStore(), limits).hit("u", ["messages_per_minute"])).allowed
+    assert run(
+        RateLimiter(BrokenStore(), limits).hit("u", ["messages_per_minute"])
+    ).allowed
 
 
 def test_feedback_is_stored_redacted_and_validated(memory_repo) -> None:
@@ -1020,29 +1049,50 @@ def test_feedback_is_stored_redacted_and_validated(memory_repo) -> None:
     # General feedback needs a comment or a category.
     assert client.post("/api/feedback", json={"kind": "general"}).status_code == 422
     assert client.post("/api/feedback", json={"kind": "bogus"}).status_code == 422
-    assert client.post("/api/feedback", json={"kind": "general", "tags": ["idea"]}).status_code == 204
+    assert (
+        client.post(
+            "/api/feedback", json={"kind": "general", "tags": ["idea"]}
+        ).status_code
+        == 204
+    )
 
 
 def test_telemetry_accepts_known_events_only() -> None:
     client, _ = _dev_client()
-    assert client.post(
-        "/api/telemetry", json={"name": "tab_view", "props": {"tab": "progress"}}
-    ).status_code == 204
+    assert (
+        client.post(
+            "/api/telemetry", json={"name": "tab_view", "props": {"tab": "progress"}}
+        ).status_code
+        == 204
+    )
     assert client.post("/api/telemetry", json={"name": "made_up"}).status_code == 204
-    assert client.post(
-        "/api/telemetry", json={"name": "tab_view", "props": {"nested": {"x": 1}}}
-    ).status_code == 422
-    assert TestClient(create_app(_settings())).post(
-        "/api/telemetry", json={"name": "tab_view"}
-    ).status_code == 401
+    assert (
+        client.post(
+            "/api/telemetry", json={"name": "tab_view", "props": {"nested": {"x": 1}}}
+        ).status_code
+        == 422
+    )
+    assert (
+        TestClient(create_app(_settings()))
+        .post("/api/telemetry", json={"name": "tab_view"})
+        .status_code
+        == 401
+    )
 
 
 def test_account_export_and_delete(memory_repo) -> None:
     uid = "dev-user"
     asyncio.run(memory_repo.add_entry(uid, "meal", _meal(uid, "2026-10-16", 600, 40)))
-    asyncio.run(memory_repo.add_entry("someone-else", "meal", _meal("someone-else", "2026-10-16", 700, 30)))
+    asyncio.run(
+        memory_repo.add_entry(
+            "someone-else", "meal", _meal("someone-else", "2026-10-16", 700, 30)
+        )
+    )
     agent = FakeAgentClient()
-    agent.memories = {uid: [{"fact": "Allergic to shrimp."}], "someone-else": [{"fact": "x"}]}
+    agent.memories = {
+        uid: [{"fact": "Allergic to shrimp."}],
+        "someone-else": [{"fact": "x"}],
+    }
     client, _ = _dev_client(agent)
     client.post("/api/session")
     client.post("/api/chat", data={"text": "hello"})
@@ -1055,7 +1105,9 @@ def test_account_export_and_delete(memory_repo) -> None:
     assert payload["coach_memories"] == [{"fact": "Allergic to shrimp."}]
     assert payload["conversations"] and payload["conversations"][0]["messages"]
 
-    assert client.post("/api/account/delete", json={"confirm": "yes"}).status_code == 422
+    assert (
+        client.post("/api/account/delete", json={"confirm": "yes"}).status_code == 422
+    )
     resp = client.post("/api/account/delete", json={"confirm": "DELETE"})
     assert resp.status_code == 200
     body = resp.json()

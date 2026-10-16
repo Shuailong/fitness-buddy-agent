@@ -45,7 +45,9 @@ _REFUSAL = (
     "Sorry, I can't help with that request. I'm here for training, nutrition and "
     "progress tracking - what would you like to work on?"
 )
-_BLOCKED_REPLY = "Sorry, I can't share that response. Let's get back to your training and nutrition."
+_BLOCKED_REPLY = (
+    "Sorry, I can't share that response. Let's get back to your training and nutrition."
+)
 
 
 def _flagged_filters(response) -> list[str]:
@@ -55,7 +57,9 @@ def _flagged_filters(response) -> list[str]:
     result = response.sanitization_result
     if result.filter_match_state != modelarmor_v1.FilterMatchState.MATCH_FOUND:
         return []
-    return [name for name, fr in result.filter_results.items() if "MATCH_FOUND" in str(fr)] or ["unknown"]
+    return [
+        name for name, fr in result.filter_results.items() if "MATCH_FOUND" in str(fr)
+    ] or ["unknown"]
 
 
 class ModelArmorGuardPlugin(BasePlugin):
@@ -72,24 +76,36 @@ class ModelArmorGuardPlugin(BasePlugin):
             f"/templates/{SETTINGS.model_armor_template_id}"
         )
         self._client = modelarmor_v1.ModelArmorClient(
-            client_options=ClientOptions(api_endpoint=f"modelarmor.{SETTINGS.model_armor_location}.rep.googleapis.com")
+            client_options=ClientOptions(
+                api_endpoint=f"modelarmor.{SETTINGS.model_armor_location}.rep.googleapis.com"
+            )
         )
 
     async def _screen(self, text: str, *, is_prompt: bool) -> list[str]:
         try:
             if is_prompt:
                 request = self._types.SanitizeUserPromptRequest(
-                    name=self._template, user_prompt_data=self._types.DataItem(text=text)
+                    name=self._template,
+                    user_prompt_data=self._types.DataItem(text=text),
                 )
-                response = await asyncio.to_thread(self._client.sanitize_user_prompt, request=request)
+                response = await asyncio.to_thread(
+                    self._client.sanitize_user_prompt, request=request
+                )
             else:
                 request = self._types.SanitizeModelResponseRequest(
-                    name=self._template, model_response_data=self._types.DataItem(text=text)
+                    name=self._template,
+                    model_response_data=self._types.DataItem(text=text),
                 )
-                response = await asyncio.to_thread(self._client.sanitize_model_response, request=request)
+                response = await asyncio.to_thread(
+                    self._client.sanitize_model_response, request=request
+                )
             return _flagged_filters(response)
         except Exception as exc:
-            log_event("model_armor_error", severity=logging.WARNING, error_type=type(exc).__name__)
+            log_event(
+                "model_armor_error",
+                severity=logging.WARNING,
+                error_type=type(exc).__name__,
+            )
             return []
 
     async def on_user_message_callback(
@@ -102,28 +118,52 @@ class ModelArmorGuardPlugin(BasePlugin):
         if not filters:
             return None
         invocation_context.session.state[_FLAG_KEY] = True
-        log_event("model_armor_prompt_blocked", severity=logging.WARNING, filters=filters,
-                  session_id=invocation_context.session.id)
+        log_event(
+            "model_armor_prompt_blocked",
+            severity=logging.WARNING,
+            filters=filters,
+            session_id=invocation_context.session.id,
+        )
         # Keep non-text parts out as well: the whole message is replaced.
-        return types.Content(role="user", parts=[types.Part.from_text(text=_BLOCKED_PROMPT)])
+        return types.Content(
+            role="user", parts=[types.Part.from_text(text=_BLOCKED_PROMPT)]
+        )
 
-    async def before_run_callback(self, *, invocation_context: InvocationContext) -> types.Content | None:
+    async def before_run_callback(
+        self, *, invocation_context: InvocationContext
+    ) -> types.Content | None:
         if invocation_context.session.state.get(_FLAG_KEY):
             invocation_context.session.state[_FLAG_KEY] = False
-            return types.Content(role="model", parts=[types.Part.from_text(text=_REFUSAL)])
+            return types.Content(
+                role="model", parts=[types.Part.from_text(text=_REFUSAL)]
+            )
         return None
 
     async def after_model_callback(
         self, *, callback_context: CallbackContext, llm_response: LlmResponse
     ) -> LlmResponse | None:
-        if llm_response.partial or not llm_response.content or not llm_response.content.parts:
+        if (
+            llm_response.partial
+            or not llm_response.content
+            or not llm_response.content.parts
+        ):
             return None
-        text = "\n".join(p.text for p in llm_response.content.parts if p.text and not p.thought)
+        text = "\n".join(
+            p.text for p in llm_response.content.parts if p.text and not p.thought
+        )
         if not text.strip():
             return None
         filters = await self._screen(text, is_prompt=False)
         if not filters:
             return None
-        log_event("model_armor_response_blocked", severity=logging.WARNING, filters=filters,
-                  agent=callback_context.agent_name)
-        return LlmResponse(content=types.Content(role="model", parts=[types.Part.from_text(text=_BLOCKED_REPLY)]))
+        log_event(
+            "model_armor_response_blocked",
+            severity=logging.WARNING,
+            filters=filters,
+            agent=callback_context.agent_name,
+        )
+        return LlmResponse(
+            content=types.Content(
+                role="model", parts=[types.Part.from_text(text=_BLOCKED_REPLY)]
+            )
+        )

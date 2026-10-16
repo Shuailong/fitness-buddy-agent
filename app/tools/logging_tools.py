@@ -49,9 +49,13 @@ def _resolve_date(value: str | None, today: date) -> str | dict[str, Any]:
     try:
         day = date.fromisoformat(value)
     except ValueError:
-        return tool_error(f"'{value}' is not a valid date.", "Use YYYY-MM-DD, or omit it for today.")
+        return tool_error(
+            f"'{value}' is not a valid date.", "Use YYYY-MM-DD, or omit it for today."
+        )
     if day > today:
-        return tool_error("The date is in the future.", "Ask the user which day they meant.")
+        return tool_error(
+            "The date is in the future.", "Ask the user which day they meant."
+        )
     return day.isoformat()
 
 
@@ -86,7 +90,9 @@ async def log_workout_session(
         return day
     try:
         normalized = [
-            e.model_copy(update={"weight_kg": to_kilograms(e.weight_kg, load_unit)}) if e.weight_kg else e
+            e.model_copy(update={"weight_kg": to_kilograms(e.weight_kg, load_unit)})
+            if e.weight_kg
+            else e
             for e in exercises
         ]
         session = WorkoutSession(
@@ -112,22 +118,34 @@ async def log_workout_session(
                 key = ex.exercise_name.strip().lower()
                 best[key] = max(best.get(key, 0.0), ex.weight_kg)
     records = [
-        {"exercise": ex.exercise_name, "weight_kg": ex.weight_kg, "previous_best_kg": best.get(ex.exercise_name.strip().lower())}
+        {
+            "exercise": ex.exercise_name,
+            "weight_kg": ex.weight_kg,
+            "previous_best_kg": best.get(ex.exercise_name.strip().lower()),
+        }
         for ex in normalized
-        if ex.weight_kg is not None and ex.weight_kg > best.get(ex.exercise_name.strip().lower(), 0.0) and history
+        if ex.weight_kg is not None
+        and ex.weight_kg > best.get(ex.exercise_name.strip().lower(), 0.0)
+        and history
     ]
     with domain_span("firestore.add_workout", exercises=len(normalized)):
         await repo.add_entry(storage_user_id(tool_context), "workout", session)
 
     plan = await repo.get_current_plan(storage_user_id(tool_context))
     weekday = WEEKDAYS[date.fromisoformat(day).weekday()]
-    planned = next((s for s in plan.sessions if s.day_of_week == weekday), None) if plan else None
+    planned = (
+        next((s for s in plan.sessions if s.day_of_week == weekday), None)
+        if plan
+        else None
+    )
     return {
         "status": "logged",
         "entry_id": session.entry_id,
         "local_date": day,
         "logged_exercises": [e.model_dump(exclude_none=True) for e in normalized],
-        "planned_session_for_day": planned.model_dump(exclude_none=True) if planned else None,
+        "planned_session_for_day": planned.model_dump(exclude_none=True)
+        if planned
+        else None,
         "new_personal_records": records,
     }
 
@@ -159,7 +177,10 @@ async def record_body_measurement(
         start and versus last month).
     """
     if weight_value is None and body_fat_percent is None and waist_value is None:
-        return tool_error("No measurement was provided.", "Ask the user for weight, body fat or waist.")
+        return tool_error(
+            "No measurement was provided.",
+            "Ask the user for weight, body fat or waist.",
+        )
     profile = await load_profile(tool_context)
     day = _resolve_date(measurement_date, local_today(profile))
     if isinstance(day, dict):
@@ -170,9 +191,13 @@ async def record_body_measurement(
             user_id=storage_user_id(tool_context),
             local_date=day,
             measured_at=utc_now(),
-            weight_kg=to_kilograms(weight_value, weight_unit) if weight_value is not None else None,
+            weight_kg=to_kilograms(weight_value, weight_unit)
+            if weight_value is not None
+            else None,
             body_fat_percent=body_fat_percent,
-            waist_cm=to_centimeters(waist_value, waist_unit) if waist_value is not None else None,
+            waist_cm=to_centimeters(waist_value, waist_unit)
+            if waist_value is not None
+            else None,
         )
     except ValidationError as exc:
         return validation_error(exc, "measurement")
@@ -206,7 +231,9 @@ async def get_body_measurement_trend(tool_context: ToolContext) -> dict[str, Any
             starting_weight_kg=profile.starting_weight_kg if profile else None,
         )
     if not trend.points:
-        return tool_error("No weight measurements yet.", "Invite the user to log today's weight.")
+        return tool_error(
+            "No weight measurements yet.", "Invite the user to log today's weight."
+        )
     data = trend.model_dump()
     data["points"] = data["points"][-30:]
     return {"status": "ok", "trend": data}
@@ -230,11 +257,18 @@ async def list_recent_log_entries(
     profile = await load_profile(tool_context)
     start = (local_today(profile) - timedelta(days=days - 1)).isoformat()
     repo = repository()
-    lister = {"workout": repo.list_workouts, "meal": repo.list_meals, "measurement": repo.list_measurements}[kind]
+    lister = {
+        "workout": repo.list_workouts,
+        "meal": repo.list_meals,
+        "measurement": repo.list_measurements,
+    }[kind]
     entries = await lister(storage_user_id(tool_context), start=start)
     return {
         "status": "ok",
-        "entries": [e.model_dump(mode="json", exclude={"user_id"}, exclude_none=True) for e in reversed(entries)][:20],
+        "entries": [
+            e.model_dump(mode="json", exclude={"user_id"}, exclude_none=True)
+            for e in reversed(entries)
+        ][:20],
     }
 
 
@@ -253,10 +287,24 @@ async def delete_logged_entry(
         or a guided error if the entry does not exist.
     """
     repo = repository()
-    lister = {"workout": repo.list_workouts, "meal": repo.list_meals, "measurement": repo.list_measurements}[kind]
-    match = next((e for e in await lister(storage_user_id(tool_context)) if e.entry_id == entry_id), None)
+    lister = {
+        "workout": repo.list_workouts,
+        "meal": repo.list_meals,
+        "measurement": repo.list_measurements,
+    }[kind]
+    match = next(
+        (
+            e
+            for e in await lister(storage_user_id(tool_context))
+            if e.entry_id == entry_id
+        ),
+        None,
+    )
     if match is None:
-        return tool_error(f"No {kind} entry with id '{entry_id}'.", "Call list_recent_log_entries to find the right entry_id.")
+        return tool_error(
+            f"No {kind} entry with id '{entry_id}'.",
+            "Call list_recent_log_entries to find the right entry_id.",
+        )
     stop = confirmation_gate(
         tool_context,
         action=f"delete_{kind}",

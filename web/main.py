@@ -138,9 +138,18 @@ class SessionRequest(BaseModel):
 
 TELEMETRY_EVENTS = frozenset(
     {
-        "app_open", "tab_view", "quick_action", "onboarding_start", "onboarding_step",
-        "onboarding_complete", "onboarding_skip", "suggestion_chip", "theme_change",
-        "lang_change", "card_action", "feedback_open",
+        "app_open",
+        "tab_view",
+        "quick_action",
+        "onboarding_start",
+        "onboarding_step",
+        "onboarding_complete",
+        "onboarding_skip",
+        "suggestion_chip",
+        "theme_change",
+        "lang_change",
+        "card_action",
+        "feedback_open",
     }
 )
 DASHBOARD_TIMEOUT_S = 15.0
@@ -152,10 +161,14 @@ class FeedbackRequest(BaseModel):
 
     kind: Literal["message", "general"]
     rating: Literal["up", "down"] | None = None
-    tags: list[Annotated[str, Field(max_length=40)]] = Field(default_factory=list, max_length=6)
+    tags: list[Annotated[str, Field(max_length=40)]] = Field(
+        default_factory=list, max_length=6
+    )
     comment: str = Field(default="", max_length=2000)
     event_id: str | None = Field(default=None, max_length=200)
-    page: Literal["today", "coach", "progress", "plan", "onboarding", "landing"] | None = None
+    page: (
+        Literal["today", "coach", "progress", "plan", "onboarding", "landing"] | None
+    ) = None
     lang: str | None = None
 
 
@@ -163,7 +176,9 @@ class TelemetryRequest(BaseModel):
     """A product-analytics UI event (no message text or PII)."""
 
     name: str = Field(max_length=40)
-    props: dict[str, str | int | float | bool] = Field(default_factory=dict, max_length=10)
+    props: dict[str, str | int | float | bool] = Field(
+        default_factory=dict, max_length=10
+    )
 
 
 class DeleteAccountRequest(BaseModel):
@@ -302,17 +317,21 @@ def create_app(
         )
 
     # ---------------------------------------------------------------- pages
-    index_html = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace(
-        ASSET_VERSION_PLACEHOLDER, ASSET_VERSION
+    index_html = (
+        (STATIC_DIR / "index.html")
+        .read_text(encoding="utf-8")
+        .replace(ASSET_VERSION_PLACEHOLDER, ASSET_VERSION)
     )
 
     @app.get("/", include_in_schema=False)
     async def index() -> HTMLResponse:
         return HTMLResponse(index_html, headers={"Cache-Control": "no-cache"})
 
-    privacy_html = (STATIC_DIR / "privacy.html")
+    privacy_html = STATIC_DIR / "privacy.html"
     privacy_page = (
-        privacy_html.read_text(encoding="utf-8").replace(ASSET_VERSION_PLACEHOLDER, ASSET_VERSION)
+        privacy_html.read_text(encoding="utf-8").replace(
+            ASSET_VERSION_PLACEHOLDER, ASSET_VERSION
+        )
         if privacy_html.exists()
         else "<!doctype html><title>Privacy</title><p>Privacy policy coming soon.</p>"
     )
@@ -329,11 +348,15 @@ def create_app(
     @app.get("/apple-touch-icon.png", include_in_schema=False)
     @app.get("/apple-touch-icon-precomposed.png", include_in_schema=False)
     async def apple_touch_icon() -> FileResponse:
-        return FileResponse(STATIC_DIR / "img" / "app" / "apple-touch-icon.png", media_type="image/png")
+        return FileResponse(
+            STATIC_DIR / "img" / "app" / "apple-touch-icon.png", media_type="image/png"
+        )
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> FileResponse:
-        return FileResponse(STATIC_DIR / "img" / "app" / "icon-192.png", media_type="image/png")
+        return FileResponse(
+            STATIC_DIR / "img" / "app" / "icon-192.png", media_type="image/png"
+        )
 
     @app.get("/privacy", include_in_schema=False)
     async def privacy() -> HTMLResponse:
@@ -428,20 +451,26 @@ def create_app(
             chosen: dict[str, Any] | None = None
             if not (body and body.new):
                 if cookie.get("sid") and cookie.get("sid_user") == user.user_id:
-                    candidate = await client.get_session(user.user_id, str(cookie["sid"]))
+                    candidate = await client.get_session(
+                        user.user_id, str(cookie["sid"])
+                    )
                     chosen = candidate if _usable(candidate) else None
                 if chosen is None:
                     sessions = await client.list_sessions(user.user_id)
                     if sessions:
                         latest = max(sessions, key=session_last_update)
-                        candidate = await client.get_session(user.user_id, str(latest["id"]))
+                        candidate = await client.get_session(
+                            user.user_id, str(latest["id"])
+                        )
                         chosen = candidate if _usable(candidate) else None
             return chosen or await client.create_session(user.user_id)
 
         with web_span("open_session", backend=settings.agent_backend):
             try:
                 chosen = await asyncio.wait_for(choose(), SESSION_TIMEOUT_S)
-            except Exception as exc:  # surface a friendly error instead (incl. timeouts)
+            except (
+                Exception
+            ) as exc:  # surface a friendly error instead (incl. timeouts)
                 log_event(
                     "open_session_failed",
                     severity=logging.ERROR,
@@ -685,7 +714,10 @@ def create_app(
                 ) from exc
             except Exception as exc:  # surface a friendly error instead
                 log_event(
-                    "dashboard_failed", severity=logging.ERROR, error=type(exc).__name__, detail=str(exc)[:200]
+                    "dashboard_failed",
+                    severity=logging.ERROR,
+                    error=type(exc).__name__,
+                    detail=str(exc)[:200],
                 )
                 raise HTTPException(
                     status_code=502, detail="Could not load your progress right now."
@@ -695,7 +727,9 @@ def create_app(
     @app.post("/api/feedback", status_code=204)
     async def feedback(request: Request, body: FeedbackRequest, user: UserDep):
         if body.kind == "general" and not (body.comment.strip() or body.tags):
-            raise HTTPException(status_code=422, detail="Add a comment or pick a category.")
+            raise HTTPException(
+                status_code=422, detail="Add a comment or pick a category."
+            )
         if limited := await rate_limited(user, ["feedback"]):
             return limited
         session = read_session(request)
@@ -706,17 +740,27 @@ def create_app(
             "rating": body.rating,
             "tags": body.tags,
             # Free text may contain health details: redact PII before storing.
-            "comment": redact_text(body.comment.strip()) if body.comment.strip() else "",
+            "comment": redact_text(body.comment.strip())
+            if body.comment.strip()
+            else "",
             "event_id": body.event_id,
-            "session_id": session.get("sid") if session.get("sid_user") == user.user_id else None,
+            "session_id": session.get("sid")
+            if session.get("sid_user") == user.user_id
+            else None,
             "page": body.page,
             "lang": normalize_lang(body.lang),
             "app_version": ASSET_VERSION,
         }
         try:
-            await asyncio.wait_for(get_repository().add_feedback(record), DASHBOARD_TIMEOUT_S)
+            await asyncio.wait_for(
+                get_repository().add_feedback(record), DASHBOARD_TIMEOUT_S
+            )
         except Exception as exc:  # the log line below still captures the rating
-            log_event("feedback_store_failed", severity=logging.ERROR, error=type(exc).__name__)
+            log_event(
+                "feedback_store_failed",
+                severity=logging.ERROR,
+                error=type(exc).__name__,
+            )
         log_event(
             "user_feedback",
             kind=body.kind,
@@ -752,16 +796,28 @@ def create_app(
         conversations: list[dict[str, Any]] = []
         memories: list[dict[str, Any]] = []
         try:
-            sessions = await asyncio.wait_for(client.list_sessions(user.user_id), SESSION_TIMEOUT_S)
+            sessions = await asyncio.wait_for(
+                client.list_sessions(user.user_id), SESSION_TIMEOUT_S
+            )
             for meta in sorted(sessions, key=session_last_update, reverse=True)[:50]:
                 session = await client.get_session(user.user_id, str(meta["id"]))
                 if session:
                     history = build_history(session_events(session))
-                    conversations.append({"session_id": meta["id"], "messages": history["messages"]})
-            memories = await asyncio.wait_for(client.list_user_memories(user.user_id), SESSION_TIMEOUT_S)
+                    conversations.append(
+                        {"session_id": meta["id"], "messages": history["messages"]}
+                    )
+            memories = await asyncio.wait_for(
+                client.list_user_memories(user.user_id), SESSION_TIMEOUT_S
+            )
         except Exception as exc:  # export what we have; note the gap
-            log_event("account_export_partial", severity=logging.WARNING, error=type(exc).__name__)
-            data["export_note"] = "Conversations or coach memories could not be exported right now."
+            log_event(
+                "account_export_partial",
+                severity=logging.WARNING,
+                error=type(exc).__name__,
+            )
+            data["export_note"] = (
+                "Conversations or coach memories could not be exported right now."
+            )
         log_event("account_export", user=_pseudonym(user.user_id))
         payload = {
             "exported_at": utc_now().isoformat(),
@@ -772,7 +828,8 @@ def create_app(
         }
         filename = f"fitness-buddy-export-{utc_now().date().isoformat()}.json"
         return JSONResponse(
-            payload, headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            payload,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @app.post("/api/account/delete")
@@ -784,7 +841,9 @@ def create_app(
         result["documents"] = await get_repository().delete_user_data(user.user_id)
         errors: list[str] = []
         try:
-            sessions = await asyncio.wait_for(client.list_sessions(user.user_id), SESSION_TIMEOUT_S)
+            sessions = await asyncio.wait_for(
+                client.list_sessions(user.user_id), SESSION_TIMEOUT_S
+            )
             for meta in sessions:
                 await client.delete_session(user.user_id, str(meta["id"]))
             result["conversations"] = len(sessions)

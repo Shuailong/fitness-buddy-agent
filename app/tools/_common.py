@@ -28,7 +28,9 @@ from fitness_core.progress import user_local_date
 from fitness_core.repository import FitnessRepository, get_repository
 
 
-def tool_error(error_message: str, recovery_hint: str, **details: Any) -> dict[str, Any]:
+def tool_error(
+    error_message: str, recovery_hint: str, **details: Any
+) -> dict[str, Any]:
     """Builds a guided error result for the LLM instead of raising (NFR-T4).
 
     Args:
@@ -39,13 +41,19 @@ def tool_error(error_message: str, recovery_hint: str, **details: Any) -> dict[s
     Returns:
         A dict with ``status='error'``, the message, the hint and details.
     """
-    return {"status": "error", "error_message": error_message, "recovery_hint": recovery_hint, **details}
+    return {
+        "status": "error",
+        "error_message": error_message,
+        "recovery_hint": recovery_hint,
+        **details,
+    }
 
 
 def validation_error(exc: ValidationError, what: str) -> dict[str, Any]:
     """Turns a Pydantic validation error into a guided error with field-level detail."""
     problems = [
-        f"{'.'.join(str(p) for p in err['loc']) or what}: {err['msg']}" for err in exc.errors()[:8]
+        f"{'.'.join(str(p) for p in err['loc']) or what}: {err['msg']}"
+        for err in exc.errors()[:8]
     ]
     return tool_error(
         f"Invalid {what}: " + "; ".join(problems),
@@ -121,7 +129,12 @@ def confirmation_gate(
     if decision is None:
         tool_context.request_confirmation(
             hint=summary,
-            payload={"kind": action, "title": title, "summary": summary, "details": details},
+            payload={
+                "kind": action,
+                "title": title,
+                "summary": summary,
+                "details": details,
+            },
         )
         tool_context.actions.skip_summarization = True
         return {

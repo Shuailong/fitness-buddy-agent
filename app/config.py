@@ -48,13 +48,27 @@ RETRY_OPTIONS = types.HttpRetryOptions(
 class ModelRouting:
     """Model ID per agent role (strategic model routing)."""
 
-    coach: str = field(default_factory=lambda: os.getenv("COACH_MODEL", "gemini-3.8-flash"))
-    nutrition: str = field(default_factory=lambda: os.getenv("NUTRITION_MODEL", "gemini-3.8-flash"))
-    planner: str = field(default_factory=lambda: os.getenv("PLANNER_MODEL", "gemini-3.1-pro-preview"))
-    reviewer: str = field(default_factory=lambda: os.getenv("REVIEWER_MODEL", "gemini-3.1-pro-preview"))
-    critic: str = field(default_factory=lambda: os.getenv("CRITIC_MODEL", "gemini-3.5-flash-lite"))
-    safety_judge: str = field(default_factory=lambda: os.getenv("SAFETY_JUDGE_MODEL", "gemini-3.5-flash-lite"))
-    summarizer: str = field(default_factory=lambda: os.getenv("SUMMARIZER_MODEL", "gemini-3.5-flash-lite"))
+    coach: str = field(
+        default_factory=lambda: os.getenv("COACH_MODEL", "gemini-3.8-flash")
+    )
+    nutrition: str = field(
+        default_factory=lambda: os.getenv("NUTRITION_MODEL", "gemini-3.8-flash")
+    )
+    planner: str = field(
+        default_factory=lambda: os.getenv("PLANNER_MODEL", "gemini-3.1-pro-preview")
+    )
+    reviewer: str = field(
+        default_factory=lambda: os.getenv("REVIEWER_MODEL", "gemini-3.1-pro-preview")
+    )
+    critic: str = field(
+        default_factory=lambda: os.getenv("CRITIC_MODEL", "gemini-3.5-flash-lite")
+    )
+    safety_judge: str = field(
+        default_factory=lambda: os.getenv("SAFETY_JUDGE_MODEL", "gemini-3.5-flash-lite")
+    )
+    summarizer: str = field(
+        default_factory=lambda: os.getenv("SUMMARIZER_MODEL", "gemini-3.5-flash-lite")
+    )
 
 
 MODELS = ModelRouting()
@@ -72,7 +86,9 @@ class ThinkingRouting:
     """
 
     coach: str = field(default_factory=lambda: os.getenv("COACH_THINKING", "low"))
-    planner: str = field(default_factory=lambda: os.getenv("PLANNER_THINKING", "medium"))
+    planner: str = field(
+        default_factory=lambda: os.getenv("PLANNER_THINKING", "medium")
+    )
 
 
 THINKING = ThinkingRouting()
@@ -114,7 +130,11 @@ def gemini(model_id: str) -> Gemini:
 
 def _flag(name: str, default: bool) -> bool:
     value = os.getenv(name)
-    return default if value is None else value.strip().lower() in {"1", "true", "yes", "on"}
+    return (
+        default
+        if value is None
+        else value.strip().lower() in {"1", "true", "yes", "on"}
+    )
 
 
 @dataclass(frozen=True)
@@ -122,22 +142,42 @@ class Settings:
     """Feature switches and service configuration read from the environment."""
 
     # Model Armor is regional; it needs its own location (not the Gemini 'global').
-    model_armor_enabled: bool = field(default_factory=lambda: _flag("MODEL_ARMOR_ENABLED", False))
-    model_armor_location: str = field(default_factory=lambda: os.getenv("MODEL_ARMOR_LOCATION", "us-east1"))
-    model_armor_template_id: str = field(default_factory=lambda: os.getenv("MODEL_ARMOR_TEMPLATE_ID", "fitness-buddy-guard"))
-    health_judge_enabled: bool = field(default_factory=lambda: _flag("HEALTH_JUDGE_ENABLED", True))
+    model_armor_enabled: bool = field(
+        default_factory=lambda: _flag("MODEL_ARMOR_ENABLED", False)
+    )
+    model_armor_location: str = field(
+        default_factory=lambda: os.getenv("MODEL_ARMOR_LOCATION", "us-east1")
+    )
+    model_armor_template_id: str = field(
+        default_factory=lambda: os.getenv(
+            "MODEL_ARMOR_TEMPLATE_ID", "fitness-buddy-guard"
+        )
+    )
+    health_judge_enabled: bool = field(
+        default_factory=lambda: _flag("HEALTH_JUDGE_ENABLED", True)
+    )
     # Cloud DLP (Sensitive Data Protection) for PII redaction; regex fallback otherwise.
     dlp_enabled: bool = field(default_factory=lambda: _flag("DLP_ENABLED", False))
-    dlp_location: str = field(default_factory=lambda: os.getenv("DLP_LOCATION", "global"))
+    dlp_location: str = field(
+        default_factory=lambda: os.getenv("DLP_LOCATION", "global")
+    )
     # Explicit project ID for DLP / Model Armor resource paths. Agent Runtime
     # injects its own GOOGLE_CLOUD_PROJECT value, so allow an override.
     project_id: str = field(
-        default_factory=lambda: os.getenv("FITNESS_GCP_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT", "")
+        default_factory=lambda: (
+            os.getenv("FITNESS_GCP_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT", "")
+        )
     )
     # Context management.
-    compaction_token_threshold: int = field(default_factory=lambda: int(os.getenv("COMPACTION_TOKEN_THRESHOLD", "48000")))
-    compaction_retention_events: int = field(default_factory=lambda: int(os.getenv("COMPACTION_RETENTION_EVENTS", "12")))
-    planner_max_critique_rounds: int = field(default_factory=lambda: int(os.getenv("PLANNER_MAX_CRITIQUE_ROUNDS", "2")))
+    compaction_token_threshold: int = field(
+        default_factory=lambda: int(os.getenv("COMPACTION_TOKEN_THRESHOLD", "48000"))
+    )
+    compaction_retention_events: int = field(
+        default_factory=lambda: int(os.getenv("COMPACTION_RETENTION_EVENTS", "12"))
+    )
+    planner_max_critique_rounds: int = field(
+        default_factory=lambda: int(os.getenv("PLANNER_MAX_CRITIQUE_ROUNDS", "2"))
+    )
 
 
 SETTINGS = Settings()
