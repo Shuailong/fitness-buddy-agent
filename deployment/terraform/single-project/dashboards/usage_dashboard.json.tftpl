@@ -1,0 +1,694 @@
+{
+  "displayName": "Fitness Buddy - Usage & Reliability",
+  "mosaicLayout": {
+    "columns": 48,
+    "tiles": [
+      {
+        "width": 48,
+        "height": 4,
+        "widget": {
+          "title": "Fitness Buddy usage",
+          "text": {
+            "content": "Usage, quality and reliability of the Fitness Buddy web app and agent. Per-user analytics (DAU, retention, funnels) are in BigQuery: see docs/OPERATIONS.md.",
+            "format": "MARKDOWN",
+            "style": {}
+          }
+        }
+      },
+      {
+        "width": 12,
+        "height": 8,
+        "widget": {
+          "title": "Chat turns (last 24 h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"${metric_prefix}/chat_turns\" AND resource.type=\"cloud_run_revision\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_SUM",
+                  "crossSeriesReducer": "REDUCE_SUM"
+                }
+              }
+            }
+          }
+        },
+        "yPos": 4
+      },
+      {
+        "width": 12,
+        "height": 8,
+        "widget": {
+          "title": "Successful sign-ins (last 24 h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"${metric_prefix}/sign_ins\" AND resource.type=\"cloud_run_revision\" AND metric.label.outcome=\"allowed\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_SUM",
+                  "crossSeriesReducer": "REDUCE_SUM"
+                }
+              }
+            }
+          }
+        },
+        "xPos": 12,
+        "yPos": 4
+      },
+      {
+        "width": 12,
+        "height": 8,
+        "widget": {
+          "title": "Agent errors (last 24 h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"${metric_prefix}/agent_errors\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_SUM",
+                  "crossSeriesReducer": "REDUCE_SUM"
+                }
+              }
+            }
+          }
+        },
+        "xPos": 24,
+        "yPos": 4
+      },
+      {
+        "width": 12,
+        "height": 8,
+        "widget": {
+          "title": "Gemini rejections (last 24 h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"${metric_prefix}/gemini_rejections\"",
+                "aggregation": {
+                  "alignmentPeriod": "86400s",
+                  "perSeriesAligner": "ALIGN_SUM",
+                  "crossSeriesReducer": "REDUCE_SUM"
+                }
+              }
+            }
+          }
+        },
+        "xPos": 36,
+        "yPos": 4
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Chat turns per day by intent",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/chat_turns\" AND resource.type=\"cloud_run_revision\"",
+                    "aggregation": {
+                      "alignmentPeriod": "86400s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "metric.label.intent"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "86400s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "turns/day",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "yPos": 12
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Sign-ins per day by outcome (DAU proxy)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/sign_ins\" AND resource.type=\"cloud_run_revision\"",
+                    "aggregation": {
+                      "alignmentPeriod": "86400s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "metric.label.outcome"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "86400s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "sign-ins/day",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "xPos": 24,
+        "yPos": 12
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Chat turn outcomes (hourly)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/chat_turns\" AND resource.type=\"cloud_run_revision\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "metric.label.outcome"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "3600s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "turns/hour",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "yPos": 28
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Chat turn latency p50 / p95 by intent",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/chat_turn_latency\" AND resource.type=\"cloud_run_revision\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_DELTA",
+                      "crossSeriesReducer": "REDUCE_PERCENTILE_50",
+                      "groupByFields": [
+                        "metric.label.intent"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "minAlignmentPeriod": "3600s",
+                "targetAxis": "Y1",
+                "legendTemplate": "p50 $${metric.labels.intent}"
+              },
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/chat_turn_latency\" AND resource.type=\"cloud_run_revision\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_DELTA",
+                      "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+                      "groupByFields": [
+                        "metric.label.intent"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "minAlignmentPeriod": "3600s",
+                "targetAxis": "Y1",
+                "legendTemplate": "p95 $${metric.labels.intent}"
+              }
+            ],
+            "yAxis": {
+              "label": "ms",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "xPos": 24,
+        "yPos": 28
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Feedback per day: up vs down",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/user_feedback\" AND resource.type=\"cloud_run_revision\"",
+                    "aggregation": {
+                      "alignmentPeriod": "86400s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "metric.label.rating"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "86400s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "feedback/day",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "yPos": 44
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Onboarding funnel per day",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/ui_events\" AND resource.type=\"cloud_run_revision\" AND metric.label.name=one_of(\"onboarding_start\",\"onboarding_step\",\"onboarding_complete\")",
+                    "aggregation": {
+                      "alignmentPeriod": "86400s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "metric.label.name"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "86400s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "events/day",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "xPos": 24,
+        "yPos": 44
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "UI events by name (tab views, quick actions, ...)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/ui_events\" AND resource.type=\"cloud_run_revision\"",
+                    "aggregation": {
+                      "alignmentPeriod": "86400s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "metric.label.name"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "86400s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "events/day",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "yPos": 60
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Rate-limited requests by scope",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/rate_limited\" AND resource.type=\"cloud_run_revision\"",
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "metric.label.scope"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "3600s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "requests/hour",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "xPos": 24,
+        "yPos": 60
+      },
+      {
+        "width": 48,
+        "height": 3,
+        "widget": {
+          "title": "Reliability",
+          "text": {
+            "content": "Alert runbooks: docs/OPERATIONS.md (Alert runbooks).",
+            "format": "MARKDOWN",
+            "style": {}
+          }
+        },
+        "yPos": 76
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Web 5xx responses (Cloud Run)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/request_count\" AND resource.type=\"cloud_run_revision\" AND resource.label.service_name=\"${web_service_name}\" AND metric.label.response_code_class=\"5xx\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "metric.label.response_code"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "300s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "requests/5 min",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "yPos": 79
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Web error logs by event",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/web_errors\" AND resource.type=\"cloud_run_revision\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "metric.label.event"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "300s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "entries/5 min",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "xPos": 24,
+        "yPos": 79
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Agent errors",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/agent_errors\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM"
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "300s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "entries/5 min",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "yPos": 95
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Gemini rejections (403 / 429 / policy)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"${metric_prefix}/gemini_rejections\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM"
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "300s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "entries/5 min",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "xPos": 24,
+        "yPos": 95
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Cloud Run instances",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/container/instance_count\" AND resource.type=\"cloud_run_revision\" AND resource.label.service_name=\"${web_service_name}\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MAX",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "metric.label.state"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "STACKED_AREA",
+                "minAlignmentPeriod": "60s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "instances",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "yPos": 111
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Agent Runtime requests by response class",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"aiplatform.googleapis.com/reasoning_engine/request_count\" AND resource.type=\"aiplatform.googleapis.com/ReasoningEngine\" AND resource.label.reasoning_engine_id=\"${agent_engine_id}\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "metric.label.response_code_class"
+                      ]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "300s",
+                "targetAxis": "Y1"
+              }
+            ],
+            "yAxis": {
+              "label": "requests/5 min",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "xPos": 24,
+        "yPos": 111
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Agent Runtime request latency p50 / p95",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"aiplatform.googleapis.com/reasoning_engine/request_latencies\" AND resource.type=\"aiplatform.googleapis.com/ReasoningEngine\" AND resource.label.reasoning_engine_id=\"${agent_engine_id}\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_DELTA",
+                      "crossSeriesReducer": "REDUCE_PERCENTILE_50"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "minAlignmentPeriod": "300s",
+                "targetAxis": "Y1",
+                "legendTemplate": "p50"
+              },
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"aiplatform.googleapis.com/reasoning_engine/request_latencies\" AND resource.type=\"aiplatform.googleapis.com/ReasoningEngine\" AND resource.label.reasoning_engine_id=\"${agent_engine_id}\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_DELTA",
+                      "crossSeriesReducer": "REDUCE_PERCENTILE_95"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "minAlignmentPeriod": "300s",
+                "targetAxis": "Y1",
+                "legendTemplate": "p95"
+              }
+            ],
+            "yAxis": {
+              "label": "ms",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "yPos": 127
+      },
+      {
+        "width": 24,
+        "height": 16,
+        "widget": {
+          "title": "Web request latency p95 (Cloud Run)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/request_latencies\" AND resource.type=\"cloud_run_revision\" AND resource.label.service_name=\"${web_service_name}\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_DELTA",
+                      "crossSeriesReducer": "REDUCE_PERCENTILE_95"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "minAlignmentPeriod": "300s",
+                "targetAxis": "Y1",
+                "legendTemplate": "p95"
+              }
+            ],
+            "yAxis": {
+              "label": "ms",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "xPos": 24,
+        "yPos": 127
+      }
+    ]
+  }
+}

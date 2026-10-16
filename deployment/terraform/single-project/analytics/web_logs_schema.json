@@ -1,0 +1,41 @@
+[
+  { "name": "timestamp",        "type": "TIMESTAMP", "mode": "NULLABLE" },
+  { "name": "receiveTimestamp", "type": "TIMESTAMP", "mode": "NULLABLE" },
+  { "name": "logName",          "type": "STRING",    "mode": "NULLABLE" },
+  { "name": "severity",         "type": "STRING",    "mode": "NULLABLE" },
+  { "name": "insertId",         "type": "STRING",    "mode": "NULLABLE" },
+  { "name": "trace",            "type": "STRING",    "mode": "NULLABLE" },
+  {
+    "name": "resource", "type": "RECORD", "mode": "NULLABLE",
+    "fields": [
+      { "name": "type", "type": "STRING", "mode": "NULLABLE" },
+      {
+        "name": "labels", "type": "RECORD", "mode": "NULLABLE",
+        "fields": [
+          { "name": "service_name",  "type": "STRING", "mode": "NULLABLE" },
+          { "name": "revision_name", "type": "STRING", "mode": "NULLABLE" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "jsonPayload", "type": "RECORD", "mode": "NULLABLE",
+    "fields": [
+      { "name": "event",       "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "message",     "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "user",        "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "session_id",  "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "intent",      "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "outcome",     "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "latency_ms",  "type": "FLOAT",   "mode": "NULLABLE" },
+      { "name": "error",       "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "kind",        "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "rating",      "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "tags",        "type": "STRING",  "mode": "REPEATED" },
+      { "name": "has_comment", "type": "BOOLEAN", "mode": "NULLABLE" },
+      { "name": "lang",        "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "name",        "type": "STRING",  "mode": "NULLABLE" },
+      { "name": "scope",       "type": "STRING",  "mode": "NULLABLE" }
+    ]
+  }
+]

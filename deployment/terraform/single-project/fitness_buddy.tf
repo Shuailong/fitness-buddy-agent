@@ -56,6 +56,8 @@ locals {
     "artifactregistry.googleapis.com",
     "iamcredentials.googleapis.com",
     "sts.googleapis.com",
+    "monitoring.googleapis.com",     # alerting, uptime checks, dashboards
+    "billingbudgets.googleapis.com", # budget alerts (docs/OPERATIONS.md)
   ]
   web_sa_roles = [
     "roles/datastore.user",         # read dashboard data
@@ -94,7 +96,12 @@ resource "google_firestore_database" "default" {
   location_id     = var.region
   type            = "FIRESTORE_NATIVE"
   deletion_policy = "ABANDON"
-  depends_on      = [google_project_service.app_services]
+  # Data safety (in-place updates): 7-day point-in-time recovery and protection
+  # against accidental database deletion. Daily backups and the TTL policy are
+  # in operations.tf; restore steps are in docs/OPERATIONS.md.
+  point_in_time_recovery_enablement = "POINT_IN_TIME_RECOVERY_ENABLED"
+  delete_protection_state           = "DELETE_PROTECTION_ENABLED"
+  depends_on                        = [google_project_service.app_services]
 }
 
 # ---------------------------------------------------------------------------
