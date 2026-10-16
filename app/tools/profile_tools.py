@@ -116,6 +116,32 @@ async def save_fitness_profile(profile: FitnessProfileInput, tool_context: ToolC
     except ValidationError as exc:
         return validation_error(exc, "profile")
 
+    # Changing the calorie target of an existing profile is a high-stakes write
+    # (NFR-O4), even when it is a side effect of a profile edit such as fewer
+    # training days. First-time onboarding is not gated.
+    old_targets = existing.targets if existing else None
+    if old_targets and old_targets.daily_calories_kcal != targets.daily_calories_kcal:
+        stop = confirmation_gate(
+            tool_context,
+            action="update_calorie_target",
+            title="Update your profile and daily calorie target?",
+            summary=(
+                f"Daily target {old_targets.daily_calories_kcal} → "
+                f"{targets.daily_calories_kcal} kcal because your profile changed "
+                f"(goal {profile.goal}, {profile.training_days_per_week} training days/week)."
+            ),
+            details={
+                "current_kcal": old_targets.daily_calories_kcal,
+                "new_kcal": targets.daily_calories_kcal,
+                "protein_g": targets.protein_g,
+                "carbs_g": targets.carbs_g,
+                "fat_g": targets.fat_g,
+                "clamp_reasons": targets.clamp_reasons,
+            },
+        )
+        if stop is not None:
+            return stop
+
     with domain_span("firestore.save_profile"):
         await repository().save_profile(saved)
     minor_note = (
