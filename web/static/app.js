@@ -11,10 +11,14 @@ import { t, getLang, setLang, detectLang, applyStatic } from "./js/i18n.js";
 import { settingsMenu, langSwitch, themeToggle, refreshThemeToggles } from "./js/settings.js";
 import { THEME_EVENT } from "./js/theme.js";
 import { initLanding, localizeLandingImages } from "./js/landing.js";
+import { track, enableTelemetry } from "./js/telemetry.js";
+import { openFeedbackDialog } from "./js/feedback.js";
+import { exportData, openDeleteDialog } from "./js/account.js";
 
 const ROUTES = ["today", "coach", "progress", "plan"];
 const desktop = window.matchMedia("(min-width: 1024px)");
 const MENUS = [["avatar-btn", "user-menu"], ["rail-avatar-btn", "rail-menu"]];
+let lastTab = null;
 
 /** The hidden "opened the app" message in the current language. */
 function greetingText() {
@@ -47,6 +51,8 @@ function applyRoute() {
   const view = route === "coach" && desktop.matches ? "today" : route;
   $("app-view").dataset.route = route;
   for (const v of document.querySelectorAll(".view")) v.hidden = v.dataset.view !== view;
+  const tab = desktop.matches ? view : route;
+  if (tab !== lastTab) { lastTab = tab; track("tab_view", { tab }); }
   for (const link of document.querySelectorAll(".tab, .rail-link")) {
     const active = link.dataset.route === (desktop.matches ? view : route);
     link.classList.toggle("active", active);
@@ -99,6 +105,13 @@ function currentView() {
   return route === "coach" && desktop.matches ? "today" : route;
 }
 
+/** Where feedback was sent from: today | coach | progress | plan | onboarding | landing. */
+function currentPage() {
+  if (state.onboarding) return "onboarding";
+  if (!$("landing-view").hidden) return "landing";
+  return currentView();
+}
+
 async function changeRange(range) {
   state.range = range;
   try { await loadDashboard(range); } catch (_) { /* error view below */ }
@@ -140,13 +153,13 @@ function setBusy(on) {
   if (on) tab.querySelector(".unread").hidden = true;
 }
 
-function showToast(message, { onClick = null, timeout = 8000 } = {}) {
+function showToast(message, { onClick = null, timeout = 8000, iconName = "check-circle" } = {}) {
   const region = $("toast-region");
   region.replaceChildren();
   const close = () => { toast.classList.add("leaving"); setTimeout(() => toast.remove(), 200); };
   const toast = el("div", { class: "toast" }, [
     el("button", { type: "button", class: "toast-main", onclick: () => { close(); if (onClick) onClick(); } }, [
-      icon("check-circle"), el("span", { text: message }), onClick ? el("span", { class: "toast-action", text: t("toast.view") }) : null,
+      icon(iconName), el("span", { text: message }), onClick ? el("span", { class: "toast-action", text: t("toast.view") }) : null,
     ]),
     el("button", { type: "button", class: "toast-close", "aria-label": t("toast.dismiss"), onclick: close }, [icon("close")]),
   ]);
@@ -175,6 +188,7 @@ function markUnread() {
 /** Switches the UI language and re-renders without a reload (chat text stays as-is). */
 function setLanguage(lang) {
   setLang(lang);
+  track("lang_change", { lang });
   applyStatic();
   renderMenus();
   refreshThemeToggles();
@@ -192,7 +206,14 @@ function renderLandingLang() {
 
 // ------------------------------------------------------------- menus
 function renderMenus() {
-  const options = { email: (state.me && state.me.email) || "", showSignOut: !(state.config && state.config.dev_auth_bypass), onSignOut: signOut };
+  const options = {
+    email: (state.me && state.me.email) || "",
+    showSignOut: !(state.config && state.config.dev_auth_bypass),
+    onSignOut: signOut,
+    onFeedback: () => { closeMenus(); openFeedbackDialog({ page: currentPage() }); },
+    onExport: () => { closeMenus(); runExport(); },
+    onDelete: () => { closeMenus(); openDeleteDialog({ onExport: runExport, onDeleted: afterAccountDeleted }); },
+  };
   for (const [, menuId] of MENUS) $(menuId).replaceChildren(...settingsMenu(options).filter(Boolean));
 }
 
@@ -226,17 +247,20 @@ function bindMenus() {
 // ------------------------------------------------------------- onboarding
 function showOnboarding() {
   state.onboarding = true;
+  track("onboarding_start");
   $("app-view").hidden = true;
   $("landing-view").hidden = true;
   $("onboarding-view").hidden = false;
   window.scrollTo(0, 0);
   startOnboarding({
     onFinish: async (answers) => {
+      track("onboarding_complete");
       leaveOnboarding();
       navigate("coach");
       await sendChat(buildOnboardingMessage(answers, getLang()));
     },
     onSkip: async () => {
+      track("onboarding_skip");
       leaveOnboarding();
       navigate("coach");
       if (state.sessionReady) await state.sessionReady;
@@ -276,6 +300,8 @@ function renderGisButton() {
 }
 
 function showSignIn() {
+  enableTelemetry(false);
+  lastTab = null;
   $("app-view").hidden = true;
   $("onboarding-view").hidden = true;
   $("landing-view").hidden = false;
@@ -317,6 +343,27 @@ async function signOut() {
   showSignIn();
 }
 
+/** Menu "Export my data": downloads the JSON export. */
+async function runExport() {
+  try {
+    await exportData();
+    showToast(t("export.done"), { timeout: 5000 });
+  } catch (err) {
+    showToast(t("export.error", { message: err.message }), { iconName: "warning" });
+  }
+}
+
+/** The server deleted the data and cleared the session: back to the landing page. */
+function afterAccountDeleted() {
+  if (window.google && window.google.accounts) window.google.accounts.id.disableAutoSelect();
+  state.me = null;
+  state.dashboard = null;
+  $("messages").replaceChildren();
+  showSignIn();
+  window.scrollTo(0, 0);
+  showToast(t("del.done"));
+}
+
 function renderAvatar() {
   const me = state.me || {};
   for (const node of document.querySelectorAll(".avatar")) {
@@ -334,6 +381,8 @@ async function startApp() {
     const me = await fetch("/api/me", { credentials: "same-origin" });
     state.me = me.ok ? await me.json() : null;
   } catch (_) { state.me = null; }
+  enableTelemetry(true);
+  track("app_open");
   renderAvatar();
 
   // Open the conversation and load the dashboard in parallel.
@@ -383,6 +432,7 @@ async function boot() {
     if (!$("landing-view").hidden) renderGisButton();
   });
   desktop.addEventListener("change", applyRoute);
+  $("feedback-fab").addEventListener("click", () => openFeedbackDialog({ page: currentPage() }));
   $("new-chat-btn").addEventListener("click", async () => {
     if (state.streaming) return;
     state.sessionReady = openSession({ fresh: true }).catch((err) => { addError(err.message); return null; });

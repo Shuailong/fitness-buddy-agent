@@ -48,6 +48,7 @@ from fitness_core.progress import user_local_date
 from fitness_core.trends import weight_trend
 from web.config import GREETING_TEXT, GREETING_TEXTS, WebSettings, normalize_lang
 from web.dashboard import logging_streak
+from web.ratelimit import Limit, MemoryCounterStore, RateLimiter
 from web.events import build_history, simplify_event
 from web.main import create_app
 
@@ -225,6 +226,17 @@ class FakeAgentClient:
             yield event
         session["lastUpdateTime"] = time.time()
 
+    async def delete_session(self, user_id: str, session_id: str) -> None:
+        self.sessions.get(user_id, {}).pop(session_id, None)
+
+    memories: dict[str, list[dict[str, Any]]] = {}
+
+    async def list_user_memories(self, user_id: str) -> list[dict[str, Any]]:
+        return list(self.memories.get(user_id, []))
+
+    async def delete_user_memories(self, user_id: str) -> int:
+        return len(self.memories.pop(user_id, []))
+
 
 def _settings(**overrides: Any) -> WebSettings:
     base = {
@@ -242,7 +254,12 @@ def _client(
     settings: WebSettings | None = None, agent: FakeAgentClient | None = None
 ) -> tuple[TestClient, FakeAgentClient]:
     agent = agent or FakeAgentClient()
-    return TestClient(create_app(settings or _settings(), agent_client=agent)), agent
+    app = create_app(
+        settings or _settings(),
+        agent_client=agent,
+        rate_limiter=RateLimiter(MemoryCounterStore()),
+    )
+    return TestClient(app), agent
 
 
 def _dev_client(
@@ -414,6 +431,7 @@ def test_chat_streams_simplified_events() -> None:
         "type": "text",
         "author": "workout_planner",
         "text": "Here is your **3-day** plan.",
+        "event_id": None,
     }
     assert events[3] == {
         "type": "confirmation",
@@ -422,6 +440,7 @@ def test_chat_streams_simplified_events() -> None:
         "title": "Replace your current plan?",
         "summary": "3 sessions, dumbbells only, max 45 min.",
         "details": {"sessions": 3, "days": ["monday", "wednesday", "friday"]},
+        "event_id": None,
     }
     assert not any(
         "Let me think" in json.dumps(e) for e in events
@@ -498,7 +517,7 @@ def test_simplify_event_accepts_snake_case_and_errors() -> None:
     }
     assert simplify_event(event) == [
         {"type": "activity", "label": "Logging your workout..."},
-        {"type": "text", "author": "fitness_coach", "text": "Logged!"},
+        {"type": "text", "author": "fitness_coach", "text": "Logged!", "event_id": None},
     ]
     assert (
         simplify_event(
@@ -643,7 +662,12 @@ def test_history_and_confirm_endpoints() -> None:
     ]
     resp = client.post("/api/confirm", json={"call_id": CONFIRM_ID, "confirmed": True})
     assert _parse_sse(resp.text) == [
-        {"type": "text", "author": "workout_planner", "text": "Saved your plan."},
+        {
+            "type": "text",
+            "author": "workout_planner",
+            "text": "Saved your plan.",
+            "event_id": None,
+        },
         {"type": "done"},
     ]
     assert agent.messages[-1] == {
@@ -921,3 +945,132 @@ def test_static_index_served_with_security_headers() -> None:
     assert re.search(r'/static/app\.js\?v=[0-9a-f]{12}"', resp.text)
     assert resp.headers["cache-control"] == "no-cache"
     assert client.get("/static/styles.css").headers["cache-control"] == "no-cache"
+
+
+# ------------------------------------------------------------ beta operations
+def test_rate_limit_returns_429_with_retry_after() -> None:
+    agent = FakeAgentClient()
+    limiter = RateLimiter(
+        MemoryCounterStore(),
+        {
+            "messages_per_minute": Limit("messages_per_minute", 2, 60),
+            "messages_per_day": Limit("messages_per_day", 100, 86400),
+            "photos_per_day": Limit("photos_per_day", 1, 86400),
+            "feedback": Limit("feedback", 30, 3600),
+        },
+    )
+    client = TestClient(
+        create_app(
+            _settings(dev_auth_bypass_requested=True), agent_client=agent, rate_limiter=limiter
+        )
+    )
+    client.post("/api/session")
+    # The hidden greeting never counts against the limits.
+    assert client.post("/api/chat", data={"text": GREETING_TEXT}).status_code == 200
+    assert client.post("/api/chat", data={"text": "one"}).status_code == 200
+    assert client.post("/api/chat", data={"text": "two"}).status_code == 200
+    resp = client.post("/api/chat", data={"text": "three"})
+    assert resp.status_code == 429
+    body = resp.json()
+    assert body["code"] == "rate_limited" and body["scope"] == "messages_per_minute"
+    assert 1 <= body["retry_after"] <= 61
+    assert resp.headers["Retry-After"] == str(body["retry_after"])
+    assert len(agent.messages) == 3  # the limited message never reached the agent
+
+
+def test_rate_limiter_windows_reset_and_fail_open() -> None:
+    limits = {"messages_per_minute": Limit("messages_per_minute", 1, 60)}
+    limiter = RateLimiter(MemoryCounterStore(), limits)
+    run = asyncio.run
+    assert run(limiter.hit("u", ["messages_per_minute"], now=120.0)).allowed
+    denied = run(limiter.hit("u", ["messages_per_minute"], now=150.0))
+    assert not denied.allowed and denied.retry_after == 31
+    assert run(limiter.hit("u", ["messages_per_minute"], now=181.0)).allowed  # next window
+    assert run(limiter.hit("other", ["messages_per_minute"], now=150.0)).allowed
+
+    class BrokenStore:
+        async def increment(self, key, expire_at):
+            raise RuntimeError("firestore down")
+
+    assert run(RateLimiter(BrokenStore(), limits).hit("u", ["messages_per_minute"])).allowed
+
+
+def test_feedback_is_stored_redacted_and_validated(memory_repo) -> None:
+    client, _ = _dev_client()
+    client.post("/api/session")
+    resp = client.post(
+        "/api/feedback",
+        json={
+            "kind": "message",
+            "rating": "down",
+            "tags": ["wrong_numbers"],
+            "comment": "Calories look off, email me at someone@example.com",
+            "event_id": "evt-1",
+            "page": "coach",
+            "lang": "zh-CN",
+        },
+    )
+    assert resp.status_code == 204
+    [record] = memory_repo.feedback
+    assert record["rating"] == "down" and record["tags"] == ["wrong_numbers"]
+    assert record["event_id"] == "evt-1" and record["lang"] == "zh"
+    assert "someone@example.com" not in record["comment"]
+    assert record["user"] != "dev-user"  # pseudonymous
+    assert record["session_id"]
+    # General feedback needs a comment or a category.
+    assert client.post("/api/feedback", json={"kind": "general"}).status_code == 422
+    assert client.post("/api/feedback", json={"kind": "bogus"}).status_code == 422
+    assert client.post("/api/feedback", json={"kind": "general", "tags": ["idea"]}).status_code == 204
+
+
+def test_telemetry_accepts_known_events_only() -> None:
+    client, _ = _dev_client()
+    assert client.post(
+        "/api/telemetry", json={"name": "tab_view", "props": {"tab": "progress"}}
+    ).status_code == 204
+    assert client.post("/api/telemetry", json={"name": "made_up"}).status_code == 204
+    assert client.post(
+        "/api/telemetry", json={"name": "tab_view", "props": {"nested": {"x": 1}}}
+    ).status_code == 422
+    assert TestClient(create_app(_settings())).post(
+        "/api/telemetry", json={"name": "tab_view"}
+    ).status_code == 401
+
+
+def test_account_export_and_delete(memory_repo) -> None:
+    uid = "dev-user"
+    asyncio.run(memory_repo.add_entry(uid, "meal", _meal(uid, "2026-10-16", 600, 40)))
+    asyncio.run(memory_repo.add_entry("someone-else", "meal", _meal("someone-else", "2026-10-16", 700, 30)))
+    agent = FakeAgentClient()
+    agent.memories = {uid: [{"fact": "Allergic to shrimp."}], "someone-else": [{"fact": "x"}]}
+    client, _ = _dev_client(agent)
+    client.post("/api/session")
+    client.post("/api/chat", data={"text": "hello"})
+
+    export = client.get("/api/account/export")
+    assert export.status_code == 200
+    assert "attachment" in export.headers["content-disposition"]
+    payload = export.json()
+    assert len(payload["data"]["meal_logs"]) == 1
+    assert payload["coach_memories"] == [{"fact": "Allergic to shrimp."}]
+    assert payload["conversations"] and payload["conversations"][0]["messages"]
+
+    assert client.post("/api/account/delete", json={"confirm": "yes"}).status_code == 422
+    resp = client.post("/api/account/delete", json={"confirm": "DELETE"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["deleted"] is True and body["documents"] == 1
+    assert body["conversations"] == 1 and body["memories"] == 1
+    assert "incomplete" not in body
+    # Only this user's data is gone.
+    assert asyncio.run(memory_repo.list_meals(uid)) == []
+    assert len(asyncio.run(memory_repo.list_meals("someone-else"))) == 1
+    assert agent.memories == {"someone-else": [{"fact": "x"}]}
+    assert agent.sessions.get(uid) == {}
+
+
+def test_privacy_page_is_served() -> None:
+    client, _ = _client()
+    resp = client.get("/privacy")
+    assert resp.status_code == 200 and "Privacy" in resp.text
+    assert "__ASSET_VERSION__" not in resp.text

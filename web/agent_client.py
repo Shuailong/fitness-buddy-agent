@@ -53,6 +53,9 @@ class AgentClient(Protocol):
     def stream_query(
         self, user_id: str, session_id: str, message: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]: ...
+    async def delete_session(self, user_id: str, session_id: str) -> None: ...
+    async def delete_user_memories(self, user_id: str) -> int: ...
+    async def list_user_memories(self, user_id: str) -> list[dict[str, Any]]: ...
 
 
 def _to_dict(obj: Any) -> Any:
@@ -131,6 +134,19 @@ class LocalAdkClient:
                         raise AgentError("The coach hit an error. Please try again.")
                     yield event
 
+    async def delete_session(self, user_id: str, session_id: str) -> None:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.delete(f"{self._sessions_url(user_id)}/{session_id}")
+            if resp.status_code not in (200, 204, 404):
+                resp.raise_for_status()
+
+    async def delete_user_memories(self, user_id: str) -> int:
+        # The local ADK server keeps memories in process; nothing durable to delete.
+        return 0
+
+    async def list_user_memories(self, user_id: str) -> list[dict[str, Any]]:
+        return []
+
 
 class AgentRuntimeClient:
     """Talks to an agent deployed on Agent Runtime through the ``vertexai`` SDK."""
@@ -190,6 +206,68 @@ class AgentRuntimeClient:
             user_id=user_id, session_id=session_id, message=message
         ):
             yield _to_dict(event)
+
+    async def delete_session(self, user_id: str, session_id: str) -> None:
+        agent = await self._remote()
+        await agent.async_delete_session(user_id=user_id, session_id=session_id)
+
+    def _memories_api(self) -> tuple[Any, str]:
+        import google.auth
+        from google.auth.transport.requests import AuthorizedSession
+
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        host = f"https://{self._location}-aiplatform.googleapis.com/v1beta1"
+        return AuthorizedSession(credentials), host
+
+    def _iter_user_memories(self, http: Any, host: str, user_id: str) -> list[dict[str, Any]]:
+        """All Memory Bank memories whose scope is exactly this user."""
+        found: list[dict[str, Any]] = []
+        page_token, use_filter = "", True
+        while True:
+            params: dict[str, Any] = {"pageSize": 100}
+            if use_filter:
+                params["filter"] = f'scope.user_id="{user_id}"'
+            if page_token:
+                params["pageToken"] = page_token
+            resp = http.get(f"{host}/{self._resource}/memories", params=params, timeout=30)
+            if resp.status_code == 400 and use_filter:
+                # Filter expression not supported: list everything, check scope below.
+                use_filter, page_token = False, ""
+                continue
+            resp.raise_for_status()
+            body = resp.json()
+            # Never trust the filter alone: check the scope explicitly.
+            found += [
+                m for m in body.get("memories", [])
+                if (m.get("scope") or {}).get("user_id") == user_id
+            ]
+            page_token = body.get("nextPageToken", "")
+            if not page_token:
+                return found
+
+    async def list_user_memories(self, user_id: str) -> list[dict[str, Any]]:
+        def _list() -> list[dict[str, Any]]:
+            http, host = self._memories_api()
+            return [
+                {k: m.get(k) for k in ("fact", "createTime", "updateTime")}
+                for m in self._iter_user_memories(http, host, user_id)
+            ]
+
+        return await asyncio.to_thread(_list)
+
+    async def delete_user_memories(self, user_id: str) -> int:
+        """Deletes every Memory Bank memory scoped to this user (REST API)."""
+
+        def _delete_all() -> int:
+            http, host = self._memories_api()
+            memories = self._iter_user_memories(http, host, user_id)
+            for memory in memories:
+                http.delete(f"{host}/{memory['name']}", timeout=30).raise_for_status()
+            return len(memories)
+
+        return await asyncio.to_thread(_delete_all)
 
 
 def build_agent_client(settings: WebSettings) -> AgentClient:

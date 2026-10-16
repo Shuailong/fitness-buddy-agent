@@ -5,6 +5,7 @@ import { el, icon } from "./util.js";
 import { t, getLang, LANGS } from "./i18n.js";
 import { THEMES, getTheme, setTheme, effectiveTheme, toggleTheme, THEME_EVENT } from "./theme.js";
 import { actions } from "./state.js";
+import { track } from "./telemetry.js";
 
 function segmented(label, options, current, onPick, cls = "") {
   return el("div", { class: `menu-seg ${cls}`.trim(), role: "group", "aria-label": label }, options.map((o) =>
@@ -17,6 +18,7 @@ function segmented(label, options, current, onPick, cls = "") {
 export function themeSwitch() {
   const node = segmented(t("menu.theme"), THEMES.map((v) => ({ value: v, label: t(`theme.${v}`) })), getTheme(), (value) => {
     setTheme(value);
+    track("theme_change", { theme: value });
     for (const b of node.querySelectorAll("button")) {
       const on = b.dataset.value === value;
       b.classList.toggle("active", on);
@@ -38,7 +40,7 @@ function paintThemeToggle(btn) {
 /** Round one-click dark/light toggle; all instances stay in sync via THEME_EVENT. */
 export function themeToggle(extraClass = "") {
   const btn = el("button", { type: "button", class: `icon-btn theme-toggle ${extraClass}`.trim() });
-  btn.addEventListener("click", (e) => { e.stopPropagation(); toggleTheme(); });
+  btn.addEventListener("click", (e) => { e.stopPropagation(); track("theme_change", { theme: toggleTheme() }); });
   paintThemeToggle(btn);
   return btn;
 }
@@ -56,13 +58,24 @@ export function langSwitch() {
 }
 
 /** Content of the account/settings menu. */
-export function settingsMenu({ email = "", showSignOut = true, onSignOut } = {}) {
+export function settingsMenu({ email = "", showSignOut = true, onSignOut, onFeedback = null, onExport = null, onDelete = null } = {}) {
+  const item = (iconName, label, onclick, cls = "") => el("button", { type: "button", class: `menu-item ${cls}`.trim(), onclick }, [icon(iconName), el("span", { text: label })]);
   return [
     email ? el("p", { class: "menu-email", text: email }) : null,
     el("p", { class: "menu-label", text: t("menu.theme") }),
     themeSwitch(),
     el("p", { class: "menu-label", text: t("menu.language") }),
     langSwitch(),
-    showSignOut ? el("button", { type: "button", class: "menu-item", onclick: onSignOut }, [icon("logout"), t("menu.signOut")]) : null,
+    el("div", { class: "menu-group" }, [
+      onFeedback ? item("rate-review", t("fb.menu"), onFeedback) : null,
+      el("a", { class: "menu-item", href: "/privacy", target: "_blank", rel: "noopener" }, [
+        icon("privacy-tip"), el("span", { text: t("menu.privacy") }), icon("open-in-new", { cls: "menu-ext" }),
+      ]),
+      onExport ? item("download", t("menu.export"), onExport) : null,
+    ]),
+    el("div", { class: "menu-group" }, [
+      onDelete ? item("delete-forever", t("menu.delete"), onDelete, "danger") : null,
+      showSignOut ? item("logout", t("menu.signOut"), onSignOut) : null,
+    ]),
   ];
 }

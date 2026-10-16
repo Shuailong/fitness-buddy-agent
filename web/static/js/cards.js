@@ -66,8 +66,16 @@ function decisionFooter(card, { yes, no, noDone, onDecide }) {
     status.className = `decided ${confirmed ? "yes" : "no"}`;
     actionsRow.hidden = true;
   }
-  yesBtn.addEventListener("click", () => onDecide(true, { lock }));
-  noBtn.addEventListener("click", () => onDecide(false, { lock }));
+  function unlock() {
+    yesBtn.disabled = false;
+    noBtn.disabled = false;
+    delete card.dataset.state;
+    status.hidden = true;
+    status.replaceChildren();
+    actionsRow.hidden = false;
+  }
+  yesBtn.addEventListener("click", () => onDecide(true, { lock, unlock }));
+  noBtn.addEventListener("click", () => onDecide(false, { lock, unlock }));
   return [actionsRow, status];
 }
 

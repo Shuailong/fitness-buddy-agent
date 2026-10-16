@@ -67,10 +67,11 @@ jobs:
       id-token: write
     env:
       GOOGLE_GENAI_USE_ENTERPRISE: 'true'
-      # Model calls (agent under test and LLM judges) may run in a dedicated
-      # Gemini project; falls back to the main project when unset.
-      GOOGLE_CLOUD_PROJECT: ${{ vars.GEMINI_PROJECT || vars.GCP_PROJECT_ID }}
-      GEMINI_PROJECT: ${{ vars.GEMINI_PROJECT }}
+      # Evals send intentionally unsafe test prompts (safety cases), so model
+      # calls (agent under test and LLM judges) run in a dedicated eval project,
+      # never in the production Gemini project.
+      GOOGLE_CLOUD_PROJECT: ${{ vars.EVAL_GEMINI_PROJECT || vars.GEMINI_PROJECT || vars.GCP_PROJECT_ID }}
+      GEMINI_PROJECT: ${{ vars.EVAL_GEMINI_PROJECT || vars.GEMINI_PROJECT }}
       GOOGLE_CLOUD_LOCATION: global
       FITNESS_STORAGE_BACKEND: memory
       FITNESS_EVAL_ISOLATION: 'true'
@@ -83,7 +84,7 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
           # The auth action exports GOOGLE_CLOUD_PROJECT; point it at the Gemini
           # project so the LLM judges run there too.
-          project_id: ${{ vars.GEMINI_PROJECT || vars.GCP_PROJECT_ID }}
+          project_id: ${{ vars.EVAL_GEMINI_PROJECT || vars.GEMINI_PROJECT || vars.GCP_PROJECT_ID }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'

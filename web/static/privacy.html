@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0F1215">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="Fitness Buddy privacy policy: what we collect, how it is used, and your choices.">
+  <title>Privacy policy · Fitness Buddy</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230F1215'/%3E%3Cpath d='M18 40l22-22M14 36l14 14M36 14l14 14M12 46l6 6M46 12l6 6' stroke='%23C6F432' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preload" href="/static/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <script src="/static/js/theme-boot.js?v=__ASSET_VERSION__"></script>
+  <link rel="stylesheet" href="/static/styles.css?v=__ASSET_VERSION__">
+  <script type="module" src="/static/js/privacy.js?v=__ASSET_VERSION__"></script>
+</head>
+<body class="priv">
+  <a class="skip-link" href="#priv-main" data-i18n="skip">Skip to content</a>
+
+  <header class="priv-nav">
+    <div class="priv-wrap priv-nav-inner">
+      <a class="lp-logo" href="/">
+        <span class="brand-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-fitness-center"/></svg></span>
+        <span class="brand-name">Fitness Buddy</span>
+      </a>
+      <div class="priv-actions">
+        <span class="theme-slot" id="priv-theme"></span>
+        <div id="priv-lang"></div>
+      </div>
+    </div>
+  </header>
+
+  <main id="priv-main" class="priv-wrap priv-main" tabindex="-1">
+    <a class="link-btn priv-back" href="/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-arrow-back"/></svg><span data-i18n="priv.back">Back to Fitness Buddy</span></a>
+
+    <!-- English -->
+    <article class="priv-doc" data-lang="en" lang="en">
+      <h1>Privacy policy</h1>
+      <p class="priv-updated">Last updated: October 16, 2026</p>
+      <p class="priv-lead">Fitness Buddy is an AI fitness and nutrition coach. This page explains, in plain language, what we collect, why, who processes it, how long we keep it, and how you can export or delete it.</p>
+      <p class="priv-callout"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-info"/></svg><span>Fitness Buddy is an <strong>invite-only preview</strong>. It is not a medical service and does not give medical advice.</span></p>
+
+      <section aria-labelledby="en-collect">
+        <h2 id="en-collect"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-person"/></svg>What we collect</h2>
+        <ul>
+          <li><strong>Google account basics:</strong> your email address, name and profile picture, used to sign you in and show your avatar.</li>
+          <li><strong>Profile and fitness data:</strong> what you tell the coach or enter during setup, such as goal, sex, age, height, weight, training schedule, equipment, injuries or limits, food preferences and allergies, plus the meals, workouts, weigh-ins, plans, targets and weekly reviews that come from using the app.</li>
+          <li><strong>Meal photos:</strong> processed to estimate what is on the plate. The photo itself is <strong>not stored</strong>; only the resulting meal entry (items, portions, calories and macros) is saved.</li>
+          <li><strong>Chat conversations and coach memories:</strong> your messages and the coach's replies, and short notes the coach keeps so it can remember your goals and preferences between sessions.</li>
+          <li><strong>Feedback and basic usage events:</strong> ratings and comments you choose to send, and simple events such as which tab was opened. Usage events never include your messages.</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="en-use">
+        <h2 id="en-use"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-fitness-center"/></svg>How we use it</h2>
+        <p>Your data is used <strong>only to provide the coaching</strong>: answering your questions, estimating meals, building and adjusting plans, tracking progress and writing weekly reviews. Feedback and usage events help us fix problems and improve the product.</p>
+        <ul>
+          <li>No advertising, and no ad tracking.</li>
+          <li>We do not sell or rent your data.</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="en-processors">
+        <h2 id="en-processors"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-cloud"/></svg>Who processes it</h2>
+        <p>Fitness Buddy runs on <strong>Google Cloud</strong>. These services process data on our behalf:</p>
+        <ul>
+          <li><strong>Vertex AI (Gemini):</strong> understands your messages and meal photos and writes the coach's replies.</li>
+          <li><strong>Vertex AI Agent Engine (Agent Runtime):</strong> runs the coach agents, conversation sessions and coach memories.</li>
+          <li><strong>Firestore:</strong> stores your profile, logs, plans, reviews and feedback.</li>
+          <li><strong>Cloud Run:</strong> hosts this web app.</li>
+          <li><strong>Model Armor:</strong> screens inputs and outputs for prompt injection and unsafe content.</li>
+          <li><strong>Cloud Data Loss Prevention (DLP):</strong> detects and redacts personal information.</li>
+        </ul>
+        <p>Sign-in uses Google Identity Services.</p>
+      </section>
+
+      <section aria-labelledby="en-protect">
+        <h2 id="en-protect"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-lock"/></svg>How we protect it</h2>
+        <ul>
+          <li>Personal information such as emails and phone numbers is <strong>redacted</strong> before it is written to logs or coach memories.</li>
+          <li>Each account's data is kept separate, and the app only reads and writes data for the signed-in user.</li>
+          <li>Traffic is encrypted in transit, and Google Cloud encrypts stored data at rest.</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="en-retention">
+        <h2 id="en-retention"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-schedule"/></svg>How long we keep it</h2>
+        <ul>
+          <li><strong>Your account data</strong> (profile, logs, plans, reviews, conversations and coach memories) is kept until you delete your account.</li>
+          <li><strong>Operational logs</strong> are kept for 30 days.</li>
+          <li><strong>Feedback</strong> is kept to improve the product.</li>
+          <li><strong>Meal photos</strong> are not stored.</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="en-rights">
+        <h2 id="en-rights"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-verified-user"/></svg>Your choices and rights</h2>
+        <ul>
+          <li><strong>Export:</strong> open the account menu and choose <strong>Export my data</strong> to download everything as a JSON file.</li>
+          <li><strong>Delete:</strong> choose <strong>Delete my account</strong> in the account menu. This permanently deletes your profile, logs, plans, reviews, coach memories and conversations. Your Google account is not affected.</li>
+          <li><strong>Correct:</strong> ask the coach to fix any entry, or change your details in chat.</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="en-medical">
+        <h2 id="en-medical"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-health-and-safety"/></svg>Not medical advice</h2>
+        <p>Fitness Buddy provides general fitness and nutrition guidance. It is not a doctor and does not diagnose or treat any condition. Talk to a healthcare professional before starting a new program, and seek medical help for pain, injuries or worrying symptoms.</p>
+      </section>
+
+      <section aria-labelledby="en-contact">
+        <h2 id="en-contact"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-forum"/></svg>Contact and changes</h2>
+        <p>Questions or requests? Open an issue on the <a href="https://github.com/Shuailong/fitness-buddy-agent/issues" target="_blank" rel="noopener noreferrer">GitHub repository</a>. Please don't post personal or health details there.</p>
+        <p>If this policy changes, we will update this page and the date above.</p>
+      </section>
+    </article>
+
+    <!-- 中文 -->
+    <article class="priv-doc" data-lang="zh" lang="zh-CN">
+      <h1>隐私政策</h1>
+      <p class="priv-updated">最后更新：2026 年 10 月 16 日</p>
+      <p class="priv-lead">Fitness Buddy 是一款 AI 健身与饮食教练。本页用通俗的语言说明我们收集哪些信息、为什么收集、由谁处理、保存多久，以及你如何导出或删除这些数据。</p>
+      <p class="priv-callout"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-info"/></svg><span>Fitness Buddy 目前是<strong>仅限受邀用户的预览版</strong>。它不是医疗服务，也不提供医疗建议。</span></p>
+
+      <section aria-labelledby="zh-collect">
+        <h2 id="zh-collect"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-person"/></svg>我们收集的信息</h2>
+        <ul>
+          <li><strong>Google 账号基本信息：</strong>邮箱地址、姓名和头像，用于登录和显示你的头像。</li>
+          <li><strong>个人资料和健身数据：</strong>你在设置时填写或告诉教练的信息，例如目标、性别、年龄、身高、体重、训练安排、器械、伤病或限制、饮食偏好和过敏，以及使用过程中产生的饮食、训练、体重记录、训练计划、目标和每周回顾。</li>
+          <li><strong>餐食照片：</strong>仅用于识别和估算食物。照片本身<strong>不会被保存</strong>，只保存识别结果（食物、份量、热量和三大营养素）。</li>
+          <li><strong>聊天记录和教练记忆：</strong>你的消息和教练的回复，以及教练为记住你的目标和偏好而保存的简短笔记。</li>
+          <li><strong>反馈和基础使用事件：</strong>你主动提交的评分和意见，以及打开了哪个页面等简单事件。使用事件不包含你的消息内容。</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="zh-use">
+        <h2 id="zh-use"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-fitness-center"/></svg>我们如何使用</h2>
+        <p>你的数据<strong>只用于提供教练服务</strong>：回答问题、估算餐食、制定和调整计划、跟踪进度以及撰写每周回顾。反馈和使用事件帮助我们修复问题、改进产品。</p>
+        <ul>
+          <li>没有广告，也没有广告追踪。</li>
+          <li>我们不会出售或出租你的数据。</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="zh-processors">
+        <h2 id="zh-processors"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-cloud"/></svg>由谁处理</h2>
+        <p>Fitness Buddy 运行在 <strong>Google Cloud</strong> 上，以下服务代表我们处理数据：</p>
+        <ul>
+          <li><strong>Vertex AI（Gemini）：</strong>理解你的消息和餐食照片，生成教练回复。</li>
+          <li><strong>Vertex AI Agent Engine（Agent Runtime）：</strong>运行教练智能体、对话会话和教练记忆。</li>
+          <li><strong>Firestore：</strong>存储你的个人资料、记录、计划、回顾和反馈。</li>
+          <li><strong>Cloud Run：</strong>托管本网页应用。</li>
+          <li><strong>Model Armor：</strong>检测输入和输出中的提示词注入和不安全内容。</li>
+          <li><strong>Cloud Data Loss Prevention（DLP）：</strong>识别并遮盖个人信息。</li>
+        </ul>
+        <p>登录使用 Google Identity Services。</p>
+      </section>
+
+      <section aria-labelledby="zh-protect">
+        <h2 id="zh-protect"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-lock"/></svg>我们如何保护</h2>
+        <ul>
+          <li>邮箱、电话号码等个人信息在写入日志或教练记忆之前会被<strong>遮盖</strong>。</li>
+          <li>每个账号的数据相互隔离，应用只读写当前登录用户的数据。</li>
+          <li>数据传输全程加密，Google Cloud 对存储的数据进行静态加密。</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="zh-retention">
+        <h2 id="zh-retention"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-schedule"/></svg>保存多久</h2>
+        <ul>
+          <li><strong>账号数据</strong>（个人资料、记录、计划、回顾、聊天记录和教练记忆）会一直保存，直到你删除账号。</li>
+          <li><strong>运行日志</strong>保存 30 天。</li>
+          <li><strong>反馈</strong>会保留，用于改进产品。</li>
+          <li><strong>餐食照片</strong>不会保存。</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="zh-rights">
+        <h2 id="zh-rights"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-verified-user"/></svg>你的选择和权利</h2>
+        <ul>
+          <li><strong>导出：</strong>打开账号菜单，选择<strong>导出我的数据</strong>，即可下载 JSON 格式的全部数据。</li>
+          <li><strong>删除：</strong>在账号菜单中选择<strong>删除我的账号</strong>。这会永久删除你的个人资料、记录、计划、回顾、教练记忆和聊天记录。你的 Google 账号不受影响。</li>
+          <li><strong>更正：</strong>让教练修改任意一条记录，或在聊天中更新你的信息。</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="zh-medical">
+        <h2 id="zh-medical"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-health-and-safety"/></svg>非医疗建议</h2>
+        <p>Fitness Buddy 提供一般性的健身和饮食指导。它不是医生，不会诊断或治疗任何疾病。开始新的训练计划前请咨询专业医疗人员；如有疼痛、受伤或令人担忧的症状，请及时就医。</p>
+      </section>
+
+      <section aria-labelledby="zh-contact">
+        <h2 id="zh-contact"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-forum"/></svg>联系与变更</h2>
+        <p>有问题或请求？请在 <a href="https://github.com/Shuailong/fitness-buddy-agent/issues" target="_blank" rel="noopener noreferrer">GitHub 仓库</a> 提交 issue。请不要在那里公开个人或健康信息。</p>
+        <p>如果本政策有变更，我们会更新本页面和上方的日期。</p>
+      </section>
+    </article>
+  </main>
+
+  <footer class="lp-footer">
+    <div class="priv-wrap lp-footer-inner">
+      <div class="lp-footer-brand">
+        <p data-i18n="lp.footer.note">Invite-only preview. Not medical advice: talk to a healthcare professional before starting a new program.</p>
+      </div>
+      <nav class="lp-footer-links" data-i18n-attr="aria-label:lp.footer.nav" aria-label="Footer">
+        <a href="https://github.com/Shuailong/fitness-buddy-agent" target="_blank" rel="noopener noreferrer"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-code"/></svg>GitHub</a>
+        <a href="/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-fitness-center"/></svg>Fitness Buddy</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

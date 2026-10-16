@@ -250,16 +250,18 @@ def simplify_event(
         call = _function_call(part)
         if call:
             if call.get("name") == CONFIRMATION_CALL:
-                out.append(confirmation_from_call(call))
+                out.append({**confirmation_from_call(call), "event_id": event.get("id")})
             elif label := activity_label(call, lang):
                 out.append({"type": "activity", "label": label})
             continue
         if resp := _function_response(part):
             if card := meal_card_from_response(resp):
-                out.append(card)
+                out.append({**card, "event_id": event.get("id")})
             continue
         if text := _coach_text(event, part):
-            out.append({"type": "text", "author": author, "text": text})
+            out.append(
+                {"type": "text", "author": author, "text": text, "event_id": event.get("id")}
+            )
     return out
 
 
@@ -321,19 +323,22 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
             call = _function_call(p)
             resp = _function_response(p)
             if call and call.get("name") == CONFIRMATION_CALL:
-                card = confirmation_from_call(call)
+                card = {**confirmation_from_call(call), "event_id": event.get("id")}
                 cards[card["call_id"]] = card
                 if card["call_id"] not in answered:
                     pending.append(card)
             elif resp:
                 if meal_card := meal_card_from_response(resp):
-                    messages.append({"role": "card", **meal_card})
+                    messages.append(
+                        {"role": "card", **meal_card, "event_id": event.get("id")}
+                    )
             elif not call and (text := _coach_text(event, p)):
                 messages.append(
                     {
                         "role": "coach",
                         "author": event.get("author") or "coach",
                         "text": text,
+                        "event_id": event.get("id"),
                     }
                 )
     return {"messages": messages, "pending_confirmations": pending}

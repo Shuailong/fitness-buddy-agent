@@ -23,6 +23,7 @@ Run locally::
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -31,7 +32,7 @@ import secrets
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -40,6 +41,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from fitness_core.models import utc_now
 from fitness_core.repository import get_repository
 from web.agent_client import AgentClient, AgentError, build_agent_client
 from web.auth import (
@@ -76,6 +78,7 @@ from web.observability import (
     start_web_span,
     web_span,
 )
+from web.ratelimit import RateLimiter, build_rate_limiter
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -128,6 +131,42 @@ class SessionRequest(BaseModel):
     new: bool = Field(default=False, description="Start a fresh conversation.")
 
 
+TELEMETRY_EVENTS = frozenset(
+    {
+        "app_open", "tab_view", "quick_action", "onboarding_start", "onboarding_step",
+        "onboarding_complete", "onboarding_skip", "suggestion_chip", "theme_change",
+        "lang_change", "card_action", "feedback_open",
+    }
+)
+DASHBOARD_TIMEOUT_S = 15.0
+SESSION_TIMEOUT_S = 30.0
+
+
+class FeedbackRequest(BaseModel):
+    """A thumbs rating on a coach reply or general product feedback."""
+
+    kind: Literal["message", "general"]
+    rating: Literal["up", "down"] | None = None
+    tags: list[Annotated[str, Field(max_length=40)]] = Field(default_factory=list, max_length=6)
+    comment: str = Field(default="", max_length=2000)
+    event_id: str | None = Field(default=None, max_length=200)
+    page: Literal["today", "coach", "progress", "plan", "onboarding", "landing"] | None = None
+    lang: str | None = None
+
+
+class TelemetryRequest(BaseModel):
+    """A product-analytics UI event (no message text or PII)."""
+
+    name: str = Field(max_length=40)
+    props: dict[str, str | int | float | bool] = Field(default_factory=dict, max_length=10)
+
+
+class DeleteAccountRequest(BaseModel):
+    """Explicit confirmation for account deletion."""
+
+    confirm: Literal["DELETE"]
+
+
 class ConfirmRequest(BaseModel):
     """The user's decision on a Confirm / Reject card."""
 
@@ -162,13 +201,16 @@ def _sse(event: dict[str, Any]) -> str:
 
 
 def create_app(
-    settings: WebSettings | None = None, agent_client: AgentClient | None = None
+    settings: WebSettings | None = None,
+    agent_client: AgentClient | None = None,
+    rate_limiter: RateLimiter | None = None,
 ) -> FastAPI:
     """Builds the FastAPI app.
 
     Args:
         settings: Web settings (defaults to the environment).
         agent_client: Agent backend (defaults to the one in ``AGENT_BACKEND``).
+        rate_limiter: Per-user rate limiter (defaults to Firestore-backed).
 
     Returns:
         The configured app.
@@ -200,6 +242,7 @@ def create_app(
     app.state.settings = settings
     app.state.signer = CookieSigner(secret, settings.session_max_age_seconds)
     app.state.agent = agent_client or build_agent_client(settings)
+    app.state.limiter = rate_limiter or build_rate_limiter()
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -222,6 +265,28 @@ def create_app(
             response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
+    async def rate_limited(user: CurrentUser, scopes: list[str]) -> JSONResponse | None:
+        """Returns a 429 response when the user is over a limit, else None."""
+        decision = await app.state.limiter.hit(user.user_id, scopes)
+        if decision.allowed:
+            return None
+        log_event(
+            "rate_limited",
+            severity=logging.WARNING,
+            scope=decision.scope,
+            user=_pseudonym(user.user_id),
+        )
+        return JSONResponse(
+            {
+                "detail": "Too many requests. Please slow down and try again shortly.",
+                "code": "rate_limited",
+                "scope": decision.scope,
+                "retry_after": decision.retry_after,
+            },
+            status_code=429,
+            headers={"Retry-After": str(decision.retry_after)},
+        )
+
     def active_session_id(request: Request, user: CurrentUser) -> str:
         session = read_session(request)
         if session.get("sid") and session.get("sid_user") == user.user_id:
@@ -239,6 +304,17 @@ def create_app(
     @app.get("/", include_in_schema=False)
     async def index() -> HTMLResponse:
         return HTMLResponse(index_html, headers={"Cache-Control": "no-cache"})
+
+    privacy_html = (STATIC_DIR / "privacy.html")
+    privacy_page = (
+        privacy_html.read_text(encoding="utf-8").replace(ASSET_VERSION_PLACEHOLDER, ASSET_VERSION)
+        if privacy_html.exists()
+        else "<!doctype html><title>Privacy</title><p>Privacy policy coming soon.</p>"
+    )
+
+    @app.get("/privacy", include_in_schema=False)
+    async def privacy() -> HTMLResponse:
+        return HTMLResponse(privacy_page, headers={"Cache-Control": "no-cache"})
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
@@ -324,26 +400,25 @@ def create_app(
         the next visit starts fresh and the coach runs its check-ins (FR-8).
         """
         cookie = read_session(request)
-        chosen: dict[str, Any] | None = None
+
+        async def choose() -> dict[str, Any]:
+            chosen: dict[str, Any] | None = None
+            if not (body and body.new):
+                if cookie.get("sid") and cookie.get("sid_user") == user.user_id:
+                    candidate = await client.get_session(user.user_id, str(cookie["sid"]))
+                    chosen = candidate if _usable(candidate) else None
+                if chosen is None:
+                    sessions = await client.list_sessions(user.user_id)
+                    if sessions:
+                        latest = max(sessions, key=session_last_update)
+                        candidate = await client.get_session(user.user_id, str(latest["id"]))
+                        chosen = candidate if _usable(candidate) else None
+            return chosen or await client.create_session(user.user_id)
+
         with web_span("open_session", backend=settings.agent_backend):
             try:
-                if not (body and body.new):
-                    if cookie.get("sid") and cookie.get("sid_user") == user.user_id:
-                        candidate = await client.get_session(
-                            user.user_id, str(cookie["sid"])
-                        )
-                        chosen = candidate if _usable(candidate) else None
-                    if chosen is None:
-                        sessions = await client.list_sessions(user.user_id)
-                        if sessions:
-                            latest = max(sessions, key=session_last_update)
-                            candidate = await client.get_session(
-                                user.user_id, str(latest["id"])
-                            )
-                            chosen = candidate if _usable(candidate) else None
-                if chosen is None:
-                    chosen = await client.create_session(user.user_id)
-            except Exception as exc:  # surface a friendly error instead
+                chosen = await asyncio.wait_for(choose(), SESSION_TIMEOUT_S)
+            except Exception as exc:  # surface a friendly error instead (incl. timeouts)
                 log_event(
                     "open_session_failed",
                     severity=logging.ERROR,
@@ -380,7 +455,14 @@ def create_app(
     ) -> dict[str, Any]:
         session_id = active_session_id(request, user)
         with web_span("history", backend=settings.agent_backend):
-            session = await client.get_session(user.user_id, session_id)
+            try:
+                session = await asyncio.wait_for(
+                    client.get_session(user.user_id, session_id), SESSION_TIMEOUT_S
+                )
+            except TimeoutError as exc:
+                raise HTTPException(
+                    status_code=504, detail="Loading the conversation took too long."
+                ) from exc
         if session is None:
             raise HTTPException(status_code=404, detail="Conversation not found.")
         return {"session_id": session_id, **build_history(session_events(session))}
@@ -510,6 +592,12 @@ def create_app(
             intent = "photo"
         else:
             intent = "message"
+        if intent != "greeting":
+            scopes = ["messages_per_minute", "messages_per_day"]
+            if intent == "photo":
+                scopes.append("photos_per_day")
+            if limited := await rate_limited(user, scopes):
+                return limited
         preview = redact_text(text) + (" [+photo]" if intent == "photo" else "")
         message = {"role": "user", "parts": parts}
         return _sse_response(
@@ -526,6 +614,8 @@ def create_app(
         client: AgentDep,
     ) -> StreamingResponse:
         session_id = active_session_id(request, user)
+        if limited := await rate_limited(user, ["messages_per_minute"]):
+            return limited
         session = await client.get_session(user.user_id, session_id)
         pending = (
             build_history(session_events(session))["pending_confirmations"]
@@ -561,9 +651,15 @@ def create_app(
     async def dashboard(user: UserDep, range: int | None = None) -> dict[str, Any]:
         with web_span("dashboard"):
             try:
-                return await build_dashboard(
-                    get_repository(), user.user_id, range_days=range
+                return await asyncio.wait_for(
+                    build_dashboard(get_repository(), user.user_id, range_days=range),
+                    DASHBOARD_TIMEOUT_S,
                 )
+            except TimeoutError as exc:
+                log_event("dashboard_timeout", severity=logging.ERROR)
+                raise HTTPException(
+                    status_code=504, detail="Loading your progress took too long."
+                ) from exc
             except Exception as exc:  # surface a friendly error instead
                 log_event(
                     "dashboard_failed", severity=logging.ERROR, error=type(exc).__name__
@@ -571,6 +667,124 @@ def create_app(
                 raise HTTPException(
                     status_code=502, detail="Could not load your progress right now."
                 ) from exc
+
+    # ------------------------------------------------------------ feedback & analytics
+    @app.post("/api/feedback", status_code=204)
+    async def feedback(request: Request, body: FeedbackRequest, user: UserDep):
+        if body.kind == "general" and not (body.comment.strip() or body.tags):
+            raise HTTPException(status_code=422, detail="Add a comment or pick a category.")
+        if limited := await rate_limited(user, ["feedback"]):
+            return limited
+        session = read_session(request)
+        record = {
+            "created_at": utc_now().isoformat(),
+            "user": _pseudonym(user.user_id),
+            "kind": body.kind,
+            "rating": body.rating,
+            "tags": body.tags,
+            # Free text may contain health details: redact PII before storing.
+            "comment": redact_text(body.comment.strip()) if body.comment.strip() else "",
+            "event_id": body.event_id,
+            "session_id": session.get("sid") if session.get("sid_user") == user.user_id else None,
+            "page": body.page,
+            "lang": normalize_lang(body.lang),
+            "app_version": ASSET_VERSION,
+        }
+        try:
+            await asyncio.wait_for(get_repository().add_feedback(record), DASHBOARD_TIMEOUT_S)
+        except Exception as exc:  # the log line below still captures the rating
+            log_event("feedback_store_failed", severity=logging.ERROR, error=type(exc).__name__)
+        log_event(
+            "user_feedback",
+            kind=body.kind,
+            rating=body.rating,
+            tags=body.tags,
+            has_comment=bool(body.comment.strip()),
+            page=body.page,
+            lang=record["lang"],
+            event_id=body.event_id,
+            session_id=record["session_id"],
+            user=record["user"],
+        )
+        return None
+
+    @app.post("/api/telemetry", status_code=204)
+    async def telemetry(body: TelemetryRequest, user: UserDep) -> None:
+        """Product analytics for UI interactions; unknown event names are ignored."""
+        if body.name not in TELEMETRY_EVENTS:
+            return None
+        props = {
+            str(k)[:40]: (v[:60] if isinstance(v, str) else v)
+            for k, v in body.props.items()
+            if str(k).isidentifier()
+        }
+        log_event("ui_event", name=body.name, user=_pseudonym(user.user_id), **props)
+        return None
+
+    # ------------------------------------------------------------ account (privacy)
+    @app.get("/api/account/export")
+    async def export_account(user: UserDep, client: AgentDep) -> JSONResponse:
+        """Self-service data export: stored data, conversations and coach memories."""
+        data = await get_repository().export_user_data(user.user_id)
+        conversations: list[dict[str, Any]] = []
+        memories: list[dict[str, Any]] = []
+        try:
+            sessions = await asyncio.wait_for(client.list_sessions(user.user_id), SESSION_TIMEOUT_S)
+            for meta in sorted(sessions, key=session_last_update, reverse=True)[:50]:
+                session = await client.get_session(user.user_id, str(meta["id"]))
+                if session:
+                    history = build_history(session_events(session))
+                    conversations.append({"session_id": meta["id"], "messages": history["messages"]})
+            memories = await asyncio.wait_for(client.list_user_memories(user.user_id), SESSION_TIMEOUT_S)
+        except Exception as exc:  # export what we have; note the gap
+            log_event("account_export_partial", severity=logging.WARNING, error=type(exc).__name__)
+            data["export_note"] = "Conversations or coach memories could not be exported right now."
+        log_event("account_export", user=_pseudonym(user.user_id))
+        payload = {
+            "exported_at": utc_now().isoformat(),
+            "account": {"email": user.email},
+            "data": data,
+            "conversations": conversations,
+            "coach_memories": memories,
+        }
+        filename = f"fitness-buddy-export-{utc_now().date().isoformat()}.json"
+        return JSONResponse(
+            payload, headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+    @app.post("/api/account/delete")
+    async def delete_account(
+        request: Request, body: DeleteAccountRequest, user: UserDep, client: AgentDep
+    ) -> JSONResponse:
+        """Deletes the user's stored data, conversations and coach memories."""
+        result: dict[str, Any] = {"deleted": True}
+        result["documents"] = await get_repository().delete_user_data(user.user_id)
+        errors: list[str] = []
+        try:
+            sessions = await asyncio.wait_for(client.list_sessions(user.user_id), SESSION_TIMEOUT_S)
+            for meta in sessions:
+                await client.delete_session(user.user_id, str(meta["id"]))
+            result["conversations"] = len(sessions)
+        except Exception as exc:
+            errors.append(f"conversations:{type(exc).__name__}")
+        try:
+            result["memories"] = await asyncio.wait_for(
+                client.delete_user_memories(user.user_id), SESSION_TIMEOUT_S
+            )
+        except Exception as exc:
+            errors.append(f"memories:{type(exc).__name__}")
+        log_event(
+            "account_deleted",
+            severity=logging.WARNING if errors else logging.INFO,
+            user=_pseudonym(user.user_id),
+            errors=errors,
+            **{k: v for k, v in result.items() if k != "deleted"},
+        )
+        if errors:
+            result["incomplete"] = errors
+        response = JSONResponse(result)
+        clear_session(request, response)
+        return response
 
     return app
 

@@ -35,7 +35,7 @@ from __future__ import annotations
 import functools
 import os
 import uuid
-from typing import Literal, Protocol, TypeVar
+from typing import Any, Literal, Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -86,6 +86,9 @@ class FitnessRepository(Protocol):
     async def latest_weekly_review(self, user_id: str) -> WeeklyReviewRecord | None: ...
     async def get_check_in_state(self, user_id: str) -> CheckInState: ...
     async def save_check_in_state(self, user_id: str, state: CheckInState) -> None: ...
+    async def export_user_data(self, user_id: str) -> dict[str, Any]: ...
+    async def delete_user_data(self, user_id: str) -> int: ...
+    async def add_feedback(self, record: dict[str, Any]) -> None: ...
 
 
 def _in_range(local_date: str, start: str | None, end: str | None) -> bool:
@@ -101,6 +104,7 @@ class InMemoryFitnessRepository:
         self._archived_plans: dict[str, list[TrainingPlan]] = {}
         self._entries: dict[tuple[str, str], dict[str, BaseModel]] = {}
         self._check_ins: dict[str, CheckInState] = {}
+        self.feedback: list[dict[str, Any]] = []
 
     async def get_profile(self, user_id: str) -> FitnessProfile | None:
         return self._profiles.get(user_id)
@@ -152,6 +156,35 @@ class InMemoryFitnessRepository:
 
     async def save_check_in_state(self, user_id: str, state: CheckInState) -> None:
         self._check_ins[user_id] = state
+
+    async def export_user_data(self, user_id: str) -> dict[str, Any]:
+        dump = lambda m: m.model_dump(mode="json")  # noqa: E731
+        profile = self._profiles.get(user_id)
+        plan = self._plans.get(user_id)
+        data: dict[str, Any] = {
+            "profile": dump(profile) if profile else None,
+            "training_plans": ([dump(plan) | {"_id": "current"}] if plan else [])
+            + [dump(p) for p in self._archived_plans.get(user_id, [])],
+            "meta": [dump(self._check_ins[user_id]) | {"_id": "check_in_state"}]
+            if user_id in self._check_ins
+            else [],
+        }
+        for (uid, collection), bucket in self._entries.items():
+            if uid == user_id:
+                data[collection] = [dump(e) for e in bucket.values()]
+        return data
+
+    async def delete_user_data(self, user_id: str) -> int:
+        deleted = int(self._profiles.pop(user_id, None) is not None)
+        deleted += int(self._plans.pop(user_id, None) is not None)
+        deleted += len(self._archived_plans.pop(user_id, []))
+        deleted += int(self._check_ins.pop(user_id, None) is not None)
+        for key in [k for k in self._entries if k[0] == user_id]:
+            deleted += len(self._entries.pop(key))
+        return deleted
+
+    async def add_feedback(self, record: dict[str, Any]) -> None:
+        self.feedback.append(dict(record))
 
 
 class FirestoreFitnessRepository:
@@ -238,6 +271,24 @@ class FirestoreFitnessRepository:
         await self._user(user_id).collection("meta").document("check_in_state").set(
             state.model_dump(mode="json")
         )
+
+    async def export_user_data(self, user_id: str) -> dict[str, Any]:
+        """All of a user's documents: the profile plus every subcollection."""
+        user = self._user(user_id)
+        snap = await user.get()
+        data: dict[str, Any] = {"profile": snap.to_dict() if snap.exists else None}
+        async for collection in user.collections():
+            data[collection.id] = [
+                {"_id": doc.id, **(doc.to_dict() or {})} async for doc in collection.stream()
+            ]
+        return data
+
+    async def delete_user_data(self, user_id: str) -> int:
+        """Deletes the user document and all subcollections; returns docs deleted."""
+        return int(await self._db.recursive_delete(self._user(user_id)))
+
+    async def add_feedback(self, record: dict[str, Any]) -> None:
+        await self._db.collection("feedback").document(new_entry_id()).set(record)
 
 
 @functools.cache

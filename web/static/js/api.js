@@ -2,16 +2,38 @@
 import { actions } from "./state.js";
 import { t } from "./i18n.js";
 
+/** Error with the HTTP status and, for 429s, { code, scope, retryAfter (seconds) }. */
+export class ApiError extends Error {
+  constructor(message, { status = 0, code = null, scope = null, retryAfter = 0 } = {}) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+    this.scope = scope;
+    this.retryAfter = retryAfter;
+  }
+}
+
+export const isRateLimited = (err) => Boolean(err && (err.code === "rate_limited" || err.status === 429));
+
 export async function api(path, options = {}) {
   const res = await fetch(path, { credentials: "same-origin", ...options });
   if (res.status === 401) {
     actions.showSignIn();
-    throw new Error(t("error.signIn"));
+    throw new ApiError(t("error.signIn"), { status: 401 });
   }
   if (!res.ok) {
     let detail = t("error.request", { status: res.status });
-    try { detail = (await res.json()).detail || detail; } catch (_) { /* not JSON */ }
-    throw new Error(detail);
+    let body = null;
+    try { body = await res.json(); detail = (body && typeof body.detail === "string" && body.detail) || detail; } catch (_) { /* not JSON */ }
+    const header = Number(res.headers.get("Retry-After"));
+    const retryAfter = Math.max(0, Math.ceil(Number(body && body.retry_after) || (Number.isFinite(header) ? header : 0)));
+    throw new ApiError(detail, {
+      status: res.status,
+      code: (body && body.code) || (res.status === 429 ? "rate_limited" : null),
+      scope: (body && body.scope) || null,
+      retryAfter,
+    });
   }
   return res;
 }

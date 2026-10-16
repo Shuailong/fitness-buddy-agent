@@ -8,6 +8,7 @@ import {
   exerciseSpec, sortedSessions, weekdayIndex, weightDelta,
 } from "./logic.js";
 import { state, actions } from "./state.js";
+import { track } from "./telemetry.js";
 
 const goalLabel = (g) => t(`goal.${g}`);
 const mealName = (type) => t(`meal.${type || "meal"}`);
@@ -117,9 +118,9 @@ function heroCard(d) {
 function quickActions() {
   const btn = (iconName, label, onclick) => el("button", { type: "button", class: "quick", onclick }, [icon(iconName, { cls: "accent" }), el("span", { text: label })]);
   return el("div", { class: "quick-actions" }, [
-    btn("photo-camera", t("today.quick.snap"), () => actions.openCoach({ photo: "camera" })),
-    btn("fitness-center", t("today.quick.log"), () => actions.openCoach({ prefill: t("send.logWorkout") })),
-    btn("forum", t("today.quick.ask"), () => actions.openCoach({ focus: true })),
+    btn("photo-camera", t("today.quick.snap"), () => { track("quick_action", { action: "snap_meal" }); actions.openCoach({ photo: "camera" }); }),
+    btn("fitness-center", t("today.quick.log"), () => { track("quick_action", { action: "log_workout" }); actions.openCoach({ prefill: t("send.logWorkout") }); }),
+    btn("forum", t("today.quick.ask"), () => { track("quick_action", { action: "ask_coach" }); actions.openCoach({ focus: true }); }),
   ]);
 }
 

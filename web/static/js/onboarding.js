@@ -5,6 +5,7 @@ import { $, el, icon } from "./util.js";
 import { GOALS, EQUIPMENT, INJURY_AREAS, DIET_PREFERENCES, validateOnboardingStep } from "./logic.js";
 import { t, getLang, mins } from "./i18n.js";
 import { langSwitch } from "./settings.js";
+import { track } from "./telemetry.js";
 
 const STEPS = [0, 1, 2, 3];
 const opts = (values, prefix) => values.map((v) => ({ value: v, label: t(`${prefix}.${v}`) }));
@@ -194,6 +195,7 @@ function next() {
   if (Object.keys(errors).length) { render(); return; }
   if (step < STEPS.length - 1) {
     step += 1;
+    track("onboarding_step", { step: step + 1 });
     render();
     $("onboarding-view").scrollTo?.(0, 0);
     window.scrollTo(0, 0);

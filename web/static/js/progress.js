@@ -78,6 +78,13 @@ export class TurnProgress {
     step.li.querySelector(".pc-step-icon").replaceChildren(icon("check"));
   }
 
+  /** Stops the timer and removes the card without a summary (e.g. the request was rate-limited). */
+  discard() {
+    this.finished = true;
+    clearInterval(this.timer);
+    this.node.remove();
+  }
+
   /** Stops the timer and collapses into a summary line. Returns false if the card was removed. */
   finish({ error = false } = {}) {
     if (this.finished) return !!this.node.isConnected;
@@ -90,7 +97,7 @@ export class TurnProgress {
       return false;
     }
     const label = this.steps.length
-      ? t("turn.summary", { n: this.steps.length, t: durationText(elapsed) })
+      ? t(this.steps.length === 1 ? "turn.summaryOne" : "turn.summary", { n: this.steps.length, t: durationText(elapsed) })
       : t("turn.summaryNoSteps", { t: durationText(elapsed) });
     const summaryIcon = icon(error ? "warning" : "check-circle");
     this.node.className = `progress-card done${error ? " error" : ""}`;
