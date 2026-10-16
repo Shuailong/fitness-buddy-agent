@@ -51,7 +51,14 @@ from web.auth import (
     verify_google_credential,
     write_session,
 )
-from web.config import ALLOWED_IMAGE_TYPES, GREETING_TEXT, MAX_IMAGE_BYTES, WebSettings
+from web.config import (
+    ALLOWED_IMAGE_TYPES,
+    GREETING_TEXT,
+    GREETING_TEXTS,
+    MAX_IMAGE_BYTES,
+    WebSettings,
+    normalize_lang,
+)
 from web.dashboard import build_dashboard
 from web.events import (
     CONFIRMATION_CALL,
@@ -112,6 +119,7 @@ class ConfirmRequest(BaseModel):
 
     call_id: str = Field(min_length=1, max_length=200)
     confirmed: bool
+    lang: str | None = Field(default=None, description="UI language: en or zh.")
 
 
 def get_agent(request: Request) -> AgentClient:
@@ -225,6 +233,7 @@ def create_app(
             "google_client_id": settings.google_client_id,
             "dev_auth_bypass": settings.dev_auth_bypass,
             "greeting_text": GREETING_TEXT,
+            "greeting_texts": GREETING_TEXTS,
             "max_image_bytes": MAX_IMAGE_BYTES,
         }
 
@@ -363,6 +372,7 @@ def create_app(
         message: dict[str, Any],
         intent: str,
         preview: str,
+        lang: str = "en",
     ) -> AsyncIterator[str]:
         """Runs one agent turn and yields simplified events as SSE frames."""
         client: AgentClient = app.state.agent
@@ -378,7 +388,7 @@ def create_app(
         )
         try:
             async for raw in client.stream_query(user.user_id, session_id, message):
-                for event in simplify_event(raw):
+                for event in simplify_event(raw, lang):
                     if event["type"] == "activity":
                         if event["label"] == last_activity:
                             continue
@@ -441,6 +451,7 @@ def create_app(
         user: UserDep,
         text: Annotated[str, Form()] = "",
         image: Annotated[UploadFile | None, File()] = None,
+        lang: Annotated[str | None, Form()] = None,
     ) -> StreamingResponse:
         session_id = active_session_id(request, user)
         text = text.strip()
@@ -473,7 +484,7 @@ def create_app(
             )
         if not parts:
             raise HTTPException(status_code=400, detail="Send a message or a photo.")
-        if text == GREETING_TEXT:
+        if text in GREETING_TEXTS.values():
             intent = "greeting"
         elif len(parts) > 1 or "inlineData" in parts[0]:
             intent = "photo"
@@ -481,7 +492,11 @@ def create_app(
             intent = "message"
         preview = redact_text(text) + (" [+photo]" if intent == "photo" else "")
         message = {"role": "user", "parts": parts}
-        return _sse_response(stream_turn(user, session_id, message, intent, preview))
+        return _sse_response(
+            stream_turn(
+                user, session_id, message, intent, preview, normalize_lang(lang)
+            )
+        )
 
     @app.post("/api/confirm")
     async def confirm(
@@ -515,7 +530,11 @@ def create_app(
             ],
         }
         intent = "confirm" if body.confirmed else "reject"
-        return _sse_response(stream_turn(user, session_id, message, intent, intent))
+        return _sse_response(
+            stream_turn(
+                user, session_id, message, intent, intent, normalize_lang(body.lang)
+            )
+        )
 
     # ------------------------------------------------------------ dashboard
     @app.get("/api/dashboard")

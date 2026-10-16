@@ -20,8 +20,21 @@ import os
 from dataclasses import dataclass, field
 
 # Hidden first message sent by the browser when a new conversation starts, so
-# the coach runs its due check-ins (FR-8). It is never shown in the chat.
+# the coach runs its due check-ins (FR-8). It is never shown in the chat. The
+# browser sends the variant matching the UI language so the coach replies in it.
 GREETING_TEXT = "Hi (opened the app)"
+GREETING_TEXTS: dict[str, str] = {"en": GREETING_TEXT, "zh": "你好 (刚打开应用)"}
+
+# UI languages. The language only affects UI labels produced by the backend
+# (activity chips); the coach always answers in the language the user writes in.
+SUPPORTED_LANGS = ("en", "zh")
+DEFAULT_LANG = "en"
+
+
+def normalize_lang(value: str | None) -> str:
+    """Maps a requested UI language (e.g. 'zh-CN') to a supported one."""
+    lang = (value or "").strip().lower().split("-")[0]
+    return lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
 
 MAX_IMAGE_BYTES = 6 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp")

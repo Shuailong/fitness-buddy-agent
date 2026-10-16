@@ -3,8 +3,11 @@
 // buildOnboardingMessage() so the coach writes the profile with its own tools.
 import { $, el, icon } from "./util.js";
 import { GOALS, EQUIPMENT, INJURY_AREAS, DIET_PREFERENCES, validateOnboardingStep } from "./logic.js";
+import { t, getLang, mins } from "./i18n.js";
+import { langSwitch } from "./settings.js";
 
-const STEPS = ["Basics", "Goal", "Training", "Food"];
+const STEPS = [0, 1, 2, 3];
+const opts = (values, prefix) => values.map((v) => ({ value: v, label: t(`${prefix}.${v}`) }));
 
 let answers;
 let step = 0;
@@ -83,25 +86,25 @@ const toggle = (key) => (value, on) => {
 
 function stepBasics() {
   return [
-    el("h1", { class: "ob-title", tabindex: "-1", text: "Let's start with the basics" }),
-    el("p", { class: "ob-sub", text: "Your coach uses these to estimate your energy needs." }),
-    section("Sex", [radioGroup("sex", [{ value: "female", label: "Female" }, { value: "male", label: "Male" }], answers.sex, (v) => { answers.sex = v; }), fieldError("sex")], "Used in the BMR formula"),
+    el("h1", { class: "ob-title", tabindex: "-1", text: t("ob.basics.title") }),
+    el("p", { class: "ob-sub", text: t("ob.basics.sub") }),
+    section(t("ob.sex"), [radioGroup("sex", opts(["female", "male"], "sex"), answers.sex, (v) => { answers.sex = v; }), fieldError("sex")], t("ob.sexHint")),
     el("div", { class: "field-grid" }, [
-      numberField("age", "Age", "years", { min: 16, max: 90, step: 1, inputmode: "numeric" }),
-      numberField("height_cm", "Height", "cm", { min: 120, max: 230, step: 0.5 }),
-      numberField("weight_kg", "Weight", "kg", { min: 30, max: 250, step: 0.1 }),
+      numberField("age", t("ob.age"), t("ob.unit.years"), { min: 16, max: 90, step: 1, inputmode: "numeric" }),
+      numberField("height_cm", t("ob.height"), t("ob.unit.cm"), { min: 120, max: 230, step: 0.5 }),
+      numberField("weight_kg", t("ob.weight"), t("ob.unit.kg"), { min: 30, max: 250, step: 0.1 }),
     ]),
   ];
 }
 
 function stepGoal() {
   return [
-    el("h1", { class: "ob-title", tabindex: "-1", text: "What's your goal?" }),
-    el("p", { class: "ob-sub", text: "You can change it any time by telling your coach." }),
-    section("Goal", [
+    el("h1", { class: "ob-title", tabindex: "-1", text: t("ob.goal.title") }),
+    el("p", { class: "ob-sub", text: t("ob.goal.sub") }),
+    section(t("ob.goal.label"), [
       radioGroup("goal", GOALS.map((g) => ({
         value: g.value,
-        face: [el("span", { class: "goal-icon" }, [icon(g.icon)]), el("span", { class: "goal-text" }, [el("strong", { text: g.title }), el("span", { text: g.desc })]), icon("check-circle", { cls: "goal-check", fill: true })],
+        face: [el("span", { class: "goal-icon" }, [icon(g.icon)]), el("span", { class: "goal-text" }, [el("strong", { text: t(`goalTitle.${g.value}`) }), el("span", { text: t(`goalDesc.${g.value}`) })]), icon("check-circle", { cls: "goal-check", fill: true })],
       })), answers.goal, (v) => { answers.goal = v; }, "goal-cards"),
       fieldError("goal"),
     ]),
@@ -110,70 +113,71 @@ function stepGoal() {
 
 function stepTraining() {
   const minutesId = uid("minutes");
-  const valueOut = el("output", { for: minutesId, class: "slider-value" }, [icon("timer"), el("span", { text: `${answers.minutes_per_session} min` })]);
-  const slider = el("input", { type: "range", id: minutesId, min: 15, max: 120, step: 5, value: answers.minutes_per_session, class: "slider", "aria-label": "Minutes per session" });
+  const valueOut = el("output", { for: minutesId, class: "slider-value" }, [icon("timer"), el("span", { text: mins(answers.minutes_per_session) })]);
+  const slider = el("input", { type: "range", id: minutesId, min: 15, max: 120, step: 5, value: answers.minutes_per_session, class: "slider", "aria-label": t("ob.minutesAria") });
   const paint = () => {
     const pct = ((slider.value - 15) / (120 - 15)) * 100;
     slider.style.setProperty("--fill", `${pct}%`);
-    valueOut.querySelector("span").textContent = `${slider.value} min`;
+    valueOut.querySelector("span").textContent = mins(Number(slider.value));
   };
   slider.addEventListener("input", () => { answers.minutes_per_session = Number(slider.value); paint(); });
   paint();
   return [
-    el("h1", { class: "ob-title", tabindex: "-1", text: "How do you train?" }),
-    el("p", { class: "ob-sub", text: "Your coach builds plans around your schedule and body." }),
-    section("Days per week", [
+    el("h1", { class: "ob-title", tabindex: "-1", text: t("ob.training.title") }),
+    el("p", { class: "ob-sub", text: t("ob.training.sub") }),
+    section(t("ob.days"), [
       radioGroup("days", [1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: String(n) })), answers.days_per_week, (v) => { answers.days_per_week = v; }, "segmented days"),
       fieldError("days_per_week"),
     ]),
-    section("Minutes per session", [
-      el("div", { class: "slider-card" }, [valueOut, slider, el("div", { class: "slider-scale", "aria-hidden": "true" }, [el("span", { text: "15 min" }), el("span", { text: "120 min" })])]),
+    section(t("ob.minutes"), [
+      el("div", { class: "slider-card" }, [valueOut, slider, el("div", { class: "slider-scale", "aria-hidden": "true" }, [el("span", { text: mins(15) }), el("span", { text: mins(120) })])]),
       fieldError("minutes_per_session"),
-    ], "Includes warm-up"),
-    section("Equipment available", [chipGroup("equipment", EQUIPMENT, answers.equipment, toggle("equipment"))], "Select all that apply"),
-    section("Injuries or limits", [
-      chipGroup("injury", INJURY_AREAS, answers.injury_areas, toggle("injury_areas")),
-      textField("injury_notes", "Anything else to know?", "e.g. left knee hurts on deep squats"),
+    ], t("ob.minutesHint")),
+    section(t("ob.equipment"), [chipGroup("equipment", opts(EQUIPMENT, "equip"), answers.equipment, toggle("equipment"))], t("ob.selectAll")),
+    section(t("ob.injuries"), [
+      chipGroup("injury", opts(INJURY_AREAS, "injury"), answers.injury_areas, toggle("injury_areas")),
+      textField("injury_notes", t("ob.injuryNotes"), t("ob.injuryPlaceholder")),
     ]),
-    el("p", { class: "disclaimer" }, [icon("shield"), "Not medical advice. For pain or medical conditions, check with a professional."]),
+    el("p", { class: "disclaimer" }, [icon("shield"), t("ob.disclaimer")]),
   ];
 }
 
 function stepFood() {
   return [
-    el("h1", { class: "ob-title", tabindex: "-1", text: "How do you eat?" }),
-    el("p", { class: "ob-sub", text: "Meal ideas and estimates will respect these." }),
-    section("Dietary preferences", [
-      chipGroup("diet", DIET_PREFERENCES.map((p) => ({ value: p, label: p })), answers.dietary_preferences, toggle("dietary_preferences")),
-      textField("diet_notes", "Other preferences", "e.g. no pork, prefer Asian food"),
-    ], "Optional"),
-    section("Allergies", [textField("allergies", "Food allergies", "e.g. peanuts, shellfish")], "Optional"),
-    el("p", { class: "disclaimer" }, [icon("info"), "Your coach will confirm your details in chat and calculate your daily targets."]),
+    el("h1", { class: "ob-title", tabindex: "-1", text: t("ob.food.title") }),
+    el("p", { class: "ob-sub", text: t("ob.food.sub") }),
+    section(t("ob.diet"), [
+      chipGroup("diet", opts(DIET_PREFERENCES, "diet"), answers.dietary_preferences, toggle("dietary_preferences")),
+      textField("diet_notes", t("ob.dietNotes"), t("ob.dietPlaceholder")),
+    ], t("ob.optional")),
+    section(t("ob.allergies"), [textField("allergies", t("ob.allergiesLabel"), t("ob.allergiesPlaceholder"))], t("ob.optional")),
+    el("p", { class: "disclaimer" }, [icon("info"), t("ob.foodNote")]),
   ];
 }
 
 function render() {
   const root = $("onboarding-view");
   const body = [stepBasics, stepGoal, stepTraining, stepFood][step]();
-  const backBtn = el("button", { type: "button", class: "icon-btn", "aria-label": "Back", hidden: step === 0, onclick: back }, [icon("arrow-back")]);
-  const continueBtn = el("button", { type: "submit", class: "btn btn-primary btn-xl btn-block" }, [step === STEPS.length - 1 ? "Finish" : "Continue", icon("arrow-forward")]);
+  const backBtn = el("button", { type: "button", class: "icon-btn", "aria-label": t("ob.back"), hidden: step === 0, onclick: back }, [icon("arrow-back")]);
+  const continueBtn = el("button", { type: "submit", class: "btn btn-primary btn-xl btn-block" }, [step === STEPS.length - 1 ? t("ob.finish") : t("ob.continue"), icon("arrow-forward")]);
   const form = el("form", { class: "ob-form", novalidate: true }, [
     ...body,
     el("div", { class: "ob-footer" }, [
       continueBtn,
-      step > 0 ? el("button", { type: "button", class: "text-btn", onclick: back, text: "Back" }) : null,
+      step > 0 ? el("button", { type: "button", class: "text-btn", onclick: back, text: t("ob.back") }) : null,
+      langSwitch(() => rerenderOnboarding()),
     ]),
   ]);
   form.addEventListener("submit", (e) => { e.preventDefault(); next(); });
   root.replaceChildren(el("div", { class: "ob-shell" }, [
     el("header", { class: "ob-top" }, [
       el("div", { class: "ob-top-left" }, [backBtn]),
-      el("p", { class: "ob-step", "aria-live": "polite", text: `Step ${step + 1} of ${STEPS.length}` }),
-      el("button", { type: "button", class: "text-btn", onclick: () => handlers.onSkip() }, ["Skip – just chat"]),
+      el("p", { class: "ob-step", "aria-live": "polite", text: t("ob.step", { n: step + 1, total: STEPS.length }) }),
+      el("button", { type: "button", class: "text-btn", onclick: () => handlers.onSkip() }, [t("ob.skip")]),
     ]),
-    el("ol", { class: "ob-progress", "aria-label": "Onboarding progress" }, STEPS.map((s, i) => el("li", {
+    el("ol", { class: "ob-progress", "aria-label": t("ob.progress") }, STEPS.map((s, i) => el("li", {
       class: i < step ? "done" : i === step ? "current" : "", "aria-current": i === step ? "step" : null,
-    }, [el("span", { class: "seg", "aria-hidden": "true" }), el("span", { class: "seg-label", text: `${i + 1}. ${s}` })]))),
+    }, [el("span", { class: "seg", "aria-hidden": "true" }), el("span", { class: "seg-label", text: `${i + 1}. ${t(`ob.steps.${s}`)}` })]))),
     form,
   ]));
   const firstKey = Object.keys(errors)[0];
@@ -186,7 +190,7 @@ function render() {
 }
 
 function next() {
-  errors = validateOnboardingStep(step, answers);
+  errors = validateOnboardingStep(step, answers, getLang());
   if (Object.keys(errors).length) { render(); return; }
   if (step < STEPS.length - 1) {
     step += 1;
@@ -216,5 +220,12 @@ export function startOnboarding({ onFinish, onSkip }) {
   answers = defaults();
   step = 0;
   errors = {};
+  render();
+}
+
+/** Re-renders the current step (e.g. after a language switch), keeping answers. */
+export function rerenderOnboarding() {
+  if (!answers) return;
+  if (Object.keys(errors).length) errors = validateOnboardingStep(step, answers, getLang());
   render();
 }

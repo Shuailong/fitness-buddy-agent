@@ -65,6 +65,17 @@ GOLDEN = [
         "peanut allergy in any food suggestion.",
     ),
     text_case(
+        "fr1_onboarding_form_zh",
+        "这是我的建档信息：目标：增肌；性别：男；年龄：28；身高：175 厘米；体重：68 公斤；"
+        "训练：每周 4 天，每次 60 分钟；器械：哑铃、单杠；伤病：肩膀（右肩推举时不适）；"
+        "饮食偏好：不吃牛肉；过敏：无；时区：Asia/Shanghai。请帮我建立档案并计算每日目标。",
+        req=["FR-1", "FR-2", "FR-10"], expected=["save_fitness_profile"],
+        policy="Replies in Simplified Chinese. Saves the profile from the structured Chinese "
+        "onboarding message without re-asking for details already given, presents the daily "
+        "calorie target and macros exactly as returned by the tool, and respects the no-beef "
+        "preference and the shoulder issue in any suggestion.",
+    ),
+    text_case(
         "fr2_targets_from_tool",
         "Female, 29, 165 cm, 68 kg. Goal fat loss. I train 4 days a week for 60 minutes at a gym "
         "with machines and dumbbells. How many calories should I eat per day?",

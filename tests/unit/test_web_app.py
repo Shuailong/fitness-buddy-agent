@@ -45,7 +45,7 @@ from fitness_core.models import (
 from fitness_core.nutrition import daily_nutrition_summary, sum_meal_items
 from fitness_core.progress import user_local_date
 from fitness_core.trends import weight_trend
-from web.config import GREETING_TEXT, WebSettings
+from web.config import GREETING_TEXT, GREETING_TEXTS, WebSettings, normalize_lang
 from web.dashboard import logging_streak
 from web.events import build_history, simplify_event
 from web.main import create_app
@@ -572,7 +572,47 @@ def test_history_detects_pending_confirmation() -> None:
         "role": "decision",
         "confirmed": False,
         "title": "Replace your current plan?",
+        "kind": "replace_training_plan",
+        "replaces": None,
     }
+
+
+def test_ui_language_localizes_activity_labels_and_hides_greetings() -> None:
+    call_event = {
+        "author": "fitness_coach",
+        "content": {
+            "parts": [
+                {"functionCall": {"id": "a1", "name": "nutrition_coach", "args": {}}},
+                {"functionCall": {"id": "a2", "name": "some_new_tool", "args": {}}},
+            ]
+        },
+    }
+    assert [e["label"] for e in simplify_event(call_event)] == [
+        "Asking the nutrition coach...",
+        "Running some new tool...",
+    ]
+    assert [e["label"] for e in simplify_event(call_event, "zh")] == [
+        "正在询问营养教练...",
+        "处理中...",
+    ]
+    assert normalize_lang("zh-CN") == "zh"
+    assert normalize_lang("fr") == "en"
+    assert normalize_lang(None) == "en"
+
+    # Hidden greetings in either language never show up in history.
+    events = [
+        {"author": "user", "content": {"role": "user", "parts": [{"text": t}]}}
+        for t in GREETING_TEXTS.values()
+    ]
+    assert build_history(events)["messages"] == []
+
+    # The chat endpoint forwards the UI language to the label localizer.
+    client, agent = _dev_client()
+    client.post("/api/session")
+    body = client.post("/api/chat", data={"text": "Plan please", "lang": "zh"}).text
+    labels = [e["label"] for e in _parse_sse(body) if e["type"] == "activity"]
+    assert labels and all(not label.startswith("Asking") for label in labels)
+    assert client.get("/api/config").json()["greeting_texts"]["zh"] == GREETING_TEXTS["zh"]
 
 
 def test_history_and_confirm_endpoints() -> None:

@@ -4,7 +4,8 @@ import { $, el, icon, humanize, renderMarkdown } from "./util.js";
 import { api, postJson, getJson, readEventStream } from "./api.js";
 import { state, actions } from "./state.js";
 import { mealLoggedCard, confirmationCard } from "./cards.js";
-import { suggestionChips } from "./logic.js";
+import { suggestionChips, confirmationTitle } from "./logic.js";
+import { t, getLang, dateFull } from "./i18n.js";
 
 const messagesEl = () => $("messages");
 let chipRow = null;
@@ -24,8 +25,8 @@ function coachRow(children, { avatar = true, indent = false } = {}) {
 
 export function addUserMessage(text, imageUrl, hadImage) {
   const children = [];
-  if (imageUrl) children.push(el("img", { class: "attached", src: imageUrl, alt: "Your photo" }));
-  else if (hadImage) children.push(el("span", { class: "photo-tag" }, [icon("image"), "Photo"]));
+  if (imageUrl) children.push(el("img", { class: "attached", src: imageUrl, alt: t("coach.yourPhoto") }));
+  else if (hadImage) children.push(el("span", { class: "photo-tag" }, [icon("image"), t("coach.photo")]));
   if (text) children.push(el("p", { text }));
   messagesEl().append(el("div", { class: "row from-user" }, [el("div", { class: "bubble bubble-user" }, children)]));
   chipRow = null;
@@ -34,7 +35,11 @@ export function addUserMessage(text, imageUrl, hadImage) {
 
 function addCoachMessage(text, author) {
   const body = [];
-  if (author && !["fitness_coach", "coach"].includes(author)) body.push(el("span", { class: "author", text: humanize(author) }));
+  if (author && !["fitness_coach", "coach"].includes(author)) {
+    const key = `author.${author}`;
+    const label = t(key);
+    body.push(el("span", { class: "author", text: label === key ? humanize(author) : label }));
+  }
   body.push(el("div", { class: "bubble bubble-coach md", html: renderMarkdown(text) }));
   messagesEl().append(coachRow(body));
   chipRow = null;
@@ -47,16 +52,17 @@ export function addError(message) {
   scrollToBottom();
 }
 
-function addDecision(confirmed, title) {
+function addDecision(m) {
+  const title = String(m.kind ? confirmationTitle(m.kind, { replaces: m.replaces, serverTitle: m.title }, getLang()) : m.title).replace(/[?？]\s*$/, "");
   messagesEl().append(el("div", { class: "row system" }, [
-    el("p", { class: `decision ${confirmed ? "yes" : "no"}` }, [icon(confirmed ? "check-circle" : "undo"), `${confirmed ? "Approved" : "Declined"}: ${title}`]),
+    el("p", { class: `decision ${m.confirmed ? "yes" : "no"}` }, [icon(m.confirmed ? "check-circle" : "undo"), t(m.confirmed ? "coach.approved" : "coach.declined", { title })]),
   ]));
 }
 
 function addActivityChip(label) {
   const clean = String(label).replace(/\.\.\.$/, "");
   if (!chipRow) {
-    chipRow = el("div", { class: "chip-row", "aria-label": "Coach activity" });
+    chipRow = el("div", { class: "chip-row", "aria-label": t("coach.activity") });
     messagesEl().append(coachRow([chipRow], { avatar: false, indent: true }));
   }
   if (![...chipRow.children].some((c) => c.dataset.label === clean)) {
@@ -73,7 +79,7 @@ function addCard(node) {
 }
 
 function addMealCard(card) {
-  addCard(mealLoggedCard(card, { prefill: (t) => prefillComposer(t), send: (t) => sendChat(t) }));
+  addCard(mealLoggedCard(card, { prefill: (text) => prefillComposer(text), send: (text) => sendChat(text) }));
 }
 
 function addConfirmationCard(card) {
@@ -84,7 +90,7 @@ function addConfirmationCard(card) {
     await streamRequest("/api/confirm", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ call_id: card.call_id, confirmed }),
+      body: JSON.stringify({ call_id: card.call_id, confirmed, lang: getLang() }),
     });
     if (!confirmed) $("message-input").focus();
   });
@@ -97,7 +103,7 @@ function setStreaming(on) {
   $("send-btn").disabled = on;
   $("new-chat-btn").disabled = on;
   for (const b of document.querySelectorAll(".suggestions button")) b.disabled = on;
-  if (on) $("activity-label").textContent = "Coach is thinking...";
+  if (on) $("activity-label").textContent = t("coach.thinking");
   else chipRow = null;
 }
 
@@ -107,7 +113,7 @@ function handleEvent(ev) {
     case "activity": addActivityChip(ev.label); break;
     case "confirmation": addConfirmationCard(ev); receivedCoachText = true; break;
     case "card": if (ev.kind === "meal_logged") addMealCard(ev); break;
-    case "error": addError(ev.message || "Something went wrong."); break;
+    case "error": addError(ev.message || t("error.generic")); break;
     default: break;
   }
 }
@@ -119,7 +125,7 @@ async function streamRequest(path, options) {
     const res = await api(path, options);
     await readEventStream(res, handleEvent);
   } catch (err) {
-    addError(err.message || "Connection lost. Please try again.");
+    addError(err.message || t("error.connection"));
   } finally {
     setStreaming(false);
     if (receivedCoachText) actions.markUnread();
@@ -134,6 +140,7 @@ export async function sendChat(text, photoBlob = null, { hidden = false } = {}) 
   state.pendingGreeting = false;
   const form = new FormData();
   form.append("text", text);
+  form.append("lang", getLang());
   if (photoBlob) form.append("image", photoBlob, "photo.jpg");
   if (!hidden) addUserMessage(text, photoBlob ? URL.createObjectURL(photoBlob) : null);
   await streamRequest("/api/chat", { method: "POST", body: form });
@@ -153,7 +160,7 @@ export async function openSession({ fresh = false } = {}) {
   for (const m of history.messages) {
     if (m.role === "user") addUserMessage(m.text, null, m.has_image);
     else if (m.role === "coach") addCoachMessage(m.text, m.author);
-    else if (m.role === "decision") addDecision(m.confirmed, m.title);
+    else if (m.role === "decision") addDecision(m);
     else if (m.role === "card" && m.kind === "meal_logged") addMealCard(m);
   }
   for (const card of history.pending_confirmations) addConfirmationCard(card);
@@ -163,7 +170,7 @@ export async function openSession({ fresh = false } = {}) {
 }
 
 function renderIntro() {
-  messagesEl().append(el("p", { class: "day-divider", text: `Today · ${new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}` }));
+  messagesEl().append(el("p", { class: "day-divider", text: t("coach.today", { date: dateFull(new Date()) }) }));
 }
 
 // ------------------------------------------------------------- composer
@@ -182,7 +189,7 @@ function autosize(input) {
 
 export function renderSuggestions(dashboard) {
   const row = $("suggestions");
-  const chips = suggestionChips(dashboard);
+  const chips = suggestionChips(dashboard, new Date(), getLang());
   row.replaceChildren(...chips.map((c) => el("button", {
     type: "button", class: "suggestion", disabled: state.streaming,
     onclick: () => (c.send ? sendChat(c.send) : prefillComposer(c.prefill)),
@@ -204,7 +211,7 @@ async function downscale(file, maxSide = 1280, quality = 0.85) {
     source = await new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error("Could not read that image."));
+      img.onerror = () => reject(new Error(t("error.photoRead")));
       img.src = URL.createObjectURL(file);
     });
     width = source.naturalWidth; height = source.naturalHeight;
@@ -215,7 +222,7 @@ async function downscale(file, maxSide = 1280, quality = 0.85) {
   canvas.height = Math.round(height * scale);
   canvas.getContext("2d").drawImage(source, 0, 0, canvas.width, canvas.height);
   return new Promise((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not process that image."))), "image/jpeg", quality));
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error(t("error.photoProcess")))), "image/jpeg", quality));
 }
 
 async function onPhotoSelected(event) {
@@ -224,7 +231,7 @@ async function onPhotoSelected(event) {
   if (!file) return;
   try {
     const blob = await downscale(file);
-    if (blob.size > state.config.max_image_bytes) throw new Error("That photo is too large.");
+    if (blob.size > state.config.max_image_bytes) throw new Error(t("error.photoTooLarge"));
     clearPhoto();
     state.photo = { blob, url: URL.createObjectURL(blob) };
     $("photo-preview-img").src = state.photo.url;

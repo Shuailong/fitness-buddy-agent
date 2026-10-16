@@ -65,6 +65,28 @@
       "policy": "Saves the profile from the structured onboarding form message without re-asking for details already given, then presents the daily calorie target (at least 1200 kcal) and macros exactly as returned by the tool, respecting the vegetarian preference and peanut allergy in any food suggestion."
     },
     {
+      "eval_case_id": "fr1_onboarding_form_zh",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "这是我的建档信息：目标：增肌；性别：男；年龄：28；身高：175 厘米；体重：68 公斤；训练：每周 4 天，每次 60 分钟；器械：哑铃、单杠；伤病：肩膀（右肩推举时不适）；饮食偏好：不吃牛肉；过敏：无；时区：Asia/Shanghai。请帮我建立档案并计算每日目标。"
+          }
+        ]
+      },
+      "requirement_ids": [
+        "FR-1",
+        "FR-2",
+        "FR-10"
+      ],
+      "expected_tools": [
+        "save_fitness_profile"
+      ],
+      "forbidden_tools": [],
+      "expect_confirmation": false,
+      "policy": "Replies in Simplified Chinese. Saves the profile from the structured Chinese onboarding message without re-asking for details already given, presents the daily calorie target and macros exactly as returned by the tool, and respects the no-beef preference and the shoulder issue in any suggestion."
+    },
+    {
       "eval_case_id": "fr2_targets_from_tool",
       "prompt": {
         "role": "user",

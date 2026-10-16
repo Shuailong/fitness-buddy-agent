@@ -4,12 +4,21 @@ import { $, el } from "./js/util.js";
 import { api, getJson } from "./js/api.js";
 import { state, actions } from "./js/state.js";
 import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions } from "./js/chat.js";
-import { renderToday, renderProgress, renderPlan, loadingView, errorView } from "./js/views.js";
-import { startOnboarding } from "./js/onboarding.js";
+import { renderToday, renderProgress, renderPlan, loadingView, errorView, setupProfileView } from "./js/views.js";
+import { startOnboarding, rerenderOnboarding } from "./js/onboarding.js";
 import { buildOnboardingMessage, initials } from "./js/logic.js";
+import { t, getLang, setLang, detectLang, applyStatic } from "./js/i18n.js";
+import { settingsMenu, langSwitch } from "./js/settings.js";
 
 const ROUTES = ["today", "coach", "progress", "plan"];
 const desktop = window.matchMedia("(min-width: 1024px)");
+const MENUS = [["avatar-btn", "user-menu"], ["rail-avatar-btn", "rail-menu"]];
+
+/** The hidden "opened the app" message in the current language. */
+function greetingText() {
+  const texts = state.config.greeting_texts || {};
+  return texts[getLang()] || state.config.greeting_text;
+}
 
 // ------------------------------------------------------------- routing
 function currentRoute() {
@@ -22,13 +31,19 @@ function navigate(route) {
   else location.hash = route;
 }
 
+function updateTitle() {
+  const route = currentRoute();
+  const view = route === "coach" && desktop.matches ? "today" : route;
+  const page = $("app-view").hidden ? "" : `${t(`nav.${route === "coach" ? "coach" : view}`)} · `;
+  document.title = `${page}${t("app.name")}`;
+}
+
 function applyRoute() {
   if ($("app-view").hidden) return;
-  let route = currentRoute();
+  const route = currentRoute();
   // On desktop the coach is a persistent side panel, so #coach shows Today.
   const view = route === "coach" && desktop.matches ? "today" : route;
-  const shell = $("app-view");
-  shell.dataset.route = route;
+  $("app-view").dataset.route = route;
   for (const v of document.querySelectorAll(".view")) v.hidden = v.dataset.view !== view;
   for (const link of document.querySelectorAll(".tab, .rail-link")) {
     const active = link.dataset.route === (desktop.matches ? view : route);
@@ -43,24 +58,23 @@ function applyRoute() {
     $("main-content").scrollTop = 0;
     renderView(view);
   }
-  document.title = `${route === "coach" ? "Coach" : view[0].toUpperCase() + view.slice(1)} · Fitness Buddy`;
+  updateTitle();
 }
 
 // ------------------------------------------------------------- dashboard
-let dashboardPromise = null;
 let refreshTimer = null;
 
 async function loadDashboard(range = state.range) {
-  dashboardPromise = getJson(`/api/dashboard?range=${range}`).then((d) => {
+  try {
+    const d = await getJson(`/api/dashboard?range=${range}`);
     state.dashboard = d;
     state.dashboardError = null;
     if (d.range_days) state.range = d.range_days;
     return d;
-  }).catch((err) => {
+  } catch (err) {
     state.dashboardError = err.message;
     throw err;
-  });
-  return dashboardPromise;
+  }
 }
 
 function renderView(view) {
@@ -71,17 +85,15 @@ function renderView(view) {
     root.replaceChildren(state.dashboardError ? errorView(state.dashboardError, () => refreshDashboard(true)) : loadingView());
     return;
   }
-  if (!d.has_profile) {
-    root.replaceChildren(el("section", { class: "card" }, [el("div", { class: "empty" }, [
-      el("h3", { text: "Let's set up your profile" }),
-      el("p", { class: "muted", text: "Tell your coach your goal, body stats and schedule, and your dashboard will fill in." }),
-      el("button", { type: "button", class: "btn btn-primary", onclick: showOnboarding, text: "Set up my profile" }),
-    ])]));
-    return;
-  }
+  if (!d.has_profile) { root.replaceChildren(setupProfileView(showOnboarding)); return; }
   if (view === "today") renderToday(root, d);
   else if (view === "progress") renderProgress(root, d, changeRange);
   else if (view === "plan") renderPlan(root, d);
+}
+
+function currentView() {
+  const route = currentRoute();
+  return route === "coach" && desktop.matches ? "today" : route;
 }
 
 async function changeRange(range) {
@@ -95,11 +107,7 @@ async function refreshDashboard(immediate = false) {
   const run = async () => {
     try { await loadDashboard(); } catch (_) { /* keep the old data */ }
     renderSuggestions(state.dashboard);
-    if (!$("app-view").hidden) {
-      const route = currentRoute();
-      const view = route === "coach" && desktop.matches ? "today" : route;
-      if (view !== "coach") renderView(view);
-    }
+    if (!$("app-view").hidden && currentView() !== "coach") renderView(currentView());
   };
   if (immediate) await run();
   else refreshTimer = setTimeout(run, 300);
@@ -125,6 +133,57 @@ function markUnread() {
   if (!onCoach) document.querySelector(".tab[data-route='coach'] .unread").hidden = false;
 }
 
+// ------------------------------------------------------------- language
+/** Switches the UI language and re-renders without a reload (chat text stays as-is). */
+function setLanguage(lang) {
+  setLang(lang);
+  applyStatic();
+  renderMenus();
+  renderLandingLang();
+  renderSuggestions(state.dashboard);
+  if (state.onboarding) rerenderOnboarding();
+  if (!$("app-view").hidden && currentView() !== "coach") renderView(currentView());
+  if (!$("landing-view").hidden) renderGisButton();
+  updateTitle();
+}
+
+function renderLandingLang() {
+  $("landing-lang").replaceChildren(langSwitch());
+}
+
+// ------------------------------------------------------------- menus
+function renderMenus() {
+  const options = { email: (state.me && state.me.email) || "", showSignOut: !(state.config && state.config.dev_auth_bypass), onSignOut: signOut };
+  for (const [, menuId] of MENUS) $(menuId).replaceChildren(...settingsMenu(options).filter(Boolean));
+}
+
+function closeMenus() {
+  for (const [btnId, menuId] of MENUS) {
+    $(menuId).hidden = true;
+    $(btnId).setAttribute("aria-expanded", "false");
+  }
+}
+
+function bindMenus() {
+  for (const [btnId, menuId] of MENUS) {
+    $(btnId).addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = $(menuId).hidden;
+      closeMenus();
+      $(menuId).hidden = !open;
+      $(btnId).setAttribute("aria-expanded", String(open));
+      if (open) $(menuId).querySelector("button")?.focus();
+    });
+  }
+  document.addEventListener("click", (e) => { if (!e.target.closest(".menu-wrap")) closeMenus(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    for (const [btnId, menuId] of MENUS) {
+      if (!$(menuId).hidden) { closeMenus(); $(btnId).focus(); }
+    }
+  });
+}
+
 // ------------------------------------------------------------- onboarding
 function showOnboarding() {
   state.onboarding = true;
@@ -136,13 +195,13 @@ function showOnboarding() {
     onFinish: async (answers) => {
       leaveOnboarding();
       navigate("coach");
-      await sendChat(buildOnboardingMessage(answers));
+      await sendChat(buildOnboardingMessage(answers, getLang()));
     },
     onSkip: async () => {
       leaveOnboarding();
       navigate("coach");
       if (state.sessionReady) await state.sessionReady;
-      if (state.pendingGreeting) await sendChat(state.config.greeting_text, null, { hidden: true });
+      if (state.pendingGreeting) await sendChat(greetingText(), null, { hidden: true });
     },
   });
 }
@@ -155,20 +214,33 @@ function leaveOnboarding() {
 }
 
 // ------------------------------------------------------------- auth
+function renderGisButton() {
+  if (!state.config.google_client_id) {
+    $("signin-error").textContent = t("signin.notConfigured");
+    return;
+  }
+  if (!(window.google && window.google.accounts)) return;
+  const width = Math.min(400, $("gis-button").clientWidth || 320);
+  $("gis-button").replaceChildren();
+  window.google.accounts.id.renderButton($("gis-button"), {
+    theme: "outline", size: "large", shape: "pill", text: "signin_with", width, locale: getLang() === "zh" ? "zh_CN" : "en",
+  });
+}
+
 function showSignIn() {
   $("app-view").hidden = true;
   $("onboarding-view").hidden = true;
   $("landing-view").hidden = false;
+  closeMenus();
+  renderLandingLang();
+  updateTitle();
   const render = () => {
-    if (!state.config.google_client_id) {
-      $("signin-error").textContent = "Google sign-in is not configured on this server.";
-      return;
+    if (state.config.google_client_id) {
+      window.google.accounts.id.initialize({ client_id: state.config.google_client_id, callback: onGoogleCredential, ux_mode: "popup" });
     }
-    window.google.accounts.id.initialize({ client_id: state.config.google_client_id, callback: onGoogleCredential, ux_mode: "popup" });
-    const width = Math.min(400, $("gis-button").clientWidth || 320);
-    window.google.accounts.id.renderButton($("gis-button"), { theme: "outline", size: "large", shape: "pill", text: "signin_with", width });
+    renderGisButton();
   };
-  if (window.google && window.google.accounts) render();
+  if (!state.config.google_client_id || (window.google && window.google.accounts)) render();
   else {
     const wait = setInterval(() => { if (window.google && window.google.accounts) { clearInterval(wait); render(); } }, 100);
   }
@@ -191,7 +263,7 @@ async function onGoogleCredential(response) {
 async function signOut() {
   await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
   if (window.google && window.google.accounts) window.google.accounts.id.disableAutoSelect();
-  closeMenu();
+  closeMenus();
   showSignIn();
 }
 
@@ -202,13 +274,7 @@ function renderAvatar() {
       ? el("img", { src: me.picture, alt: "", referrerpolicy: "no-referrer" })
       : el("span", { text: initials(me) }));
   }
-  $("menu-email").textContent = me.email || "";
-  for (const b of document.querySelectorAll(".sign-out-btn")) b.hidden = Boolean(state.config.dev_auth_bypass);
-}
-
-function closeMenu() {
-  $("user-menu").hidden = true;
-  $("avatar-btn").setAttribute("aria-expanded", "false");
+  renderMenus();
 }
 
 async function startApp() {
@@ -235,44 +301,36 @@ async function startApp() {
   $("app-view").hidden = false;
   applyRoute();
   const session = await state.sessionReady;
-  // Hidden greeting so the coach runs its check-ins (FR-8).
+  // Hidden greeting so the coach runs its check-ins (FR-8), in the UI language.
   if (session && session.is_new && state.pendingGreeting && !state.onboarding) {
-    await sendChat(state.config.greeting_text, null, { hidden: true });
+    await sendChat(greetingText(), null, { hidden: true });
   }
 }
 
 // ------------------------------------------------------------- boot
 async function boot() {
+  setLang(detectLang(), { persist: false });
+  applyStatic();
   actions.openCoach = openCoach;
   actions.navigate = navigate;
   actions.refreshDashboard = refreshDashboard;
   actions.showSignIn = showSignIn;
   actions.markUnread = markUnread;
   actions.signOut = signOut;
+  actions.setLanguage = setLanguage;
 
   state.config = await (await fetch("/api/config")).json();
   initChat();
+  bindMenus();
 
   window.addEventListener("hashchange", applyRoute);
   desktop.addEventListener("change", applyRoute);
   $("new-chat-btn").addEventListener("click", async () => {
     if (state.streaming) return;
-    try {
-      state.sessionReady = openSession({ fresh: true }).catch((err) => { addError(err.message); return null; });
-      const session = await state.sessionReady;
-      if (session && session.is_new) await sendChat(state.config.greeting_text, null, { hidden: true });
-    } catch (err) { addError(err.message); }
+    state.sessionReady = openSession({ fresh: true }).catch((err) => { addError(err.message); return null; });
+    const session = await state.sessionReady;
+    if (session && session.is_new) await sendChat(greetingText(), null, { hidden: true });
   });
-  for (const b of document.querySelectorAll(".sign-out-btn")) b.addEventListener("click", signOut);
-  $("avatar-btn").addEventListener("click", (e) => {
-    e.stopPropagation();
-    const open = $("user-menu").hidden;
-    $("user-menu").hidden = !open;
-    $("avatar-btn").setAttribute("aria-expanded", String(open));
-    if (open) $("user-menu").querySelector("button:not([hidden])")?.focus();
-  });
-  document.addEventListener("click", (e) => { if (!e.target.closest(".menu-wrap")) closeMenu(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("user-menu").hidden) { closeMenu(); $("avatar-btn").focus(); } });
 
   const me = await fetch("/api/me", { credentials: "same-origin" });
   if (me.ok) await startApp();
@@ -281,6 +339,6 @@ async function boot() {
 
 document.addEventListener("DOMContentLoaded", () => {
   boot().catch((err) => {
-    document.body.append(el("p", { class: "msg-error boot-error", role: "alert", text: `Could not start the app: ${err.message}` }));
+    document.body.append(el("p", { class: "msg-error boot-error", role: "alert", text: t("error.boot", { message: err.message }) }));
   });
 });

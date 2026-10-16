@@ -3,8 +3,6 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0F1215" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#F8FAFC" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0F1215">
   <meta name="color-scheme" content="dark light">
   <meta name="description" content="Fitness Buddy: your AI fitness coach that remembers you.">
@@ -12,12 +10,13 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230F1215'/%3E%3Cpath d='M18 40l22-22M14 36l14 14M36 14l14 14M12 46l6 6M46 12l6 6' stroke='%23C6F432' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="preload" href="/static/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <script src="/static/js/theme-boot.js"></script>
   <link rel="stylesheet" href="/static/styles.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script type="module" src="/static/app.js"></script>
 </head>
 <body>
-  <a class="skip-link" href="#main-content">Skip to content</a>
+  <a class="skip-link" href="#main-content" data-i18n="skip">Skip to content</a>
 
   <!-- Landing / sign-in -->
   <section id="landing-view" class="landing" hidden aria-labelledby="landing-title">
@@ -27,16 +26,16 @@
           <span class="brand-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-fitness-center"/></svg></span>
           <span class="brand-name">Fitness Buddy</span>
         </div>
-        <span class="powered"><i aria-hidden="true"></i>Powered by <b>Gemini</b></span>
+        <span class="powered"><i aria-hidden="true"></i><span data-i18n="landing.powered">Powered by Gemini</span></span>
       </header>
 
-      <h1 id="landing-title" class="landing-title">Your AI coach that actually <span class="hl">remembers</span> you.</h1>
-      <p class="landing-sub">Snap your meals, get a plan that fits your body and schedule, and check in every day.</p>
+      <h1 id="landing-title" class="landing-title"><span data-i18n="landing.title.pre">Your AI coach that actually </span><span class="hl" data-i18n="landing.title.hl">remembers</span><span data-i18n="landing.title.post"> you.</span></h1>
+      <p class="landing-sub" data-i18n="landing.sub">Snap your meals, get a plan that fits your body and schedule, and check in every day.</p>
 
-      <div class="preview card" role="img" aria-label="Example of the Today screen: 1,240 of 2,300 kcal eaten, 1,060 kcal remaining, with a short coach message.">
+      <div class="preview card" role="img" data-i18n-attr="aria-label:landing.previewLabel" aria-label="Example of the Today screen: 1,240 of 2,300 kcal eaten, 1,060 kcal remaining, with a short coach message.">
         <div class="preview-head" aria-hidden="true">
-          <span class="eyebrow"><i class="live-dot"></i>Today's target</span>
-          <span class="pill pill-outline">14-day streak</span>
+          <span class="eyebrow"><i class="live-dot"></i><span data-i18n="landing.previewTarget">Today's target</span></span>
+          <span class="pill pill-outline" data-i18n="landing.previewStreak">14-day streak</span>
         </div>
         <div class="preview-body" aria-hidden="true">
           <div class="ring-wrap">
@@ -44,32 +43,32 @@
               <circle class="ring-track" cx="50" cy="50" r="40" fill="none" stroke-width="9"/>
               <circle class="ring-value" cx="50" cy="50" r="40" fill="none" stroke-width="9" stroke-linecap="round" stroke-dasharray="135.6 251.3" transform="rotate(-90 50 50)"/>
             </svg>
-            <div class="ring-center"><span class="ring-value-text">1,240</span><span class="ring-sub">/ 2,300 kcal</span></div>
+            <div class="ring-center"><span class="ring-value-text">1,240</span><span class="ring-sub" data-i18n="landing.previewRingSub">/ 2,300 kcal</span></div>
           </div>
           <div class="preview-stats">
-            <div class="macro-row"><span class="muted">Remaining</span><b class="accent">1,060 kcal</b></div>
-            <div class="macro protein"><div class="macro-row"><span>Protein</span><span><b>96g</b> / 140g</span></div><div class="bar-track"><span style="width:68%"></span></div></div>
-            <div class="macro carbs"><div class="macro-row"><span>Carbs</span><span><b>120g</b> / 210g</span></div><div class="bar-track"><span style="width:57%"></span></div></div>
+            <div class="macro-row"><span class="muted" data-i18n="landing.previewRemaining">Remaining</span><b class="accent" data-i18n="landing.previewRemainingVal">1,060 kcal</b></div>
+            <div class="macro protein"><div class="macro-row"><span data-i18n="macro.protein">Protein</span><span data-i18n="landing.previewProteinVal">96g / 140g</span></div><div class="bar-track"><span style="width:68%"></span></div></div>
+            <div class="macro carbs"><div class="macro-row"><span data-i18n="macro.carbs">Carbs</span><span data-i18n="landing.previewCarbsVal">120g / 210g</span></div><div class="bar-track"><span style="width:57%"></span></div></div>
           </div>
         </div>
         <div class="preview-bubble" aria-hidden="true">
           <span class="bot-avatar solid"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-smart-toy-fill"/></svg></span>
-          <div><p class="bubble-name">Buddy</p><p>Great job hitting <b class="accent">96g protein</b> today! Ready for your lower body session?</p></div>
+          <div><p class="bubble-name" data-i18n="landing.bubbleName">Buddy</p><p><span data-i18n="landing.bubble.pre">Great job hitting </span><b class="accent" data-i18n="landing.bubble.strong">96g protein</b><span data-i18n="landing.bubble.post"> today! Ready for your lower body session?</span></p></div>
         </div>
       </div>
 
       <ul class="features">
         <li class="feature">
           <span class="feature-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-photo-camera"/></svg></span>
-          <div><h2>Snap a meal</h2><p>Instant calorie and macro estimate from one photo</p></div>
+          <div><h2 data-i18n="landing.f1.title">Snap a meal</h2><p data-i18n="landing.f1.text">Instant calorie and macro estimate from one photo</p></div>
         </li>
         <li class="feature">
           <span class="feature-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-tune"/></svg></span>
-          <div><h2>Plans that adapt</h2><p>Built around your schedule, equipment and injuries</p></div>
+          <div><h2 data-i18n="landing.f2.title">Plans that adapt</h2><p data-i18n="landing.f2.text">Built around your schedule, equipment and injuries</p></div>
         </li>
         <li class="feature">
           <span class="feature-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-event-repeat"/></svg></span>
-          <div><h2>A coach that checks in</h2><p>Weekly reviews and daily nudges in the chat</p></div>
+          <div><h2 data-i18n="landing.f3.title">A coach that checks in</h2><p data-i18n="landing.f3.text">Weekly reviews and daily nudges in the chat</p></div>
         </li>
       </ul>
 
@@ -77,29 +76,33 @@
         <div id="gis-button" class="gis-button"></div>
         <p class="signin-error" id="signin-error" role="alert"></p>
       </div>
-      <footer class="landing-foot">Invite-only preview · Not medical advice</footer>
+      <footer class="landing-foot"><p data-i18n="landing.foot">Invite-only preview · Not medical advice</p><div id="landing-lang"></div></footer>
     </div>
   </section>
 
   <!-- Onboarding (rendered by js/onboarding.js) -->
-  <section id="onboarding-view" class="onboarding" hidden aria-label="Set up your profile"></section>
+  <section id="onboarding-view" class="onboarding" hidden data-i18n-attr="aria-label:ob.label" aria-label="Set up your profile"></section>
 
   <!-- App shell -->
   <div id="app-view" class="shell" hidden data-route="today">
     <!-- Desktop rail -->
-    <nav class="rail" aria-label="Main">
+    <nav class="rail" data-i18n-attr="aria-label:nav.main" aria-label="Main">
       <div class="rail-brand">
         <span class="brand-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-bolt-fill"/></svg></span>
         <span class="rail-name">Fitness<br><b>Buddy</b></span>
       </div>
       <div class="rail-links">
-        <a href="#today" class="rail-link" data-route="today"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-calendar-today"/></svg><span>Today</span></a>
-        <a href="#progress" class="rail-link" data-route="progress"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-monitoring"/></svg><span>Progress</span></a>
-        <a href="#plan" class="rail-link" data-route="plan"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-event-note"/></svg><span>Plan</span></a>
+        <a href="#today" class="rail-link" data-route="today"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-calendar-today"/></svg><span data-i18n="nav.today">Today</span></a>
+        <a href="#progress" class="rail-link" data-route="progress"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-monitoring"/></svg><span data-i18n="nav.progress">Progress</span></a>
+        <a href="#plan" class="rail-link" data-route="plan"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-event-note"/></svg><span data-i18n="nav.plan">Plan</span></a>
       </div>
       <div class="rail-foot">
-        <span class="avatar rail-avatar" aria-hidden="true"></span>
-        <button type="button" class="icon-btn sign-out-btn" aria-label="Sign out" title="Sign out"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-logout"/></svg></button>
+        <div class="menu-wrap">
+          <button type="button" class="avatar-btn" id="rail-avatar-btn" aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu" data-i18n-attr="aria-label:menu.account" aria-label="Account and settings">
+            <span class="avatar" aria-hidden="true"></span>
+          </button>
+          <div class="menu rail-menu" id="rail-menu" hidden></div>
+        </div>
       </div>
     </nav>
 
@@ -108,18 +111,15 @@
       <header class="topbar">
         <a class="wordmark" href="#today">Fitness Buddy</a>
         <div class="menu-wrap">
-          <button type="button" class="avatar-btn" id="avatar-btn" aria-haspopup="true" aria-expanded="false" aria-controls="user-menu" aria-label="Account menu">
+          <button type="button" class="avatar-btn" id="avatar-btn" aria-haspopup="true" aria-expanded="false" aria-controls="user-menu" data-i18n-attr="aria-label:menu.account" aria-label="Account and settings">
             <span class="avatar" aria-hidden="true"></span>
           </button>
-          <div class="menu" id="user-menu" hidden>
-            <p class="menu-email" id="menu-email"></p>
-            <button type="button" class="menu-item sign-out-btn"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-logout"/></svg>Sign out</button>
-          </div>
+          <div class="menu" id="user-menu" hidden></div>
         </div>
       </header>
-      <section id="view-today" class="view" data-view="today" aria-label="Today"></section>
-      <section id="view-progress" class="view" data-view="progress" aria-label="Progress" hidden></section>
-      <section id="view-plan" class="view" data-view="plan" aria-label="Plan" hidden></section>
+      <section id="view-today" class="view" data-view="today" data-i18n-attr="aria-label:nav.today" aria-label="Today"></section>
+      <section id="view-progress" class="view" data-view="progress" data-i18n-attr="aria-label:nav.progress" aria-label="Progress" hidden></section>
+      <section id="view-plan" class="view" data-view="plan" data-i18n-attr="aria-label:nav.plan" aria-label="Plan" hidden></section>
     </main>
 
     <!-- Coach (full screen on mobile, side panel on desktop) -->
@@ -127,43 +127,43 @@
       <header class="coach-head">
         <span class="bot-avatar lg" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-smart-toy-fill"/></svg><i class="online"></i></span>
         <div class="coach-titles">
-          <h1 id="coach-title">Coach</h1>
-          <p>Your AI fitness buddy</p>
+          <h1 id="coach-title" data-i18n="coach.title">Coach</h1>
+          <p data-i18n="coach.subtitle">Your AI fitness buddy</p>
         </div>
-        <button type="button" class="btn btn-ghost btn-sm" id="new-chat-btn" title="Start a new conversation"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-edit-square"/></svg>New chat</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="new-chat-btn" data-i18n-attr="title:coach.newChatTitle" title="Start a new conversation"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-edit-square"/></svg><span data-i18n="coach.newChat">New chat</span></button>
       </header>
-      <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Conversation" tabindex="0"></div>
+      <div id="messages" class="messages" role="log" aria-live="polite" data-i18n-attr="aria-label:coach.conversation" aria-label="Conversation" tabindex="0"></div>
       <div id="activity" class="activity" hidden role="status">
         <span class="typing" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span id="activity-label">Coach is thinking...</span>
+        <span id="activity-label" data-i18n="coach.thinking">Coach is thinking...</span>
       </div>
-      <div id="suggestions" class="suggestions" aria-label="Suggestions"></div>
+      <div id="suggestions" class="suggestions" data-i18n-attr="aria-label:coach.suggestions" aria-label="Suggestions"></div>
       <form id="composer" class="composer" autocomplete="off">
         <div id="photo-preview" class="photo-preview" hidden>
-          <img id="photo-preview-img" alt="Selected photo">
-          <button type="button" id="photo-remove" class="photo-remove" aria-label="Remove photo"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-close"/></svg></button>
+          <img id="photo-preview-img" data-i18n-attr="alt:coach.selectedPhoto" alt="Selected photo">
+          <button type="button" id="photo-remove" class="photo-remove" data-i18n-attr="aria-label:coach.removePhoto" aria-label="Remove photo"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-close"/></svg></button>
         </div>
         <div class="composer-row">
-          <label class="icon-btn" title="Take a photo">
+          <label class="icon-btn" data-i18n-attr="title:coach.camera" title="Take a photo">
             <input type="file" id="camera-input" accept="image/*" capture="environment" class="sr-only" tabindex="-1">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-photo-camera"/></svg><span class="sr-only">Take a photo</span>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-photo-camera"/></svg><span class="sr-only" data-i18n="coach.camera">Take a photo</span>
           </label>
-          <label class="icon-btn" title="Choose from gallery">
+          <label class="icon-btn" data-i18n-attr="title:coach.gallery" title="Choose a photo">
             <input type="file" id="gallery-input" accept="image/jpeg,image/png,image/webp,image/*" class="sr-only" tabindex="-1">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-image"/></svg><span class="sr-only">Choose a photo</span>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-image"/></svg><span class="sr-only" data-i18n="coach.gallery">Choose a photo</span>
           </label>
-          <textarea id="message-input" rows="1" maxlength="4000" placeholder="Message your coach" aria-label="Message"></textarea>
-          <button type="submit" id="send-btn" class="send-btn" aria-label="Send"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-arrow-upward"/></svg></button>
+          <textarea id="message-input" rows="1" maxlength="4000" data-i18n-attr="placeholder:coach.placeholder;aria-label:coach.message" placeholder="Message your coach" aria-label="Message"></textarea>
+          <button type="submit" id="send-btn" class="send-btn" data-i18n-attr="aria-label:coach.send" aria-label="Send"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-arrow-upward"/></svg></button>
         </div>
       </form>
     </aside>
 
     <!-- Mobile tab bar -->
-    <nav class="tabbar" aria-label="Main">
-      <a href="#today" class="tab" data-route="today"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-calendar-today"/></svg><span>Today</span></a>
-      <a href="#coach" class="tab" data-route="coach"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-smart-toy"/></svg><span>Coach</span><i class="unread" hidden></i></a>
-      <a href="#progress" class="tab" data-route="progress"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-monitoring"/></svg><span>Progress</span></a>
-      <a href="#plan" class="tab" data-route="plan"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-event-note"/></svg><span>Plan</span></a>
+    <nav class="tabbar" data-i18n-attr="aria-label:nav.main" aria-label="Main">
+      <a href="#today" class="tab" data-route="today"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-calendar-today"/></svg><span data-i18n="nav.today">Today</span></a>
+      <a href="#coach" class="tab" data-route="coach"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-smart-toy"/></svg><span data-i18n="nav.coach">Coach</span><i class="unread" hidden></i></a>
+      <a href="#progress" class="tab" data-route="progress"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-monitoring"/></svg><span data-i18n="nav.progress">Progress</span></a>
+      <a href="#plan" class="tab" data-route="plan"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-event-note"/></svg><span data-i18n="nav.plan">Plan</span></a>
     </nav>
   </div>
 

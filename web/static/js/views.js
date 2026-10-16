@@ -1,21 +1,25 @@
 // Dashboard views: Today, Progress and Plan (all driven by GET /api/dashboard).
-import { el, icon, fmt, signed, humanize, capitalize, parseDate, isoDate, addDays, shortDate, clockTime, clamp, richText, isNum } from "./util.js";
+// Every label comes from i18n.js; plan/exercise names from the coach stay as-is.
+import { el, icon, parseDate, isoDate, addDays, clamp, richText, isNum } from "./util.js";
+import { t, getLang, num, signedNum, kcal, grams, mins, dateLong, dateShort, weekdayShort, weekdayLong, clock } from "./i18n.js";
 import { calorieRing, miniRing, weightChart, calorieBars } from "./charts.js";
 import {
-  GOALS, WEEKDAYS, WEEKDAY_SHORT, MEAL_ICONS, coachTip, greetingFor, firstName, nextMealType,
+  WEEKDAYS, MEAL_ICONS, coachTip, greetingFor, firstName, nextMealType,
   exerciseSpec, sortedSessions, weekdayIndex, weightDelta,
 } from "./logic.js";
 import { state, actions } from "./state.js";
 
-const goalLabel = (g) => (GOALS.find((x) => x.value === g) || { label: humanize(g) }).label;
+const goalLabel = (g) => t(`goal.${g}`);
+const mealName = (type) => t(`meal.${type || "meal"}`);
+const dayLong = (day) => weekdayLong(weekdayIndex(day));
 
 function card(cls, children, attrs = {}) {
   return el("section", { class: `card ${cls}`.trim(), ...attrs }, children);
 }
 
-function cardHeader(iconName, title, right = null, { level = "h2" } = {}) {
+function cardHeader(iconName, title, right = null) {
   return el("div", { class: "card-header" }, [
-    el("div", { class: "card-heading" }, [iconName ? icon(iconName, { cls: "accent", fill: iconName === "bolt" }) : null, el(level, { text: title })]),
+    el("div", { class: "card-heading" }, [iconName ? icon(iconName, { cls: "accent", fill: iconName === "bolt" }) : null, el("h2", { text: title })]),
     right,
   ]);
 }
@@ -38,17 +42,25 @@ function secondaryBtn(label, iconName, onclick, extra = "") {
 }
 
 export function loadingView() {
-  return el("div", { class: "loading", role: "status" }, [el("span", { class: "spinner", "aria-hidden": "true" }), "Loading..."]);
+  return el("div", { class: "loading", role: "status" }, [el("span", { class: "spinner", "aria-hidden": "true" }), t("loading")]);
 }
 
 export function errorView(message, retry) {
-  return card("", [emptyState("warning", "Couldn't load your data", message, secondaryBtn("Try again", null, retry))]);
+  return card("", [emptyState("warning", t("error.loadTitle"), message, secondaryBtn(t("error.tryAgain"), null, retry))]);
+}
+
+export function setupProfileView(onClick) {
+  return card("", [el("div", { class: "empty" }, [
+    el("h3", { text: t("profile.setupTitle") }),
+    el("p", { class: "muted", text: t("profile.setupText") }),
+    primaryBtn(t("profile.setupBtn"), null, onClick),
+  ])]);
 }
 
 const startSession = (session, isToday = true) => actions.openCoach({
-  send: isToday ? `Start today's workout: ${session.focus}` : `I want to do my ${capitalize(session.day_of_week)} session now: ${session.focus}`,
+  send: isToday ? t("send.startToday", { focus: session.focus }) : t("send.startDay", { day: dayLong(session.day_of_week), focus: session.focus }),
 });
-const createPlan = () => actions.openCoach({ send: "Please create a weekly training plan for me." });
+const createPlan = () => actions.openCoach({ send: t("send.createPlan") });
 
 // ================================================================== TODAY
 function macroBar(name, cls, value, target) {
@@ -56,7 +68,7 @@ function macroBar(name, cls, value, target) {
   return el("div", { class: `macro ${cls}` }, [
     el("div", { class: "macro-row" }, [
       el("span", { class: "macro-name" }, [el("i", { class: "swatch", "aria-hidden": "true" }), name]),
-      el("span", { class: "macro-val" }, [el("b", { text: fmt(value) }), target ? ` / ${fmt(target)}g` : "g"]),
+      el("span", { class: "macro-val" }, [el("b", { text: num(value) }), target ? ` / ${t("unit.gShort", { n: num(target) })}` : t("unit.gShort", { n: "" })]),
     ]),
     el("div", { class: `bar-track${target && value > target ? " over" : ""}`, role: "progressbar", "aria-label": name, "aria-valuemin": 0, "aria-valuemax": target || 0, "aria-valuenow": Math.round(value || 0) }, [
       el("span", { style: { width: `${pct}%` } }),
@@ -66,69 +78,69 @@ function macroBar(name, cls, value, target) {
 
 function heroCard(d) {
   const today = d.nutrition.today;
-  const t = d.targets || {};
+  const tg = d.targets || {};
   const consumed = today.consumed || {};
   const target = today.target_calories_kcal;
   const remaining = today.remaining_calories_kcal;
   let pace = null;
-  if (t.daily_calories_kcal && t.tdee_kcal) {
-    const diff = t.daily_calories_kcal - t.tdee_kcal;
-    pace = diff < -100 ? "Deficit target" : diff > 100 ? "Surplus target" : "Maintenance";
+  if (tg.daily_calories_kcal && tg.tdee_kcal) {
+    const diff = tg.daily_calories_kcal - tg.tdee_kcal;
+    pace = t(diff < -100 ? "today.pace.deficit" : diff > 100 ? "today.pace.surplus" : "today.pace.maintenance");
   }
   const left = !isNum(remaining) ? null
-    : remaining >= 0 ? el("span", { class: "pill pill-primary", text: `${fmt(remaining)} left` })
-      : el("span", { class: "pill pill-warn", text: `${fmt(-remaining)} over` });
+    : remaining >= 0 ? el("span", { class: "pill pill-primary", text: t("today.left", { n: num(remaining) }) })
+      : el("span", { class: "pill pill-warn", text: t("today.over", { n: num(-remaining) }) });
   return card("hero", [
     el("div", { class: "glow", "aria-hidden": "true" }),
-    cardHeader("bolt", "Caloric balance", pace ? el("span", { class: "tag-muted", text: pace }) : null),
+    cardHeader("bolt", t("today.balance"), pace ? el("span", { class: "tag-muted", text: pace }) : null),
     el("div", { class: "hero-grid" }, [
       el("div", { class: "ring-col" }, [
         el("div", { class: "ring-wrap" }, [
-          calorieRing(consumed.calories_kcal || 0, target),
+          calorieRing(consumed.calories_kcal || 0, target, { label: target ? t("today.ringAria", { a: num(consumed.calories_kcal), b: num(target) }) : kcal(consumed.calories_kcal) }),
           el("div", { class: "ring-center", "aria-hidden": "true" }, [
-            el("span", { class: "ring-value-text", text: fmt(consumed.calories_kcal) }),
-            el("span", { class: "ring-sub", text: target ? `of ${fmt(target)} kcal` : "kcal today" }),
+            el("span", { class: "ring-value-text", text: num(consumed.calories_kcal) }),
+            el("span", { class: "ring-sub", text: target ? t("today.ringOf", { n: num(target) }) : t("today.ringNoTarget") }),
           ]),
         ]),
         left,
       ]),
       el("div", { class: "macros" }, [
-        macroBar("Protein", "protein", consumed.protein_g || 0, t.protein_g || today.target_protein_g),
-        macroBar("Carbs", "carbs", consumed.carbs_g || 0, t.carbs_g),
-        macroBar("Fat", "fat", consumed.fat_g || 0, t.fat_g),
+        macroBar(t("macro.protein"), "protein", consumed.protein_g || 0, tg.protein_g || today.target_protein_g),
+        macroBar(t("macro.carbs"), "carbs", consumed.carbs_g || 0, tg.carbs_g),
+        macroBar(t("macro.fat"), "fat", consumed.fat_g || 0, tg.fat_g),
       ]),
     ]),
-    !target ? el("p", { class: "muted small", text: "Your coach will set daily targets once your profile is complete." }) : null,
-  ], { "aria-label": "Caloric balance" });
+    !target ? el("p", { class: "muted small", text: t("today.noTargets") }) : null,
+  ], { "aria-label": t("today.balance") });
 }
 
 function quickActions() {
   const btn = (iconName, label, onclick) => el("button", { type: "button", class: "quick", onclick }, [icon(iconName, { cls: "accent" }), el("span", { text: label })]);
   return el("div", { class: "quick-actions" }, [
-    btn("photo-camera", "Snap a meal", () => actions.openCoach({ photo: "camera" })),
-    btn("fitness-center", "Log workout", () => actions.openCoach({ prefill: "I just finished my workout: " })),
-    btn("forum", "Ask coach", () => actions.openCoach({ focus: true })),
+    btn("photo-camera", t("today.quick.snap"), () => actions.openCoach({ photo: "camera" })),
+    btn("fitness-center", t("today.quick.log"), () => actions.openCoach({ prefill: t("send.logWorkout") })),
+    btn("forum", t("today.quick.ask"), () => actions.openCoach({ focus: true })),
   ]);
 }
 
 function tipCard(d) {
-  const tip = coachTip(d, new Date());
+  const tip = coachTip(d, new Date(), getLang());
   return card("tip", [
     el("span", { class: "tip-icon", "aria-hidden": "true" }, [icon("smart-toy", { fill: true })]),
     el("div", { class: "tip-body" }, [
-      el("p", { class: "eyebrow accent", text: "Coach tip" }),
+      el("p", { class: "eyebrow accent", text: t("today.tip") }),
       el("p", { class: "tip-text" }, richText(tip.parts)),
-      el("button", { type: "button", class: "link-btn", onclick: () => actions.openCoach({ send: tip.question }) }, ["Ask why", icon("arrow-forward")]),
+      el("button", { type: "button", class: "link-btn", onclick: () => actions.openCoach({ send: tip.question }) }, [t("today.askWhy"), icon("arrow-forward")]),
     ]),
-  ], { "aria-label": "Coach tip" });
+  ], { "aria-label": t("today.tip") });
 }
 
 function workoutCard(d) {
   const plan = d.plan;
   if (!plan) {
     return card("workout", [
-      cardHeader("fitness-center", "Today's workout"),
-      emptyState("event-note", "No training plan yet", "Your coach builds a weekly plan around your schedule, equipment and injuries.", primaryBtn("Create my plan", "add", createPlan)),
+      cardHeader("fitness-center", t("today.workout")),
+      emptyState("event-note", t("today.noPlanTitle"), t("today.noPlanText"), primaryBtn(t("today.createPlan"), "add", createPlan)),
     ]);
   }
   const s = d.today_session;
@@ -137,10 +149,10 @@ function workoutCard(d) {
     const todayIdx = weekdayIndex(d.weekday);
     const next = sessions.find((x) => weekdayIndex(x.day_of_week) > todayIdx) || sessions[0];
     return card("workout rest", [
-      cardHeader("hotel", "Rest day"),
-      el("p", { class: "muted", text: "Recovery is part of the plan. Light walking or stretching is a good idea." }),
-      next ? el("p", { class: "next-up" }, [el("span", { class: "muted", text: "Next session: " }), el("strong", { text: `${capitalize(next.day_of_week)} · ${next.focus}` })]) : null,
-      secondaryBtn("View plan", "event-note", () => actions.navigate("plan"), "btn-block"),
+      cardHeader("hotel", t("today.restTitle")),
+      el("p", { class: "muted", text: t("today.restText") }),
+      next ? el("p", { class: "next-up" }, [el("span", { class: "muted", text: t("today.nextSession") }), el("strong", { text: `${dayLong(next.day_of_week)} · ${next.focus}` })]) : null,
+      secondaryBtn(t("today.viewPlan"), "event-note", () => actions.navigate("plan"), "btn-block"),
     ]);
   }
   const position = sessions.findIndex((x) => x.day_of_week === s.day_of_week) + 1;
@@ -149,47 +161,46 @@ function workoutCard(d) {
   return card("workout", [
     el("div", { class: "card-header" }, [
       el("div", {}, [
-        el("p", { class: "eyebrow accent", text: `Session ${position} of ${sessions.length} this week` }),
+        el("p", { class: "eyebrow accent", text: t("today.sessionPos", { n: position, total: sessions.length }) }),
         el("h2", { class: "workout-title", text: s.focus }),
       ]),
-      d.today_session_done ? el("span", { class: "pill pill-primary" }, [icon("check"), "Done"]) : el("span", { class: "round-icon", "aria-hidden": "true" }, [icon("calendar-today")]),
+      d.today_session_done ? el("span", { class: "pill pill-primary" }, [icon("check"), t("today.done")]) : el("span", { class: "round-icon", "aria-hidden": "true" }, [icon("calendar-today")]),
     ]),
     el("div", { class: "meta-row" }, [
-      el("span", {}, [icon("schedule", { cls: "accent" }), `${s.estimated_minutes} min`]),
+      el("span", {}, [icon("schedule", { cls: "accent" }), mins(s.estimated_minutes)]),
       el("span", { class: "sep", "aria-hidden": "true", text: "•" }),
-      el("span", {}, [icon("fitness-center", { cls: "accent" }), `${s.exercises.length} exercises`]),
+      el("span", {}, [icon("fitness-center", { cls: "accent" }), t("today.exercises", { n: s.exercises.length })]),
     ]),
     el("ol", { class: "ex-preview" }, preview.map((ex, i) => el("li", {}, [
       el("span", { class: "num", text: String(i + 1) }),
       el("span", { class: "ex-name", text: ex.name }),
-      el("span", { class: "ex-spec", text: exerciseSpec(ex) }),
+      el("span", { class: "ex-spec", text: exerciseSpec(ex, getLang()) }),
     ]))),
-    more > 0 ? el("button", { type: "button", class: "link-btn", onclick: () => actions.navigate("plan") }, [`+${more} more in your plan`, icon("chevron-right")]) : null,
+    more > 0 ? el("button", { type: "button", class: "link-btn", onclick: () => actions.navigate("plan") }, [t("today.more", { n: more }), icon("chevron-right")]) : null,
     d.today_session_done
-      ? secondaryBtn("Session logged. View plan", "check-circle", () => actions.navigate("plan"), "btn-block")
-      : primaryBtn("Start session", "play-arrow", () => startSession(s), "btn-block"),
-  ], { "aria-label": "Today's workout" });
+      ? secondaryBtn(t("today.sessionLogged"), "check-circle", () => actions.navigate("plan"), "btn-block")
+      : primaryBtn(t("today.start"), "play-arrow", () => startSession(s), "btn-block"),
+  ], { "aria-label": t("today.workout") });
 }
 
 function mealsCard(d) {
   const meals = d.nutrition.meals_today || [];
-  const hour = new Date().getHours();
-  const next = nextMealType(meals, hour);
+  const next = nextMealType(meals, new Date().getHours());
   const total = meals.reduce((sum, m) => sum + ((m.totals && m.totals.calories_kcal) || 0), 0);
-  return el("section", { class: "meals", "aria-label": "Meals today" }, [
+  return el("section", { class: "meals", "aria-label": t("today.meals") }, [
     el("div", { class: "section-header" }, [
-      el("h2", { text: "Meals today" }),
-      el("span", { class: "muted small", text: meals.length ? `${meals.length} logged · ${fmt(total)} kcal` : "Nothing logged yet" }),
+      el("h2", { text: t("today.meals") }),
+      el("span", { class: "muted small", text: meals.length ? t("today.mealsLogged", { n: meals.length, kcal: kcal(total) }) : t("today.mealsNone") }),
     ]),
     el("ul", { class: "meal-list" }, meals.map((m) => el("li", { class: "meal-row" }, [
       el("span", { class: `meal-icon ${m.meal_type}`, "aria-hidden": "true" }, [icon(MEAL_ICONS[m.meal_type] || "restaurant")]),
       el("div", { class: "meal-text" }, [
-        el("p", { class: "meal-name", text: (m.items || []).join(", ") || capitalize(m.meal_type) }),
-        el("p", { class: "meal-meta", text: `${capitalize(m.meal_type)} · ${clockTime(m.logged_at, d.timezone)}` }),
+        el("p", { class: "meal-name", text: (m.items || []).join(getLang() === "zh" ? "、" : ", ") || mealName(m.meal_type) }),
+        el("p", { class: "meal-meta", text: `${mealName(m.meal_type)} · ${clock(m.logged_at, d.timezone)}` }),
       ]),
-      el("div", { class: "meal-kcal" }, [el("b", { text: fmt(m.totals && m.totals.calories_kcal) }), el("span", { text: "kcal" })]),
+      el("div", { class: "meal-kcal" }, [el("b", { text: num(m.totals && m.totals.calories_kcal) }), el("span", { text: t("unit.kcalWord") })]),
     ]))),
-    el("button", { type: "button", class: "add-row", onclick: () => actions.openCoach({ photo: "camera" }) }, [icon("add-circle"), `Add ${next}`]),
+    el("button", { type: "button", class: "add-row", onclick: () => actions.openCoach({ photo: "camera" }) }, [icon("add-circle"), t("today.addMeal", { meal: t(`mealLower.${next}`) })]),
   ]);
 }
 
@@ -197,30 +208,30 @@ function weightMiniCard(d) {
   const pts = d.weight.points || [];
   const delta = weightDelta(pts);
   return card("weight-mini desktop-only", [
-    cardHeader("trending-down", "Weight trend", el("span", { class: "muted small", text: `Last ${d.range_days} days` })),
+    cardHeader("trending-down", t("today.weightTrend"), el("span", { class: "muted small", text: t("today.lastDays", { n: d.range_days }) })),
     pts.length ? el("div", { class: "big-number" }, [
-      el("span", { class: "num", text: fmt(d.weight.latest_weight_kg, 1) }), el("span", { class: "unit", text: "kg" }),
-      delta ? el("span", { class: "delta", text: `${signed(delta.delta)} kg` }) : null,
+      el("span", { class: "num", text: num(d.weight.latest_weight_kg, 1) }), el("span", { class: "unit", text: t("unit.kgWord") }),
+      delta ? el("span", { class: "delta", text: t("unit.kg", { n: signedNum(delta.delta) }) }) : null,
     ]) : null,
-    pts.length > 1 ? weightChart(pts, { compact: true, height: 120 }) : el("p", { class: "muted", text: "Log your weight in Coach to see your trend." }),
-    secondaryBtn("See progress", "monitoring", () => actions.navigate("progress"), "btn-block"),
+    pts.length > 1 ? weightChart(pts, { compact: true, height: 120 }) : el("p", { class: "muted", text: t("today.weightHint") }),
+    secondaryBtn(t("today.seeProgress"), "monitoring", () => actions.navigate("progress"), "btn-block"),
   ]);
 }
 
 export function renderToday(root, d) {
   const now = new Date();
   const name = firstName(state.me);
-  const dateLabel = parseDate(d.today).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const greeting = greetingFor(now.getHours(), getLang());
   const streak = d.nutrition.logging_streak_days || 0;
   root.replaceChildren(
     el("header", { class: "greeting" }, [
       el("div", { class: "greeting-row" }, [
-        el("h1", { text: `${greetingFor(now.getHours())}${name ? `, ${name}` : ""}` }),
-        el("span", { class: "date", text: dateLabel }),
+        el("h1", { text: name ? t("greet.withName", { greeting, name }) : greeting }),
+        el("span", { class: "date", text: dateLong(d.today) }),
       ]),
       el("div", { class: "chips" }, [
-        el("span", { class: "chip" }, [icon("target", { cls: "accent", fill: true }), "Goal: ", el("strong", { text: goalLabel(d.goal) })]),
-        streak > 0 ? el("span", { class: "chip" }, [icon("local-fire-department", { cls: "streak", fill: true }), `${streak}-day logging streak`]) : null,
+        el("span", { class: "chip" }, [icon("target", { cls: "accent", fill: true }), t("today.goalChip"), el("strong", { text: goalLabel(d.goal) })]),
+        streak > 0 ? el("span", { class: "chip" }, [icon("local-fire-department", { cls: "streak", fill: true }), t("today.streak", { n: streak })]) : null,
       ]),
     ]),
     el("div", { class: "dash-grid today-grid" }, [
@@ -236,9 +247,8 @@ export function renderToday(root, d) {
 
 // =============================================================== PROGRESS
 function rangeControl(current, onChange) {
-  const opts = [[14, "2W"], [30, "1M"], [90, "3M"]];
-  return el("div", { class: "segmented", role: "group", "aria-label": "Weight chart range" }, opts.map(([v, label]) =>
-    el("button", { type: "button", class: v === current ? "active" : "", "aria-pressed": String(v === current), onclick: () => onChange(v) }, [label])));
+  return el("div", { class: "segmented", role: "group", "aria-label": t("progress.range") }, [14, 30, 90].map((v) =>
+    el("button", { type: "button", class: v === current ? "active" : "", "aria-pressed": String(v === current), onclick: () => onChange(v) }, [t(`progress.r${v}`)])));
 }
 
 function weightCard(d) {
@@ -247,32 +257,32 @@ function weightCard(d) {
   const delta = weightDelta(pts);
   if (pts.length < 2) {
     return card("weight", [
-      cardHeader("monitor-weight", "Weight trend"),
-      emptyState("monitor-weight", pts.length ? "One weigh-in so far" : "No weigh-ins yet",
-        "Log your weight in Coach (for example \u201c81.5 kg this morning\u201d) to see your 7-day trend.",
-        secondaryBtn("Log weight", "add", () => actions.openCoach({ prefill: "My weight this morning: " }))),
+      cardHeader("monitor-weight", t("progress.weightTrend")),
+      emptyState("monitor-weight", pts.length ? t("progress.oneWeighIn") : t("progress.noWeighIns"), t("progress.weighText"),
+        secondaryBtn(t("progress.logWeight"), "add", () => actions.openCoach({ prefill: t("send.logWeight") }))),
     ]);
   }
   const trendIcon = delta.delta < -0.05 ? "trending-down" : delta.delta > 0.05 ? "trending-up" : "trending-flat";
   const xLabels = [0, 0.25, 0.5, 0.75, 1].map((f) => pts[Math.round(f * (pts.length - 1))]);
+  const wide = window.matchMedia("(min-width: 1024px)").matches;
   return card("weight", [
     el("div", { class: "weight-head" }, [
       el("div", {}, [
-        el("p", { class: "eyebrow", text: "Current weight" }),
-        el("p", { class: "big-number" }, [el("span", { class: "num", text: fmt(w.latest_weight_kg, 1) }), el("span", { class: "unit", text: "kg" })]),
+        el("p", { class: "eyebrow", text: t("progress.currentWeight") }),
+        el("p", { class: "big-number" }, [el("span", { class: "num", text: num(w.latest_weight_kg, 1) }), el("span", { class: "unit", text: t("unit.kgWord") })]),
       ]),
       el("div", { class: "weight-delta" }, [
-        el("span", { class: "pill pill-primary" }, [icon(trendIcon), `${signed(delta.delta)} kg in ${delta.days}d`]),
-        isNum(delta.perWeek) ? el("span", { class: "muted small", text: `${signed(delta.perWeek)} kg/wk average` }) : null,
+        el("span", { class: "pill pill-primary" }, [icon(trendIcon), t("progress.delta", { d: signedNum(delta.delta), n: delta.days })]),
+        isNum(delta.perWeek) ? el("span", { class: "muted small", text: t("progress.perWeek", { d: signedNum(delta.perWeek) }) }) : null,
       ]),
     ]),
-    weightChart(pts, window.matchMedia("(min-width: 1024px)").matches ? { width: 800, height: 240 } : {}),
-    el("div", { class: "x-labels", "aria-hidden": "true" }, [...new Set(xLabels)].map((p, i, arr) => el("span", { text: i === arr.length - 1 && p.local_date === d.today ? "Today" : shortDate(p.local_date) }))),
+    weightChart(pts, wide ? { width: 800, height: 240 } : {}),
+    el("div", { class: "x-labels", "aria-hidden": "true" }, [...new Set(xLabels)].map((p, i, arr) => el("span", { text: i === arr.length - 1 && p.local_date === d.today ? t("progress.today") : dateShort(p.local_date) }))),
     el("div", { class: "legend" }, [
-      el("span", {}, [el("i", { class: "lg-dot" }), "Daily weigh-in"]),
-      el("span", {}, [el("i", { class: "lg-line" }), "7-day average"]),
+      el("span", {}, [el("i", { class: "lg-dot" }), t("progress.legendDaily")]),
+      el("span", {}, [el("i", { class: "lg-line" }), t("progress.legendAvg")]),
     ]),
-  ], { "aria-label": "Weight trend" });
+  ], { "aria-label": t("progress.weightTrend") });
 }
 
 function caloriesCard(d) {
@@ -281,15 +291,15 @@ function caloriesCard(d) {
   const logged = n.days.filter((x) => x.meals_logged > 0);
   const avg = logged.length ? logged.reduce((s, x) => s + x.calories_kcal, 0) / logged.length : null;
   return card("calories", [
-    cardHeader(null, "Calories & fuel", target ? el("span", { class: "pill pill-outline", text: `Target: ${fmt(target)}` }) : null),
-    el("p", { class: "muted small sub", text: `Last ${n.days.length} days` }),
-    logged.length ? calorieBars(n.days, target) : emptyState("restaurant", "No meals logged yet", "Snap a meal in Coach and your daily calories will show up here."),
+    cardHeader(null, t("progress.calories"), target ? el("span", { class: "pill pill-outline", text: t("progress.target", { n: num(target) }) }) : null),
+    el("p", { class: "muted small sub", text: t("today.lastDays", { n: n.days.length }) }),
+    logged.length ? calorieBars(n.days, target) : emptyState("restaurant", t("progress.noMeals"), t("progress.noMealsText")),
     logged.length ? el("div", { class: "chart-foot" }, [
-      el("span", { class: "muted", text: `${n.days.length}d ago` }),
-      el("span", { class: "strong", text: `Avg ${fmt(avg)} kcal · ${logged.length}/${n.days.length} days logged` }),
-      el("span", { class: "muted", text: "Today" }),
+      el("span", { class: "muted", text: t("progress.daysAgo", { n: n.days.length }) }),
+      el("span", { class: "strong", text: t("progress.avg", { kcal: kcal(avg), n: logged.length, total: n.days.length }) }),
+      el("span", { class: "muted", text: t("progress.today") }),
     ]) : null,
-  ], { "aria-label": "Calories versus target" });
+  ], { "aria-label": t("progress.calories") });
 }
 
 function proteinCard(d) {
@@ -297,21 +307,21 @@ function proteinCard(d) {
   const goal = (d.targets && d.targets.protein_g) || null;
   const rate = n.days.length ? Math.round((n.protein_hit_days / n.days.length) * 100) : 0;
   return card("protein", [
-    cardHeader(null, "Protein consistency", icon("restaurant", { cls: "accent" })),
-    el("p", { class: "muted small sub", text: goal ? `Daily goal: ${fmt(goal)} g` : "Daily goal not set yet" }),
-    el("ol", { class: "hit-grid", "aria-label": "Protein target by day, oldest first" }, n.days.map((day) => {
+    cardHeader(null, t("progress.protein"), icon("restaurant", { cls: "accent" })),
+    el("p", { class: "muted small sub", text: goal ? t("progress.proteinGoal", { g: grams(goal) }) : t("progress.proteinNoGoal") }),
+    el("ol", { class: "hit-grid", "aria-label": t("progress.proteinAria") }, n.days.map((day) => {
       const status = !day.meals_logged ? "none" : day.protein_target_hit ? "hit" : "miss";
-      const label = `${shortDate(day.local_date)}: ${status === "none" ? "not logged" : status === "hit" ? `hit (${fmt(day.protein_g)} g)` : `missed (${fmt(day.protein_g)} g)`}`;
+      const label = `${dateShort(day.local_date)}: ${status === "none" ? t("progress.none") : t(`progress.${status}`, { g: grams(day.protein_g) })}`;
       return el("li", { class: `hit is-${status}`, title: label }, [
         status === "hit" ? icon("check") : status === "miss" ? icon("close") : el("span", { "aria-hidden": "true", text: "–" }),
         el("span", { class: "sr-only", text: label }),
       ]);
     })),
     el("div", { class: "card-foot" }, [
-      el("span", { text: `Hit ${n.protein_hit_days} of ${n.days.length} days` }),
-      el("span", { class: "accent strong", text: `${rate}% rate` }),
+      el("span", { text: t("progress.hitFoot", { n: n.protein_hit_days, total: n.days.length }) }),
+      el("span", { class: "accent strong", text: t("progress.rate", { n: rate }) }),
     ]),
-  ], { "aria-label": "Protein consistency" });
+  ], { "aria-label": t("progress.protein") });
 }
 
 function workoutsCard(d) {
@@ -322,32 +332,32 @@ function workoutsCard(d) {
   const maxBar = Math.max(planned, ...hist.map((h) => h.sessions), 1);
   const left = planned - done;
   return card("workouts", [
-    cardHeader(null, "Weekly workouts", icon("fitness-center", { cls: "accent" })),
+    cardHeader(null, t("progress.workouts"), icon("fitness-center", { cls: "accent" })),
     el("div", { class: "workouts-body" }, [
       el("div", { class: "ring-wrap small" }, [
-        miniRing(done, planned || Math.max(done, 1), { label: planned ? `${done} of ${planned} sessions in the last 7 days` : `${done} sessions in the last 7 days` }),
+        miniRing(done, planned || Math.max(done, 1), { label: planned ? t("progress.ringAria", { done, planned }) : t("progress.ringAriaNoPlan", { done }) }),
         el("div", { class: "ring-center", "aria-hidden": "true" }, [
           el("span", { class: "ring-value-text sm", text: planned ? `${done}/${planned}` : String(done) }),
-          el("span", { class: "ring-sub", text: "sessions" }),
+          el("span", { class: "ring-sub", text: t("progress.sessions") }),
         ]),
       ]),
       el("div", { class: "history" }, [
-        el("p", { class: "muted small", text: "Last 4 weeks" }),
+        el("p", { class: "muted small", text: t("progress.last4") }),
         el("ol", { class: "history-bars" }, hist.map((h, i) => {
           const isNow = i === hist.length - 1;
           return el("li", { class: isNow ? "now" : "" }, [
             el("span", { class: "hbar-track" }, [el("span", { class: "hbar", style: { height: `${Math.max(6, (h.sessions / maxBar) * 100)}%` } })]),
-            el("span", { class: "hlabel", text: isNow ? "Now" : planned ? `${h.sessions}/${planned}` : String(h.sessions) }),
-            el("span", { class: "sr-only", text: `Week ending ${shortDate(h.week_end)}: ${h.sessions} sessions` }),
+            el("span", { class: "hlabel", text: isNow ? t("progress.now") : planned ? `${h.sessions}/${planned}` : String(h.sessions) }),
+            el("span", { class: "sr-only", text: t("progress.weekAria", { date: dateShort(h.week_end), n: h.sessions }) }),
           ]);
         })),
       ]),
     ]),
     el("div", { class: "card-foot" }, [
-      el("span", { text: planned ? `Target: ${planned} sessions/wk` : "No plan yet" }),
-      planned ? el("span", { class: "accent strong", text: left > 0 ? `${left} to go` : "Target hit" }) : el("button", { type: "button", class: "link-btn", onclick: createPlan }, ["Create my plan"]),
+      el("span", { text: planned ? t("progress.targetSessions", { n: planned }) : t("progress.noPlan") }),
+      planned ? el("span", { class: "accent strong", text: left > 0 ? t("progress.toGo", { n: left }) : t("progress.targetHit") }) : el("button", { type: "button", class: "link-btn", onclick: createPlan }, [t("today.createPlan")]),
     ]),
-  ], { "aria-label": "Weekly workouts" });
+  ], { "aria-label": t("progress.workouts") });
 }
 
 function reviewCard(d) {
@@ -356,24 +366,24 @@ function reviewCard(d) {
     return card("review tip", [
       el("span", { class: "tip-icon", "aria-hidden": "true" }, [icon("smart-toy", { fill: true })]),
       el("div", { class: "tip-body" }, [
-        el("p", { class: "eyebrow accent", text: "Weekly review" }),
-        el("p", { class: "tip-text", text: "Your first weekly review arrives after about a week of logging meals, workouts and weigh-ins." }),
+        el("p", { class: "eyebrow accent", text: t("progress.review") }),
+        el("p", { class: "tip-text", text: t("progress.reviewEmpty") }),
       ]),
     ]);
   }
   return card("review tip", [
     el("span", { class: "tip-icon", "aria-hidden": "true" }, [icon("smart-toy", { fill: true })]),
     el("div", { class: "tip-body" }, [
-      el("p", { class: "eyebrow accent", text: `Weekly review · ${shortDate(r.week_end)}` }),
+      el("p", { class: "eyebrow accent", text: t("progress.reviewDate", { date: dateShort(r.week_end) }) }),
       el("p", { class: "tip-text clamp-3", text: r.summary }),
-      el("button", { type: "button", class: "link-btn", onclick: () => actions.openCoach({ send: "Show me my latest weekly review." }) }, ["Read full review", icon("arrow-forward")]),
+      el("button", { type: "button", class: "link-btn", onclick: () => actions.openCoach({ send: t("send.review") }) }, [t("progress.readReview"), icon("arrow-forward")]),
     ]),
-  ], { "aria-label": "Weekly review" });
+  ], { "aria-label": t("progress.review") });
 }
 
 export function renderProgress(root, d, onRange) {
   root.replaceChildren(
-    el("header", { class: "page-head" }, [el("h1", { text: "Progress" })]),
+    el("header", { class: "page-head" }, [el("h1", { text: t("progress.title") })]),
     rangeControl(d.range_days || state.range, onRange),
     el("div", { class: "dash-grid progress-grid" }, [
       el("div", { class: "span-2" }, [weightCard(d)]),
@@ -390,20 +400,23 @@ function weekStrip(d, sessionsByDay, onPick) {
   const today = parseDate(d.today);
   const monday = addDays(today, -((today.getDay() + 6) % 7));
   const done = new Set((d.week && d.week.workout_dates) || []);
-  return el("ol", { class: "week-strip big", "aria-label": "This week" }, WEEKDAYS.map((day, i) => {
+  return el("ol", { class: "week-strip big", "aria-label": t("plan.week") }, WEEKDAYS.map((day, i) => {
     const date = addDays(monday, i);
     const iso = isoDate(date);
     const isToday = iso === d.today;
     const isDone = done.has(iso);
     const session = sessionsByDay.get(day);
     const cls = ["day-pill", session ? "train" : "rest", isToday ? "today" : "", isDone ? "done" : ""].filter(Boolean).join(" ");
-    const label = `${capitalize(day)} ${date.getDate()}${isToday ? ", today" : ""}: ${session ? session.focus : "rest day"}${isDone ? ", workout logged" : ""}`;
+    const label = t("plan.dayAria", {
+      day: weekdayLong(i), date: dateShort(date), today: isToday ? t("plan.dayAriaToday") : "",
+      what: session ? session.focus : t("plan.dayAriaRest"), done: isDone ? t("plan.dayAriaDone") : "",
+    });
     const inner = [
-      el("span", { class: "dow", text: WEEKDAY_SHORT[i] }),
+      el("span", { class: "dow", text: weekdayShort(i) }),
       el("span", { class: "date", text: String(date.getDate()) }),
-      isToday ? el("span", { class: "today-tag", text: "Today" })
+      isToday ? el("span", { class: "today-tag", text: t("plan.todayTag") })
         : isDone ? icon("check-circle", { cls: "done-icon" })
-          : session ? el("span", { class: "train-dot", "aria-hidden": "true" }) : el("span", { class: "rest-label", text: "Rest" }),
+          : session ? el("span", { class: "train-dot", "aria-hidden": "true" }) : el("span", { class: "rest-label", text: t("plan.rest") }),
     ];
     return el("li", {}, [session
       ? el("button", { type: "button", class: cls, "aria-label": label, onclick: () => onPick(day) }, inner)
@@ -411,19 +424,19 @@ function weekStrip(d, sessionsByDay, onPick) {
   }));
 }
 
-function sessionCard(d, s, { isToday, isDone, open }) {
-  const status = isDone ? "Completed" : isToday ? "Today" : "Scheduled";
-  const node = el("details", { class: `card session-card${isToday ? " is-today" : ""}`, open, id: `session-${s.day_of_week}` }, [
+function sessionCard(s, { isToday, isDone, open }) {
+  const status = t(isDone ? "plan.status.done" : isToday ? "plan.status.today" : "plan.status.scheduled");
+  return el("details", { class: `card session-card${isToday ? " is-today" : ""}`, open, id: `session-${s.day_of_week}` }, [
     el("summary", {}, [
       el("span", { class: `status-icon${isDone ? " done" : ""}`, "aria-hidden": "true" }, [icon(isDone ? "check-circle" : isToday ? "fitness-center" : "calendar-today")]),
       el("span", { class: "session-text" }, [
         el("span", { class: "session-meta-top" }, [
-          el("span", { text: `${capitalize(s.day_of_week)} · ${status}` }),
+          el("span", { text: `${dayLong(s.day_of_week)} · ${status}` }),
           el("span", { class: "dot-sep", "aria-hidden": "true", text: "·" }),
-          el("span", {}, [icon("schedule"), `${s.estimated_minutes} min`]),
+          el("span", {}, [icon("schedule"), mins(s.estimated_minutes)]),
         ]),
         el("span", { class: "session-title", text: s.focus }),
-        el("span", { class: "muted small", text: `${s.exercises.length} exercises` }),
+        el("span", { class: "muted small", text: t("today.exercises", { n: s.exercises.length }) }),
       ]),
       icon("expand-more", { cls: "chev" }),
     ]),
@@ -432,42 +445,38 @@ function sessionCard(d, s, { isToday, isDone, open }) {
       el("div", { class: "ex-body" }, [
         el("p", { class: "ex-name", text: ex.name }),
         el("p", { class: "ex-sub" }, [
-          ex.rest_seconds ? el("span", { text: `${ex.rest_seconds}s rest` }) : null,
-          ex.target_rpe ? el("span", { text: `RPE ${ex.target_rpe}` }) : null,
+          ex.rest_seconds ? el("span", { text: t("plan.restSec", { n: ex.rest_seconds }) }) : null,
+          ex.target_rpe ? el("span", { text: t("plan.rpe", { n: ex.target_rpe }) }) : null,
           ex.notes ? el("span", { class: "tag", text: ex.notes }) : null,
         ]),
       ]),
-      el("span", { class: "ex-spec", text: exerciseSpec(ex) }),
+      el("span", { class: "ex-spec", text: exerciseSpec(ex, getLang()) }),
     ]))),
     el("div", { class: "session-actions" }, [
-      primaryBtn("Start session", "play-arrow", () => startSession(s, isToday), "btn-block"),
-      secondaryBtn("Ask coach to swap", "swap-horiz", () => actions.openCoach({ prefill: `Please swap an exercise in my ${capitalize(s.day_of_week)} session (${s.focus}): ` }), "btn-block"),
+      primaryBtn(t("today.start"), "play-arrow", () => startSession(s, isToday), "btn-block"),
+      secondaryBtn(t("plan.swap"), "swap-horiz", () => actions.openCoach({ prefill: t("send.swap", { day: dayLong(s.day_of_week), focus: s.focus }) }), "btn-block"),
     ]),
   ]);
-  return node;
 }
 
 export function renderPlan(root, d) {
   const plan = d.plan;
   if (!plan) {
     root.replaceChildren(
-      el("header", { class: "page-head" }, [el("h1", { text: "Your plan" })]),
-      card("", [emptyState("event-note", "No plan yet",
-        "Tell your coach how many days you can train and what equipment you have, and it will build a weekly plan for you.",
-        primaryBtn("Create my plan", "add", createPlan))]),
+      el("header", { class: "page-head" }, [el("h1", { text: t("plan.title") })]),
+      card("", [emptyState("event-note", t("plan.emptyTitle"), t("plan.emptyText"), primaryBtn(t("today.createPlan"), "add", createPlan))]),
     );
     return;
   }
   const sessions = sortedSessions(plan);
   const byDay = new Map(sessions.map((s) => [s.day_of_week, s]));
-  const todayIso = d.today;
-  const monday = addDays(parseDate(todayIso), -((parseDate(todayIso).getDay() + 6) % 7));
+  const monday = addDays(parseDate(d.today), -((parseDate(d.today).getDay() + 6) % 7));
   const done = new Set((d.week && d.week.workout_dates) || []);
   const todayIdx = weekdayIndex(d.weekday);
   const openDay = byDay.has(d.weekday) ? d.weekday : (sessions.find((s) => weekdayIndex(s.day_of_week) > todayIdx) || sessions[0]).day_of_week;
   const cards = sessions.map((s) => {
     const iso = isoDate(addDays(monday, weekdayIndex(s.day_of_week)));
-    return sessionCard(d, s, { isToday: s.day_of_week === d.weekday, isDone: done.has(iso), open: s.day_of_week === openDay });
+    return sessionCard(s, { isToday: s.day_of_week === d.weekday, isDone: done.has(iso), open: s.day_of_week === openDay });
   });
   const pick = (day) => {
     const target = document.getElementById(`session-${day}`);
@@ -478,8 +487,8 @@ export function renderPlan(root, d) {
   };
   root.replaceChildren(
     el("header", { class: "page-head" }, [
-      el("h1", { text: "Your plan" }),
-      el("p", { class: "muted" }, [plan.title, el("span", { class: "dot-sep", "aria-hidden": "true", text: " · " }), el("span", { class: "accent", text: `${sessions.length} sessions/week` })]),
+      el("h1", { text: t("plan.title") }),
+      el("p", { class: "muted" }, [plan.title, el("span", { class: "dot-sep", "aria-hidden": "true", text: " · " }), el("span", { class: "accent", text: t("plan.perWeek", { n: sessions.length }) })]),
     ]),
     weekStrip(d, byDay, pick),
     el("div", { class: "dash-grid plan-grid" }, [
@@ -487,9 +496,9 @@ export function renderPlan(root, d) {
       el("div", { class: "plan-side" }, [
         plan.progression_notes ? card("tip progression", [
           el("span", { class: "tip-icon", "aria-hidden": "true" }, [icon("trending-up")]),
-          el("div", { class: "tip-body" }, [el("p", { class: "eyebrow accent", text: "Progression note" }), el("p", { class: "tip-text", text: plan.progression_notes })]),
+          el("div", { class: "tip-body" }, [el("p", { class: "eyebrow accent", text: t("plan.progression") }), el("p", { class: "tip-text", text: plan.progression_notes })]),
         ]) : null,
-        el("button", { type: "button", class: "btn btn-outline btn-center", onclick: () => actions.openCoach({ prefill: "Please adjust my training plan: " }) }, [icon("smart-toy"), "Ask coach to adjust plan"]),
+        el("button", { type: "button", class: "btn btn-outline btn-center", onclick: () => actions.openCoach({ prefill: t("send.adjust") }) }, [icon("smart-toy"), t("plan.adjust")]),
       ]),
     ]),
   );

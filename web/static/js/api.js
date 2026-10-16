@@ -1,14 +1,15 @@
 // Network helpers: JSON/fetch wrapper and the SSE-over-fetch reader.
 import { actions } from "./state.js";
+import { t } from "./i18n.js";
 
 export async function api(path, options = {}) {
   const res = await fetch(path, { credentials: "same-origin", ...options });
   if (res.status === 401) {
     actions.showSignIn();
-    throw new Error("Sign in required.");
+    throw new Error(t("error.signIn"));
   }
   if (!res.ok) {
-    let detail = `Request failed (${res.status}).`;
+    let detail = t("error.request", { status: res.status });
     try { detail = (await res.json()).detail || detail; } catch (_) { /* not JSON */ }
     throw new Error(detail);
   }

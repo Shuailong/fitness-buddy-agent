@@ -35,7 +35,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from web.config import GREETING_TEXT
+from web.config import DEFAULT_LANG, GREETING_TEXTS
 
 CONFIRMATION_CALL = "adk_request_confirmation"
 MEAL_LOG_TOOL = "log_meal_entry"
@@ -63,6 +63,31 @@ ACTIVITY_LABELS: dict[str, str] = {
     "log_meal_entry": "Logging your meal...",
     "get_weekly_progress_snapshot": "Crunching this week's numbers...",
 }
+ACTIVITY_LABELS_ZH: dict[str, str] = {
+    "workout_planner": "正在询问训练规划师...",
+    "nutrition_coach": "正在询问营养教练...",
+    "weekly_reviewer": "正在询问周报教练...",
+    "plan_critic": "正在审核计划草案...",
+    "list_due_check_ins": "正在查看待办打卡...",
+    "get_fitness_profile": "正在读取你的档案...",
+    "save_fitness_profile": "正在保存你的档案...",
+    "calculate_daily_energy_targets": "正在计算你的每日目标...",
+    "update_daily_calorie_target": "正在更新热量目标...",
+    "log_workout_session": "正在记录训练...",
+    "record_body_measurement": "正在记录身体数据...",
+    "get_body_measurement_trend": "正在查看体重趋势...",
+    "get_daily_nutrition_summary": "正在汇总今日营养...",
+    "get_current_training_plan": "正在加载训练计划...",
+    "list_recent_log_entries": "正在查找最近的记录...",
+    "delete_logged_entry": "正在准备删除...",
+    "search_exercise_library": "正在搜索动作库...",
+    "validate_training_plan_constraints": "正在检查计划约束...",
+    "save_weekly_training_plan": "正在准备新计划...",
+    "log_meal_entry": "正在记录这餐...",
+    "get_weekly_progress_snapshot": "正在统计本周数据...",
+}
+_LABELS = {"en": ACTIVITY_LABELS, "zh": ACTIVITY_LABELS_ZH}
+_HIDDEN_GREETINGS = frozenset(GREETING_TEXTS.values())
 # Internal plumbing calls that mean nothing to the user.
 SILENT_CALLS = frozenset(
     {"finish_task", "preload_memory", "load_memory", "set_model_response"}
@@ -128,17 +153,28 @@ def _is_hidden_event(event: dict[str, Any]) -> bool:
     return bool(event.get("partial")) or bool(_get(actions, "compaction"))
 
 
-def activity_label(call: dict[str, Any]) -> str | None:
-    """Human-friendly label for a tool / delegation call, or None to hide it."""
+def activity_label(call: dict[str, Any], lang: str = DEFAULT_LANG) -> str | None:
+    """Human-friendly label for a tool / delegation call, or None to hide it.
+
+    Args:
+        call: The raw function call.
+        lang: UI language (``en`` or ``zh``).
+    """
     name = str(call.get("name") or "")
     if not name or name in SILENT_CALLS or name == CONFIRMATION_CALL:
         return None
+    labels = _LABELS.get(lang, ACTIVITY_LABELS)
+    zh = labels is ACTIVITY_LABELS_ZH
     if name == "transfer_to_agent":
-        target = (
-            _get(_get(call, "args") or {}, "agent_name", "agentName") or "a specialist"
-        )
-        return f"Handing over to {str(target).replace('_', ' ')}..."
-    return ACTIVITY_LABELS.get(name, f"Running {name.replace('_', ' ')}...")
+        target = _get(_get(call, "args") or {}, "agent_name", "agentName")
+        if target and str(target) in labels:
+            return labels[str(target)]
+        if zh:
+            return "正在转交给专项教练..."
+        return f"Handing over to {str(target or 'a specialist').replace('_', ' ')}..."
+    if name in labels:
+        return labels[name]
+    return "处理中..." if zh else f"Running {name.replace('_', ' ')}..."
 
 
 def confirmation_from_call(call: dict[str, Any]) -> dict[str, Any]:
@@ -188,8 +224,15 @@ def meal_card_from_response(resp: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def simplify_event(event: dict[str, Any]) -> list[dict[str, Any]]:
-    """Converts one raw ADK event into zero or more simplified UI events."""
+def simplify_event(
+    event: dict[str, Any], lang: str = DEFAULT_LANG
+) -> list[dict[str, Any]]:
+    """Converts one raw ADK event into zero or more simplified UI events.
+
+    Args:
+        event: A raw ADK event (camelCase or snake_case keys).
+        lang: UI language for activity labels (``en`` or ``zh``).
+    """
     if _get(event, "errorCode", "error_code") or _get(
         event, "errorMessage", "error_message"
     ):
@@ -208,7 +251,7 @@ def simplify_event(event: dict[str, Any]) -> list[dict[str, Any]]:
         if call:
             if call.get("name") == CONFIRMATION_CALL:
                 out.append(confirmation_from_call(call))
-            elif label := activity_label(call):
+            elif label := activity_label(call, lang):
                 out.append({"type": "activity", "label": label})
             continue
         if resp := _function_response(part):
@@ -246,7 +289,7 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
         have ``role`` ``user`` / ``coach`` / ``decision``.
     """
     answered = _answered_confirmations(events)
-    titles: dict[str, str] = {}
+    cards: dict[str, dict[str, Any]] = {}
     messages: list[dict[str, Any]] = []
     pending: list[dict[str, Any]] = []
     for event in events:
@@ -257,16 +300,20 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
             texts = [t for p in parts if (t := _visible_text(p))]
             has_image = any(_get(p, "inlineData", "inline_data") for p in parts)
             text = "\n".join(texts)
-            if (text and text != GREETING_TEXT) or has_image:
+            if (text and text not in _HIDDEN_GREETINGS) or has_image:
                 messages.append({"role": "user", "text": text, "has_image": has_image})
             for p in parts:
                 resp = _function_response(p)
                 if resp and resp.get("name") == CONFIRMATION_CALL:
+                    card = cards.get(resp.get("id")) or {}
                     messages.append(
                         {
                             "role": "decision",
                             "confirmed": answered.get(resp.get("id"), False),
-                            "title": titles.get(resp.get("id"), "Requested change"),
+                            "title": card.get("title", "Requested change"),
+                            # Lets the browser show a localized title by kind.
+                            "kind": card.get("kind"),
+                            "replaces": (card.get("details") or {}).get("replaces"),
                         }
                     )
             continue
@@ -275,7 +322,7 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
             resp = _function_response(p)
             if call and call.get("name") == CONFIRMATION_CALL:
                 card = confirmation_from_call(call)
-                titles[card["call_id"]] = card["title"]
+                cards[card["call_id"]] = card
                 if card["call_id"] not in answered:
                     pending.append(card)
             elif resp:

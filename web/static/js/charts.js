@@ -1,6 +1,7 @@
 // Inline SVG charts. Colors come from CSS custom properties via classes, so
 // both themes work without touching this code.
-import { svgEl, fmt, shortDate, clamp, isNum } from "./util.js";
+import { svgEl, clamp, isNum } from "./util.js";
+import { t, num, kcal, kg, dateShort as shortDate } from "./i18n.js";
 
 let gradientSeq = 0;
 
@@ -12,7 +13,7 @@ export function calorieRing(consumed, target, { size = 128, stroke = 9, label = 
   const over = target && consumed > target;
   const svg = svgEl("svg", {
     class: "ring", viewBox: "0 0 100 100", width: size, height: size, role: "img",
-    "aria-label": label || (target ? `${fmt(consumed)} of ${fmt(target)} kcal` : `${fmt(consumed)} kcal`),
+    "aria-label": label || (target ? t("today.ringAria", { a: num(consumed), b: num(target) }) : kcal(consumed)),
   });
   svg.append(svgEl("circle", { class: "ring-track", cx: 50, cy: 50, r, fill: "none", "stroke-width": stroke }));
   if (pct > 0) {
@@ -59,8 +60,8 @@ export function weightChart(points, { width = 340, height = 190, compact = false
   const svg = svgEl("svg", {
     class: "chart weight-chart", viewBox: `0 0 ${W} ${H}`, role: "img",
     "aria-label": points.length
-      ? `Weight trend from ${shortDate(points[0].local_date)} (${fmt(points[0].weight_kg, 1)} kg) to ${shortDate(points[points.length - 1].local_date)} (${fmt(points[points.length - 1].weight_kg, 1)} kg)`
-      : "Weight trend chart",
+      ? t("progress.chartAria", { a: shortDate(points[0].local_date), wa: kg(points[0].weight_kg), b: shortDate(points[points.length - 1].local_date), wb: kg(points[points.length - 1].weight_kg) })
+      : t("progress.chartAriaEmpty"),
   });
   if (!points.length) return svg;
   const t0 = Date.parse(points[0].local_date);
@@ -93,7 +94,7 @@ export function weightChart(points, { width = 340, height = 190, compact = false
     svg.append(svgEl("path", { class: "area", d: `${line} L${ma[ma.length - 1][0].toFixed(1)},${H - B} L${ma[0][0].toFixed(1)},${H - B} Z`, fill: `url(#${id})` }));
   }
   points.forEach((p) => svg.append(svgEl("circle", { class: "dot", cx: x(p), cy: y(p.weight_kg), r: compact ? 2 : 3 },
-    [svgEl("title", {}, `${shortDate(p.local_date)}: ${fmt(p.weight_kg, 1)} kg (7-day avg ${fmt(p.moving_average_kg, 1)} kg)`)])));
+    [svgEl("title", {}, t("progress.pointTitle", { date: shortDate(p.local_date), w: kg(p.weight_kg), avg: kg(p.moving_average_kg) }))])));
   svg.append(svgEl("path", { class: "line", d: line, fill: "none" }));
   const last = ma[ma.length - 1];
   svg.append(svgEl("circle", { class: "end-dot", cx: last[0], cy: last[1], r: 4.5 }));
@@ -103,7 +104,7 @@ export function weightChart(points, { width = 340, height = 190, compact = false
 /** 14-day calories bars with a dashed target line; over-target bars use the warning color. */
 export function calorieBars(days, target, { width = 340, height = 150 } = {}) {
   const W = width, H = height, T = 18, B = 6;
-  const label = target ? `Daily calories for the last ${days.length} days versus a ${fmt(target)} kcal target` : `Daily calories for the last ${days.length} days`;
+  const label = target ? t("progress.kcalAria", { n: days.length, target: num(target) }) : t("progress.kcalAriaNoTarget", { n: days.length });
   const svg = svgEl("svg", { class: "chart kcal-chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": label });
   const max = Math.max(target || 0, ...days.map((d) => d.calories_kcal || 0), 500) * 1.08;
   const slot = W / days.length;
@@ -117,11 +118,11 @@ export function calorieBars(days, target, { width = 340, height = 150 } = {}) {
     const cls = !logged ? "bar empty" : over ? "bar over" : isToday ? "bar today" : "bar";
     svg.append(svgEl("rect", {
       class: cls, x: i * slot + slot * 0.14, y: top, width: slot * 0.72, height: Math.max(2, H - B - top), rx: 3,
-    }, [svgEl("title", {}, logged ? `${shortDate(d.local_date)}: ${fmt(d.calories_kcal)} kcal` : `${shortDate(d.local_date)}: nothing logged`)]));
+    }, [svgEl("title", {}, logged ? t("progress.barTitle", { date: shortDate(d.local_date), kcal: kcal(d.calories_kcal) }) : t("progress.barNone", { date: shortDate(d.local_date) }))]));
   });
   if (target) {
     svg.append(svgEl("line", { class: "target-line", x1: 0, x2: W, y1: y(target), y2: y(target) }));
-    svg.append(svgEl("text", { class: "axis target-label", x: W - 2, y: y(target) - 5, "text-anchor": "end" }, `${fmt(target)} kcal`));
+    svg.append(svgEl("text", { class: "axis target-label", x: W - 2, y: y(target) - 5, "text-anchor": "end" }, kcal(target)));
   }
   return svg;
 }
