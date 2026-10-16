@@ -9,6 +9,7 @@ import { startOnboarding, rerenderOnboarding } from "./js/onboarding.js";
 import { buildOnboardingMessage, initials } from "./js/logic.js";
 import { t, getLang, setLang, detectLang, applyStatic } from "./js/i18n.js";
 import { settingsMenu, langSwitch } from "./js/settings.js";
+import { initLanding, localizeLandingImages } from "./js/landing.js";
 
 const ROUTES = ["today", "coach", "progress", "plan"];
 const desktop = window.matchMedia("(min-width: 1024px)");
@@ -179,7 +180,7 @@ function setLanguage(lang) {
   renderSuggestions(state.dashboard);
   if (state.onboarding) rerenderOnboarding();
   if (!$("app-view").hidden && currentView() !== "coach") renderView(currentView());
-  if (!$("landing-view").hidden) renderGisButton();
+  if (!$("landing-view").hidden) { localizeLandingImages(); renderGisButton(); }
   updateTitle();
 }
 
@@ -250,17 +251,33 @@ function leaveOnboarding() {
 }
 
 // ------------------------------------------------------------- auth
+/** Effective theme for the landing page (manual choice or the system preference). */
+function effectiveTheme() {
+  const attr = document.documentElement.getAttribute("data-theme");
+  if (attr === "light" || attr === "dark") return attr;
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+/** Renders the Google button into the hero and final CTA slots (placeholders keep the layout stable). */
 function renderGisButton() {
+  const slots = ["gis-hero", "gis-cta"].map((id) => $(id)).filter(Boolean);
   if (!state.config.google_client_id) {
     $("signin-error").textContent = t("signin.notConfigured");
     return;
   }
   if (!(window.google && window.google.accounts)) return;
-  const width = Math.min(400, $("gis-button").clientWidth || 320);
-  $("gis-button").replaceChildren();
-  window.google.accounts.id.renderButton($("gis-button"), {
-    theme: "outline", size: "large", shape: "pill", text: "signin_with", width, locale: getLang() === "zh" ? "zh_CN" : "en",
-  });
+  for (const slot of slots) {
+    for (const child of [...slot.children]) if (!child.classList.contains("gis-placeholder")) child.remove();
+    const host = el("div", { class: "gis-host" });
+    slot.append(host);
+    const width = Math.max(220, Math.min(320, slot.clientWidth || 300));
+    window.google.accounts.id.renderButton(host, {
+      theme: effectiveTheme() === "dark" ? "filled_black" : "outline",
+      size: "large", shape: "pill", text: "signin_with", width,
+      locale: getLang() === "zh" ? "zh_CN" : "en",
+    });
+    slot.classList.add("gis-ready");
+  }
 }
 
 function showSignIn() {
@@ -269,6 +286,8 @@ function showSignIn() {
   $("landing-view").hidden = false;
   closeMenus();
   renderLandingLang();
+  initLanding();
+  document.querySelector(".skip-link").setAttribute("href", "#lp-main");
   updateTitle();
   const render = () => {
     if (state.config.google_client_id) {
@@ -315,6 +334,7 @@ function renderAvatar() {
 
 async function startApp() {
   $("landing-view").hidden = true;
+  document.querySelector(".skip-link").setAttribute("href", "#main-content");
   try {
     const me = await fetch("/api/me", { credentials: "same-origin" });
     state.me = me.ok ? await me.json() : null;
@@ -362,6 +382,9 @@ async function boot() {
   bindMenus();
 
   window.addEventListener("hashchange", applyRoute);
+  window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+    if (!$("landing-view").hidden) renderGisButton();
+  });
   desktop.addEventListener("change", applyRoute);
   $("new-chat-btn").addEventListener("click", async () => {
     if (state.streaming) return;

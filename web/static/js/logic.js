@@ -137,7 +137,7 @@ export function exerciseSpec(ex, lang = "en") {
 /** Short label for a session focus in a week strip ("Upper Body Push" -> "Upper"). */
 export function shortFocus(focus) {
   const word = String(focus || "").trim().split(/[\s·/,–-]+/)[0] || "–";
-  if (/[\u3400-\u9fff]/.test(word)) return word.length > 3 ? word.slice(0, 3) : word;
+  if (/[\u3400-\u9fff]/.test(word)) return word.length > 3 ? word.slice(0, 2) : word;
   return word.length > 7 ? word.slice(0, 6) + "." : word;
 }
 

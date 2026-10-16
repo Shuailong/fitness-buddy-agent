@@ -18,67 +18,184 @@
 <body>
   <a class="skip-link" href="#main-content" data-i18n="skip">Skip to content</a>
 
-  <!-- Landing / sign-in -->
-  <section id="landing-view" class="landing" hidden aria-labelledby="landing-title">
-    <div class="landing-inner">
-      <header class="landing-top">
-        <div class="brand">
+  <!-- Landing / sign-in (marketing page; images swapped per language by js/landing.js) -->
+  <div id="landing-view" class="lp" hidden>
+    <header class="lp-nav" id="lp-nav">
+      <div class="lp-wrap lp-nav-inner">
+        <a class="lp-logo" href="#lp-top" data-scroll="lp-top">
           <span class="brand-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-fitness-center"/></svg></span>
           <span class="brand-name">Fitness Buddy</span>
-        </div>
-        <span class="powered"><i aria-hidden="true"></i><span data-i18n="landing.powered">Powered by Gemini</span></span>
-      </header>
-
-      <h1 id="landing-title" class="landing-title"><span data-i18n="landing.title.pre">Your AI coach that actually </span><span class="hl" data-i18n="landing.title.hl">remembers</span><span data-i18n="landing.title.post"> you.</span></h1>
-      <p class="landing-sub" data-i18n="landing.sub">Snap your meals, get a plan that fits your body and schedule, and check in every day.</p>
-
-      <div class="preview card" role="img" data-i18n-attr="aria-label:landing.previewLabel" aria-label="Example of the Today screen: 1,240 of 2,300 kcal eaten, 1,060 kcal remaining, with a short coach message.">
-        <div class="preview-head" aria-hidden="true">
-          <span class="eyebrow"><i class="live-dot"></i><span data-i18n="landing.previewTarget">Today's target</span></span>
-          <span class="pill pill-outline" data-i18n="landing.previewStreak">14-day streak</span>
-        </div>
-        <div class="preview-body" aria-hidden="true">
-          <div class="ring-wrap">
-            <svg class="ring" viewBox="0 0 100 100" width="120" height="120">
-              <circle class="ring-track" cx="50" cy="50" r="40" fill="none" stroke-width="9"/>
-              <circle class="ring-value" cx="50" cy="50" r="40" fill="none" stroke-width="9" stroke-linecap="round" stroke-dasharray="135.6 251.3" transform="rotate(-90 50 50)"/>
-            </svg>
-            <div class="ring-center"><span class="ring-value-text">1,240</span><span class="ring-sub" data-i18n="landing.previewRingSub">/ 2,300 kcal</span></div>
-          </div>
-          <div class="preview-stats">
-            <div class="macro-row"><span class="muted" data-i18n="landing.previewRemaining">Remaining</span><b class="accent" data-i18n="landing.previewRemainingVal">1,060 kcal</b></div>
-            <div class="macro protein"><div class="macro-row"><span data-i18n="macro.protein">Protein</span><span data-i18n="landing.previewProteinVal">96g / 140g</span></div><div class="bar-track"><span style="width:68%"></span></div></div>
-            <div class="macro carbs"><div class="macro-row"><span data-i18n="macro.carbs">Carbs</span><span data-i18n="landing.previewCarbsVal">120g / 210g</span></div><div class="bar-track"><span style="width:57%"></span></div></div>
-          </div>
-        </div>
-        <div class="preview-bubble" aria-hidden="true">
-          <span class="bot-avatar solid"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-smart-toy-fill"/></svg></span>
-          <div><p class="bubble-name" data-i18n="landing.bubbleName">Buddy</p><p><span data-i18n="landing.bubble.pre">Great job hitting </span><b class="accent" data-i18n="landing.bubble.strong">96g protein</b><span data-i18n="landing.bubble.post"> today! Ready for your lower body session?</span></p></div>
+        </a>
+        <nav class="lp-links" data-i18n-attr="aria-label:lp.nav" aria-label="Sections">
+          <a href="#lp-features" data-scroll="lp-features" data-i18n="lp.nav.features">Features</a>
+          <a href="#lp-how" data-scroll="lp-how" data-i18n="lp.nav.how">How it works</a>
+          <a href="#lp-safety" data-scroll="lp-safety" data-i18n="lp.nav.safety">Safety</a>
+        </nav>
+        <div class="lp-nav-actions">
+          <div id="landing-lang"></div>
+          <button type="button" class="btn btn-primary btn-sm lp-signin" id="lp-signin-btn"><span data-i18n="lp.signin">Sign in</span></button>
         </div>
       </div>
+    </header>
 
-      <ul class="features">
-        <li class="feature">
-          <span class="feature-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-photo-camera"/></svg></span>
-          <div><h2 data-i18n="landing.f1.title">Snap a meal</h2><p data-i18n="landing.f1.text">Instant calorie and macro estimate from one photo</p></div>
-        </li>
-        <li class="feature">
-          <span class="feature-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-tune"/></svg></span>
-          <div><h2 data-i18n="landing.f2.title">Plans that adapt</h2><p data-i18n="landing.f2.text">Built around your schedule, equipment and injuries</p></div>
-        </li>
-        <li class="feature">
-          <span class="feature-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-event-repeat"/></svg></span>
-          <div><h2 data-i18n="landing.f3.title">A coach that checks in</h2><p data-i18n="landing.f3.text">Weekly reviews and daily nudges in the chat</p></div>
-        </li>
-      </ul>
+    <main id="lp-main" tabindex="-1">
+      <section class="lp-hero" id="lp-top" aria-labelledby="landing-title">
+        <div class="lp-glow" aria-hidden="true"></div>
+        <div class="lp-wrap lp-hero-grid">
+          <div class="lp-hero-copy">
+            <p class="lp-pill"><i aria-hidden="true"></i><span data-i18n="lp.pill">Invite-only preview · Powered by Gemini</span></p>
+            <h1 id="landing-title" class="lp-title"><span data-i18n="lp.title.pre">Your AI coach that </span><span class="hl" data-i18n="lp.title.hl">actually remembers</span><span data-i18n="lp.title.post"> you.</span></h1>
+            <p class="lp-sub" data-i18n="lp.sub">Snap a meal, get a plan built around your body and schedule, and a coach that checks in every day.</p>
+            <div class="lp-cta-row">
+              <div class="gis-slot" id="gis-hero" tabindex="-1"><span class="gis-placeholder" aria-hidden="true"><span class="g-dot"></span><span data-i18n="lp.gisPlaceholder">Sign in with Google</span></span></div>
+              <a class="btn btn-outline lp-how-link" href="#lp-how" data-scroll="lp-how"><span data-i18n="lp.seeHow">See how it works</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-arrow-downward"/></svg></a>
+            </div>
+            <p class="signin-error" id="signin-error" role="alert"></p>
+          </div>
+          <div class="lp-hero-visual">
+            <div class="phone phone-hero">
+              <img class="lp-shot" data-shot="today" width="390" height="844" fetchpriority="high" decoding="async" alt="">
+            </div>
+            <div class="float-card fc-meal" aria-hidden="true">
+              <span class="fc-icon"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-check-circle"/></svg></span>
+              <span class="fc-text"><b data-i18n="lp.fc.meal">Meal logged · 850 kcal</b><small data-i18n="lp.fc.mealSub">Beef noodle soup · 48 g protein</small></span>
+            </div>
+            <div class="float-card fc-plan" aria-hidden="true">
+              <span class="fc-icon"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-bolt-fill"/></svg></span>
+              <span class="fc-text"><b data-i18n="lp.fc.plan">Plan ready to approve</b><small data-i18n="lp.fc.planSub">Reviewed by a critic agent · knee-friendly</small></span>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <div class="signin-area">
-        <div id="gis-button" class="gis-button"></div>
-        <p class="signin-error" id="signin-error" role="alert"></p>
+      <section class="lp-built" data-i18n-attr="aria-label:lp.built" aria-label="Built with">
+        <div class="lp-wrap">
+          <p class="lp-built-label" data-i18n="lp.built">Built with Google Cloud</p>
+          <ul class="lp-built-list">
+            <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-hub"/></svg>Google ADK</li>
+            <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-auto-awesome"/></svg>Gemini</li>
+            <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-deployed-code"/></svg>Vertex AI Agent Engine</li>
+            <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-cloud"/></svg>Cloud Run</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lp-section lp-features" id="lp-features" aria-labelledby="lp-features-title">
+        <div class="lp-wrap">
+          <header class="lp-section-head reveal">
+            <h2 id="lp-features-title" data-i18n="lp.features.title">Designed around your real life</h2>
+            <p data-i18n="lp.features.sub">No tedious manual entries, no cookie-cutter plans.</p>
+          </header>
+          <article class="lp-feature reveal">
+            <div class="lp-feature-copy">
+              <p class="lp-eyebrow"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-photo-camera"/></svg><span data-i18n="lp.f1.eyebrow">Snap a meal</span></p>
+              <h3 data-i18n="lp.f1.title">Calories and macros from one photo.</h3>
+              <p data-i18n="lp.f1.text">Take a photo of a home-cooked dish or a restaurant meal. Gemini identifies each item and estimates portions; totals are computed in code, so the math always adds up.</p>
+              <ul class="lp-checks">
+                <li data-i18n="lp.f1.b1">Per-item breakdown with portion estimates</li>
+                <li data-i18n="lp.f1.b2">Works with any cuisine, including Chinese dishes</li>
+                <li data-i18n="lp.f1.b3">Fix or undo any entry in one tap</li>
+              </ul>
+            </div>
+            <div class="lp-feature-visual"><div class="phone"><img class="lp-shot" data-shot="meal" width="390" height="844" loading="lazy" decoding="async" alt=""></div></div>
+          </article>
+          <article class="lp-feature reveal">
+            <div class="lp-feature-copy">
+              <p class="lp-eyebrow"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-tune"/></svg><span data-i18n="lp.f2.eyebrow">Plans that adapt</span></p>
+              <h3 data-i18n="lp.f2.title">A weekly plan built around your body and schedule.</h3>
+              <p data-i18n="lp.f2.text">Tell your coach your days, minutes, equipment and injuries. A workout planner drafts the week, a critic agent reviews it against your constraints, and you approve it before anything is saved.</p>
+              <ul class="lp-checks">
+                <li data-i18n="lp.f2.b1">Injury-aware substitutions, e.g. knee-friendly squats</li>
+                <li data-i18n="lp.f2.b2">Plan reviewed by a critic agent before you see it</li>
+                <li data-i18n="lp.f2.b3">Nothing changes until you tap Approve</li>
+              </ul>
+            </div>
+            <div class="lp-feature-visual"><div class="phone"><img class="lp-shot" data-shot="plan" width="390" height="844" loading="lazy" decoding="async" alt=""></div></div>
+          </article>
+          <article class="lp-feature reveal">
+            <div class="lp-feature-copy">
+              <p class="lp-eyebrow"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-monitoring"/></svg><span data-i18n="lp.f3.eyebrow">Progress you can trust</span></p>
+              <h3 data-i18n="lp.f3.title">See the trend, not the daily noise.</h3>
+              <p data-i18n="lp.f3.text">A 7-day moving average smooths out daily weigh-ins. Calories, protein and training are tracked against your targets, using the same numbers your coach uses in chat.</p>
+              <ul class="lp-checks">
+                <li data-i18n="lp.f3.b1">Weight trend over 2 weeks to 3 months</li>
+                <li data-i18n="lp.f3.b2">14-day calories vs target and protein consistency</li>
+                <li data-i18n="lp.f3.b3">A weekly review of what worked and what to adjust</li>
+              </ul>
+            </div>
+            <div class="lp-feature-visual"><div class="phone"><img class="lp-shot" data-shot="progress" width="390" height="844" loading="lazy" decoding="async" alt=""></div></div>
+          </article>
+          <article class="lp-feature reveal">
+            <div class="lp-feature-copy">
+              <p class="lp-eyebrow"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-chat"/></svg><span data-i18n="lp.f4.eyebrow">A coach that checks in</span></p>
+              <h3 data-i18n="lp.f4.title">A coach that remembers, not just an empty log.</h3>
+              <p data-i18n="lp.f4.text">Fitness Buddy remembers your goals, preferences and past sessions. Open the app and it starts with what matters today: your workout, a protein gap, or a weigh-in.</p>
+              <ul class="lp-checks">
+                <li data-i18n="lp.f4.b1">Tips based on what you've logged today</li>
+                <li data-i18n="lp.f4.b2">Remembers your goals, injuries and food preferences</li>
+                <li data-i18n="lp.f4.b3">Answers in English or Chinese</li>
+              </ul>
+            </div>
+            <div class="lp-feature-visual"><div class="phone"><img class="lp-shot" data-shot="coach" width="390" height="844" loading="lazy" decoding="async" alt=""></div></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="lp-section lp-how" id="lp-how" aria-labelledby="lp-how-title">
+        <div class="lp-wrap">
+          <header class="lp-section-head center reveal">
+            <h2 id="lp-how-title" data-i18n="lp.how.title">How it works</h2>
+            <p data-i18n="lp.how.sub">Up and running in about two minutes.</p>
+          </header>
+          <ol class="lp-steps">
+            <li class="lp-step reveal"><span class="lp-step-num">01</span><h3 data-i18n="lp.how.s1">Sign in with Google</h3><p data-i18n="lp.how.s1t">One tap with your Google account. The preview is invite-only.</p></li>
+            <li class="lp-step reveal"><span class="lp-step-num">02</span><h3 data-i18n="lp.how.s2">Answer 4 quick questions</h3><p data-i18n="lp.how.s2t">Basics, goal, training setup and food preferences. Your coach turns them into daily targets.</p></li>
+            <li class="lp-step reveal"><span class="lp-step-num">03</span><h3 data-i18n="lp.how.s3">Chat, snap a meal, train</h3><p data-i18n="lp.how.s3t">Log meals from a photo, follow your plan, and ask your coach anything.</p></li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="lp-section lp-safety" id="lp-safety" aria-labelledby="lp-safety-title">
+        <div class="lp-wrap">
+          <header class="lp-section-head center reveal">
+            <p class="lp-eyebrow center"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-shield"/></svg><span data-i18n="lp.safety.eyebrow">Safety by design</span></p>
+            <h2 id="lp-safety-title" data-i18n="lp.safety.title">Safety and guardrails</h2>
+            <p data-i18n="lp.safety.sub">Layered checks from the first message to every saved change.</p>
+          </header>
+          <ul class="lp-safety-grid">
+            <li class="lp-safe reveal"><span class="lp-safe-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-verified-user"/></svg></span><h3 data-i18n="lp.safety.c1">You approve every change</h3><p data-i18n="lp.safety.c1t">Plans, calorie targets and deletions are saved only after you confirm.</p></li>
+            <li class="lp-safe reveal"><span class="lp-safe-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-health-and-safety"/></svg></span><h3 data-i18n="lp.safety.c2">Health guardrails</h3><p data-i18n="lp.safety.c2t">Calorie floors (1,200 kcal women / 1,500 kcal men), max ~1% body weight loss per week, and red-flag symptoms routed to a doctor.</p></li>
+            <li class="lp-safe reveal"><span class="lp-safe-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-policy"/></svg></span><h3 data-i18n="lp.safety.c3">Prompt-injection shield</h3><p data-i18n="lp.safety.c3t">Model Armor screens inputs and outputs, including text inside photos.</p></li>
+            <li class="lp-safe reveal"><span class="lp-safe-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-lock"/></svg></span><h3 data-i18n="lp.safety.c4">Private by design</h3><p data-i18n="lp.safety.c4t">PII is redacted before storage, and each account's data is isolated.</p></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="lp-section lp-final" aria-labelledby="lp-final-title">
+        <div class="lp-wrap">
+          <div class="lp-final-card reveal">
+            <h2 id="lp-final-title" data-i18n="lp.final.title">Ready to train smarter?</h2>
+            <p data-i18n="lp.final.sub">Setup takes about two minutes. The preview is invite-only.</p>
+            <div class="gis-slot" id="gis-cta"><span class="gis-placeholder" aria-hidden="true"><span class="g-dot"></span><span data-i18n="lp.gisPlaceholder">Sign in with Google</span></span></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="lp-footer">
+      <div class="lp-wrap lp-footer-inner">
+        <div class="lp-footer-brand">
+          <a class="lp-logo" href="#lp-top" data-scroll="lp-top"><span class="brand-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-fitness-center"/></svg></span><span class="brand-name">Fitness Buddy</span></a>
+          <p data-i18n="lp.footer.note">Invite-only preview. Not medical advice: talk to a healthcare professional before starting a new program.</p>
+          <p class="lp-footer-built" data-i18n="lp.footer.built">Built with Google ADK and Gemini.</p>
+        </div>
+        <nav class="lp-footer-links" data-i18n-attr="aria-label:lp.footer.nav" aria-label="Footer">
+          <a href="https://github.com/Shuailong/fitness-buddy-agent" target="_blank" rel="noopener noreferrer"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-code"/></svg>GitHub</a>
+          <a href="#lp-safety" data-scroll="lp-safety" data-i18n="lp.footer.medical">Not medical advice</a>
+        </nav>
       </div>
-      <footer class="landing-foot"><p data-i18n="landing.foot">Invite-only preview · Not medical advice</p><div id="landing-lang"></div></footer>
-    </div>
-  </section>
+    </footer>
+  </div>
 
   <!-- Onboarding (rendered by js/onboarding.js) -->
   <section id="onboarding-view" class="onboarding" hidden data-i18n-attr="aria-label:ob.label" aria-label="Set up your profile"></section>
@@ -127,7 +244,7 @@
       <header class="coach-head">
         <span class="bot-avatar lg" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-smart-toy-fill"/></svg><i class="online"></i></span>
         <div class="coach-titles">
-          <h1 id="coach-title" data-i18n="coach.title">Coach</h1>
+          <h2 id="coach-title" data-i18n="coach.title">Coach</h2>
           <p data-i18n="coach.subtitle">Your AI fitness buddy</p>
         </div>
         <button type="button" class="btn btn-ghost btn-sm" id="new-chat-btn" data-i18n-attr="title:coach.newChatTitle" title="Start a new conversation"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-edit-square"/></svg><span data-i18n="coach.newChat">New chat</span></button>
