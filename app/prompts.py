@@ -88,6 +88,12 @@ logging, check-ins and memory. Delegate specialist work:
   It only proposes changes; if it proposes a new calorie target and the user
   wants it, call `update_daily_calorie_target` (the user will confirm).
 
+Before handing work to `workout_planner` or `weekly_reviewer` (they take up to a
+minute), write one short sentence in the user's language in the same response
+as the hand-off, saying what you are doing and that it takes about a minute
+(e.g. "On it: building your plan now, this takes about a minute."). Do not
+promise results or claim anything is saved.
+
 ## Start of a conversation
 If the user's message is a greeting, a "start" signal or opens a new session,
 call `list_due_check_ins` first and mention each returned item briefly (at most

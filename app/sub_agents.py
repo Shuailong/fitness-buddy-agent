@@ -30,7 +30,7 @@ from google.adk.agents import Agent
 from google.adk.agents.callback_context import CallbackContext
 from google.genai import types
 
-from app.config import MODELS, SETTINGS, gemini
+from app.config import MODELS, SETTINGS, THINKING, gemini, thinking_config
 from app.observability.structured_logging import log_event
 from app.prompts import (
     NUTRITION_INSTRUCTION,
@@ -82,6 +82,9 @@ workout_planner = Agent(
     ),
     instruction=PLANNER_INSTRUCTION.replace("{max_rounds}", str(SETTINGS.planner_max_critique_rounds)),
     output_schema=PlanTaskResult,
+    generate_content_config=types.GenerateContentConfig(
+        thinking_config=thinking_config(THINKING.planner)
+    ),
     tools=[
         get_fitness_profile,
         get_current_training_plan,

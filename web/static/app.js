@@ -1,6 +1,6 @@
 // Fitness Buddy web client: vanilla JS ES modules, no build step.
 // Talks to the FastAPI backend in web/main.py (SSE over fetch for chat).
-import { $, el } from "./js/util.js";
+import { $, el, icon } from "./js/util.js";
 import { api, getJson } from "./js/api.js";
 import { state, actions } from "./js/state.js";
 import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions } from "./js/chat.js";
@@ -52,6 +52,7 @@ function applyRoute() {
   }
   if (route === "coach") {
     document.querySelector(".tab[data-route='coach'] .unread").hidden = true;
+    $("toast-region").replaceChildren();
     const m = $("messages");
     requestAnimationFrame(() => { m.scrollTop = m.scrollHeight; });
   } else {
@@ -126,6 +127,41 @@ function openCoach({ send = null, prefill = null, photo = null, focus = false } 
   }
   if (prefill) { prefillComposer(prefill); return; }
   if (focus) $("message-input").focus();
+}
+
+/** Spinner pill on the Coach tab while a turn runs (mobile; the desktop panel is always visible). */
+function setBusy(on) {
+  const tab = document.querySelector(".tab[data-route='coach']");
+  tab.classList.toggle("busy", on);
+  tab.querySelector(".tab-busy").hidden = !on;
+  tab.querySelector(".tab-busy-label").hidden = !on;
+  if (on) tab.querySelector(".unread").hidden = true;
+}
+
+function showToast(message, { onClick = null, timeout = 8000 } = {}) {
+  const region = $("toast-region");
+  region.replaceChildren();
+  const close = () => { toast.classList.add("leaving"); setTimeout(() => toast.remove(), 200); };
+  const toast = el("div", { class: "toast" }, [
+    el("button", { type: "button", class: "toast-main", onclick: () => { close(); if (onClick) onClick(); } }, [
+      icon("check-circle"), el("span", { text: message }), onClick ? el("span", { class: "toast-action", text: t("toast.view") }) : null,
+    ]),
+    el("button", { type: "button", class: "toast-close", "aria-label": t("toast.dismiss"), onclick: close }, [icon("close")]),
+  ]);
+  region.append(toast);
+  setTimeout(() => { if (toast.isConnected) close(); }, timeout);
+}
+
+/** A confirmation arrived: if the user is elsewhere (mobile), offer a shortcut back to it. */
+function onConfirmation(card, node) {
+  if (desktop.matches || currentRoute() === "coach" || $("app-view").hidden) return;
+  showToast(t(card.kind === "replace_training_plan" ? "toast.plan" : "toast.confirm"), {
+    onClick: () => {
+      navigate("coach");
+      // After the hashchange re-render (which scrolls the chat to the bottom).
+      setTimeout(() => node.scrollIntoView({ block: "start" }), 80);
+    },
+  });
 }
 
 function markUnread() {
@@ -318,6 +354,8 @@ async function boot() {
   actions.markUnread = markUnread;
   actions.signOut = signOut;
   actions.setLanguage = setLanguage;
+  actions.setBusy = setBusy;
+  actions.onConfirmation = onConfirmation;
 
   state.config = await (await fetch("/api/config")).json();
   initChat();

@@ -1,4 +1,4 @@
-// Coach chat: messages, activity chips, structured cards, SSE streaming,
+// Coach chat: messages, live progress card, structured cards, SSE streaming,
 // photo attachments, suggestion chips and the composer.
 import { $, el, icon, humanize, renderMarkdown } from "./util.js";
 import { api, postJson, getJson, readEventStream } from "./api.js";
@@ -6,14 +6,25 @@ import { state, actions } from "./state.js";
 import { mealLoggedCard, confirmationCard } from "./cards.js";
 import { suggestionChips, confirmationTitle } from "./logic.js";
 import { t, getLang, dateFull } from "./i18n.js";
+import { TurnProgress } from "./progress.js";
 
 const messagesEl = () => $("messages");
-let chipRow = null;
 let receivedCoachText = false;
+// The in-flight turn: { progress: TurnProgress, row, skeleton } or null.
+let turn = null;
 
 function scrollToBottom() {
   const m = messagesEl();
   requestAnimationFrame(() => { m.scrollTop = m.scrollHeight; });
+}
+
+/**
+ * Adds a message row. While a turn is live, the progress card stays the last
+ * element, so new bubbles/cards are inserted right before it.
+ */
+function appendMessage(node) {
+  if (turn && !turn.progress.finished && turn.row.isConnected) turn.row.before(node);
+  else messagesEl().append(node);
 }
 
 function coachRow(children, { avatar = true, indent = false } = {}) {
@@ -29,7 +40,6 @@ export function addUserMessage(text, imageUrl, hadImage) {
   else if (hadImage) children.push(el("span", { class: "photo-tag" }, [icon("image"), t("coach.photo")]));
   if (text) children.push(el("p", { text }));
   messagesEl().append(el("div", { class: "row from-user" }, [el("div", { class: "bubble bubble-user" }, children)]));
-  chipRow = null;
   scrollToBottom();
 }
 
@@ -41,45 +51,75 @@ function addCoachMessage(text, author) {
     body.push(el("span", { class: "author", text: label === key ? humanize(author) : label }));
   }
   body.push(el("div", { class: "bubble bubble-coach md", html: renderMarkdown(text) }));
-  messagesEl().append(coachRow(body));
-  chipRow = null;
+  appendMessage(coachRow(body));
   receivedCoachText = true;
   scrollToBottom();
 }
 
 export function addError(message) {
-  messagesEl().append(el("div", { class: "row system" }, [el("p", { class: "msg-error", role: "alert" }, [icon("warning"), message])]));
+  appendMessage(el("div", { class: "row system" }, [el("p", { class: "msg-error", role: "alert" }, [icon("warning"), message])]));
   scrollToBottom();
 }
 
 function addDecision(m) {
   const title = String(m.kind ? confirmationTitle(m.kind, { replaces: m.replaces, serverTitle: m.title }, getLang()) : m.title).replace(/[?？]\s*$/, "");
-  messagesEl().append(el("div", { class: "row system" }, [
+  appendMessage(el("div", { class: "row system" }, [
     el("p", { class: `decision ${m.confirmed ? "yes" : "no"}` }, [icon(m.confirmed ? "check-circle" : "undo"), t(m.confirmed ? "coach.approved" : "coach.declined", { title })]),
   ]));
 }
 
-function addActivityChip(label) {
-  const clean = String(label).replace(/\.\.\.$/, "");
-  if (!chipRow) {
-    chipRow = el("div", { class: "chip-row", "aria-label": t("coach.activity") });
-    messagesEl().append(coachRow([chipRow], { avatar: false, indent: true }));
-  }
-  if (![...chipRow.children].some((c) => c.dataset.label === clean)) {
-    chipRow.append(el("span", { class: "activity-chip", "data-label": clean }, [icon("check-circle"), clean]));
-  }
-  $("activity-label").textContent = label;
-  scrollToBottom();
+function addActivity(label) {
+  if (turn && turn.progress.addStep(label)) scrollToBottom();
 }
 
 function addCard(node) {
-  messagesEl().append(coachRow([node], { avatar: false }));
-  chipRow = null;
+  const row = coachRow([node], { avatar: false });
+  appendMessage(row);
   scrollToBottom();
+  return row;
 }
 
 function addMealCard(card) {
-  addCard(mealLoggedCard(card, { prefill: (text) => prefillComposer(text), send: (text) => sendChat(text) }));
+  const node = mealLoggedCard(card, { prefill: (text) => prefillComposer(text), send: (text) => sendChat(text) });
+  // Replace the optimistic skeleton in place when this turn showed one.
+  if (turn && turn.skeleton && turn.skeleton.isConnected) {
+    turn.skeleton.replaceWith(coachRow([node], { avatar: false }));
+    turn.skeleton = null;
+    scrollToBottom();
+    return;
+  }
+  addCard(node);
+}
+
+/** Placeholder meal card shown right after a photo is sent. */
+function mealSkeleton() {
+  const row = () => el("li", {}, [el("span", { class: "sk sk-name" }), el("span", { class: "sk sk-kcal" })]);
+  return el("article", { class: "chat-card meal-skeleton", "aria-busy": "true", "aria-label": t("card.analyzing") }, [
+    el("div", { class: "card-head" }, [
+      el("span", { class: "badge badge-ok" }, [el("span", { class: "pc-spinner", "aria-hidden": "true" }), t("card.analyzingBadge")]),
+      el("h3", { class: "card-title", text: t("card.analyzing") }),
+    ]),
+    el("ul", { class: "item-rows", "aria-hidden": "true" }, [row(), row(), row()]),
+    el("div", { class: "sk sk-totals", "aria-hidden": "true" }),
+  ]);
+}
+
+function startTurn({ photo = false } = {}) {
+  const progress = new TurnProgress();
+  const row = coachRow([progress.node], { avatar: false, indent: true });
+  row.classList.add("progress-row");
+  const skeleton = photo ? coachRow([mealSkeleton()], { avatar: false }) : null;
+  if (skeleton) messagesEl().append(skeleton);
+  messagesEl().append(row);
+  turn = { progress, row, skeleton };
+  scrollToBottom();
+}
+
+function finishTurn({ error = false } = {}) {
+  if (!turn) return;
+  if (!turn.progress.finish({ error })) turn.row.remove();
+  if (turn.skeleton) turn.skeleton.remove();
+  turn = null;
 }
 
 function addConfirmationCard(card) {
@@ -95,38 +135,53 @@ function addConfirmationCard(card) {
     if (!confirmed) $("message-input").focus();
   });
   addCard(node);
+  return node;
 }
 
 function setStreaming(on) {
   state.streaming = on;
-  $("activity").hidden = !on;
+  document.body.classList.toggle("is-streaming", on);
+  // The textarea stays usable; only submitting is blocked while a turn runs.
   $("send-btn").disabled = on;
   $("new-chat-btn").disabled = on;
   for (const b of document.querySelectorAll(".suggestions button")) b.disabled = on;
-  if (on) $("activity-label").textContent = t("coach.thinking");
-  else chipRow = null;
+  actions.setBusy(on);
 }
 
 function handleEvent(ev) {
   switch (ev.type) {
     case "text": addCoachMessage(ev.text, ev.author); break;
-    case "activity": addActivityChip(ev.label); break;
-    case "confirmation": addConfirmationCard(ev); receivedCoachText = true; break;
+    case "activity": addActivity(ev.label); break;
+    case "confirmation": {
+      // Collapse first so the summary pill sits right above the approval card.
+      if (turn) turn.progress.finish();
+      const node = addConfirmationCard(ev);
+      receivedCoachText = true;
+      if (node) actions.onConfirmation(ev, node);
+      break;
+    }
     case "card": if (ev.kind === "meal_logged") addMealCard(ev); break;
     case "error": addError(ev.message || t("error.generic")); break;
     default: break;
   }
 }
 
-async function streamRequest(path, options) {
+async function streamRequest(path, options, { photo = false } = {}) {
   setStreaming(true);
   receivedCoachText = false;
+  startTurn({ photo });
+  let failed = false;
   try {
     const res = await api(path, options);
-    await readEventStream(res, handleEvent);
+    await readEventStream(res, (ev) => {
+      if (ev.type === "error") failed = true;
+      handleEvent(ev);
+    });
   } catch (err) {
+    failed = true;
     addError(err.message || t("error.connection"));
   } finally {
+    finishTurn({ error: failed });
     setStreaming(false);
     if (receivedCoachText) actions.markUnread();
     actions.refreshDashboard();
@@ -143,14 +198,13 @@ export async function sendChat(text, photoBlob = null, { hidden = false } = {}) 
   form.append("lang", getLang());
   if (photoBlob) form.append("image", photoBlob, "photo.jpg");
   if (!hidden) addUserMessage(text, photoBlob ? URL.createObjectURL(photoBlob) : null);
-  await streamRequest("/api/chat", { method: "POST", body: form });
+  await streamRequest("/api/chat", { method: "POST", body: form }, { photo: Boolean(photoBlob) });
   return true;
 }
 
 /** Opens (or resumes) the conversation and renders its history. Returns the session info. */
 export async function openSession({ fresh = false } = {}) {
   messagesEl().replaceChildren();
-  chipRow = null;
   const session = await (await postJson("/api/session", { new: fresh })).json();
   if (session.is_new) {
     renderIntro();

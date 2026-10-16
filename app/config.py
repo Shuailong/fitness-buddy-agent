@@ -59,6 +59,32 @@ class ModelRouting:
 MODELS = ModelRouting()
 
 
+@dataclass(frozen=True)
+class ThinkingRouting:
+    """Thinking level per agent role (latency vs. reasoning depth).
+
+    Values: ``minimal``, ``low``, ``medium``, ``high`` or empty for the model
+    default (dynamic). Cloud Trace showed the coordinator spending most of a
+    plan turn thinking before a simple hand-off, so routing roles think less;
+    planning keeps some reasoning and is backed by the constraint validator and
+    the critic.
+    """
+
+    coach: str = field(default_factory=lambda: os.getenv("COACH_THINKING", "low"))
+    planner: str = field(default_factory=lambda: os.getenv("PLANNER_THINKING", "medium"))
+
+
+THINKING = ThinkingRouting()
+
+
+def thinking_config(level: str) -> types.ThinkingConfig | None:
+    """Builds a ThinkingConfig for a level name, or None for the model default."""
+    level = (level or "").strip().upper()
+    if not level:
+        return None
+    return types.ThinkingConfig(thinking_level=types.ThinkingLevel(level))
+
+
 def gemini(model_id: str) -> Gemini:
     """Builds a Gemini model with the shared retry policy."""
     return Gemini(model=model_id, retry_options=RETRY_OPTIONS)

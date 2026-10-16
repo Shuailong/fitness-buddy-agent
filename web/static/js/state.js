@@ -19,4 +19,11 @@ export const actions = {
   navigate: () => {},
   refreshDashboard: () => {},
   signOut: () => {},
+  showSignIn: () => {},
+  markUnread: () => {},
+  setLanguage: () => {},
+  /** Called with true/false when a chat turn starts/ends. */
+  setBusy: () => {},
+  /** Called when a confirmation card arrives (card payload, DOM node). */
+  onConfirmation: () => {},
 };

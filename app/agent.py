@@ -32,7 +32,7 @@ from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.tools.preload_memory_tool import PreloadMemoryTool
 from google.genai import types
 
-from app.config import MODELS, SETTINGS, gemini
+from app.config import MODELS, SETTINGS, THINKING, gemini, thinking_config
 from app.memory.memory_bank import schedule_redacted_memory_ingest
 from app.observability.structured_logging import setup_structured_logging
 from app.plugins.health_policy_judge import HealthPolicyJudgePlugin
@@ -81,7 +81,9 @@ root_agent = Agent(
         delete_logged_entry,
     ],
     sub_agents=[workout_planner, nutrition_coach, weekly_reviewer],
-    generate_content_config=types.GenerateContentConfig(temperature=0.4),
+    generate_content_config=types.GenerateContentConfig(
+        temperature=0.4, thinking_config=thinking_config(THINKING.coach)
+    ),
     after_agent_callback=schedule_redacted_memory_ingest,
 )
 
