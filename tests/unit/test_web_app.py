@@ -1074,3 +1074,18 @@ def test_privacy_page_is_served() -> None:
     resp = client.get("/privacy")
     assert resp.status_code == 200 and "Privacy" in resp.text
     assert "__ASSET_VERSION__" not in resp.text
+
+
+def test_pwa_manifest_and_icons_are_served() -> None:
+    client, _ = _client()
+    manifest = client.get("/manifest.webmanifest")
+    assert manifest.status_code == 200
+    assert manifest.headers["content-type"].startswith("application/manifest+json")
+    icons = manifest.json()["icons"]
+    for icon in icons:
+        assert client.get(icon["src"]).status_code == 200
+    assert any(i.get("purpose") == "maskable" for i in icons)
+    touch = client.get("/apple-touch-icon.png")
+    assert touch.status_code == 200 and touch.headers["content-type"] == "image/png"
+    index = client.get("/").text
+    assert 'rel="apple-touch-icon"' in index and 'rel="manifest"' in index

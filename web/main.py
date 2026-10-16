@@ -37,7 +37,12 @@ from typing import Annotated, Any, Literal
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -311,6 +316,24 @@ def create_app(
         if privacy_html.exists()
         else "<!doctype html><title>Privacy</title><p>Privacy policy coming soon.</p>"
     )
+
+    @app.get("/manifest.webmanifest", include_in_schema=False)
+    async def manifest() -> FileResponse:
+        return FileResponse(
+            STATIC_DIR / "manifest.webmanifest",
+            media_type="application/manifest+json",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    # iOS and some browsers request these at the site root regardless of <link> tags.
+    @app.get("/apple-touch-icon.png", include_in_schema=False)
+    @app.get("/apple-touch-icon-precomposed.png", include_in_schema=False)
+    async def apple_touch_icon() -> FileResponse:
+        return FileResponse(STATIC_DIR / "img" / "app" / "apple-touch-icon.png", media_type="image/png")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> FileResponse:
+        return FileResponse(STATIC_DIR / "img" / "app" / "icon-192.png", media_type="image/png")
 
     @app.get("/privacy", include_in_schema=False)
     async def privacy() -> HTMLResponse:

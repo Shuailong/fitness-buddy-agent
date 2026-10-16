@@ -1240,3 +1240,10 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
   .gis-slot.pulse { animation: none !important; box-shadow: 0 0 0 3px var(--primary-border); }
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
 }
+
+/* Top-nav Google sign-in: real GIS button (medium, 32px); the lime button is only a
+   placeholder until GIS loads (or the fallback when it cannot load). */
+.gis-slot.gis-nav { --gis-h: 36px; width: auto; min-width: 84px; height: 44px; place-items: center end; }
+.gis-slot.gis-nav .gis-host { width: auto; height: 36px; }
+.gis-slot.gis-nav .gis-placeholder-nav { grid-area: 1 / 1; }
+.gis-slot.gis-nav.gis-ready .gis-placeholder-nav { visibility: hidden; pointer-events: none; }

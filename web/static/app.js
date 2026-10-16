@@ -285,6 +285,18 @@ function renderGisButton() {
     return;
   }
   if (!(window.google && window.google.accounts)) return;
+  // Compact real Google button in the top nav (a scripted click on GIS is not possible).
+  const nav = $("gis-nav");
+  if (nav) {
+    for (const child of [...nav.children]) if (child.id !== "lp-signin-btn") child.remove();
+    const host = el("div", { class: "gis-host" });
+    nav.append(host);
+    window.google.accounts.id.renderButton(host, {
+      type: "standard", theme: "outline", size: "medium", shape: "pill", text: "signin",
+      locale: getLang() === "zh" ? "zh_CN" : "en",
+    });
+    nav.classList.add("gis-ready");
+  }
   for (const slot of slots) {
     for (const child of [...slot.children]) if (!child.classList.contains("gis-placeholder")) child.remove();
     const host = el("div", { class: "gis-host" });
