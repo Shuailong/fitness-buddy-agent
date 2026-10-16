@@ -55,6 +55,9 @@ jobs:
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          # The auth action exports GOOGLE_CLOUD_PROJECT; point it at the Gemini
+          # project so the LLM judges run there too.
+          project_id: ${{ vars.GEMINI_PROJECT || vars.GCP_PROJECT_ID }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
