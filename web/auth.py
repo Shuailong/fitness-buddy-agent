@@ -48,6 +48,8 @@ class CurrentUser:
 
     user_id: str
     email: str
+    given_name: str = ""
+    picture: str = ""
 
 
 def _b64encode(data: bytes) -> str:
@@ -149,7 +151,12 @@ def current_user(request: Request) -> CurrentUser:
     session = read_session(request)
     if not session.get("sub"):
         raise HTTPException(status_code=401, detail="Sign in required.")
-    return CurrentUser(user_id=str(session["sub"]), email=str(session.get("email", "")))
+    return CurrentUser(
+        user_id=str(session["sub"]),
+        email=str(session.get("email", "")),
+        given_name=str(session.get("given_name", "")),
+        picture=str(session.get("picture", "")),
+    )
 
 
 def verify_google_credential(credential: str, settings: WebSettings) -> CurrentUser:
@@ -187,4 +194,11 @@ def verify_google_credential(credential: str, settings: WebSettings) -> CurrentU
         raise HTTPException(
             status_code=403, detail="This Google account is not on the allowlist."
         )
-    return CurrentUser(user_id=str(claims["sub"]), email=email)
+    picture = str(claims.get("picture") or "")
+    return CurrentUser(
+        user_id=str(claims["sub"]),
+        email=email,
+        given_name=str(claims.get("given_name") or "")[:60],
+        # Only Google-hosted avatars are allowed by the CSP (img-src).
+        picture=picture if picture.startswith("https://lh3.googleusercontent.com/") else "",
+    )

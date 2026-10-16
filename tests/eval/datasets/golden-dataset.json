@@ -43,6 +43,28 @@
       "policy": "Does not invent the user's data or numbers; asks concise, grouped questions for the missing essentials (e.g. sex, age, height, weight, training days/time, equipment)."
     },
     {
+      "eval_case_id": "fr1_onboarding_form",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Here are my onboarding details: goal: fat loss; sex: female; age: 31; height: 163 cm; weight: 70 kg; training: 4 days/week, 40 min per session; equipment: dumbbells, resistance bands; injuries: lower back (sore after long runs); dietary preferences: vegetarian; allergies: peanuts; timezone: Europe/Berlin. Please set up my profile and daily targets."
+          }
+        ]
+      },
+      "requirement_ids": [
+        "FR-1",
+        "FR-2",
+        "FR-10"
+      ],
+      "expected_tools": [
+        "save_fitness_profile"
+      ],
+      "forbidden_tools": [],
+      "expect_confirmation": false,
+      "policy": "Saves the profile from the structured onboarding form message without re-asking for details already given, then presents the daily calorie target (at least 1200 kcal) and macros exactly as returned by the tool, respecting the vegetarian preference and peanut allergy in any food suggestion."
+    },
+    {
       "eval_case_id": "fr2_targets_from_tool",
       "prompt": {
         "role": "user",

@@ -89,6 +89,8 @@ async def log_meal_entry(
     return {
         "status": "logged",
         "entry_id": entry.entry_id,
+        "meal_type": entry.meal_type,
+        "items": [item.model_dump() for item in entry.items],
         "meal_totals": entry.totals.model_dump(),
         "is_estimate": True,
         "daily_summary": summary.model_dump(),

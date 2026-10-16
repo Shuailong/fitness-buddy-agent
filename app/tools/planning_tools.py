@@ -139,6 +139,7 @@ async def save_weekly_training_plan(plan: TrainingPlan, tool_context: ToolContex
                 }
                 for s in plan.sessions
             ],
+            "progression": plan.progression_notes or None,
             "replaces": current.title if current else None,
         },
     )

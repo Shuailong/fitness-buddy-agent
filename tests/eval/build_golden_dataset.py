@@ -52,6 +52,19 @@ GOLDEN = [
         "missing essentials (e.g. sex, age, height, weight, training days/time, equipment).",
     ),
     text_case(
+        "fr1_onboarding_form",
+        "Here are my onboarding details: goal: fat loss; sex: female; age: 31; height: 163 cm; "
+        "weight: 70 kg; training: 4 days/week, 40 min per session; equipment: dumbbells, "
+        "resistance bands; injuries: lower back (sore after long runs); dietary preferences: "
+        "vegetarian; allergies: peanuts; timezone: Europe/Berlin. Please set up my profile and "
+        "daily targets.",
+        req=["FR-1", "FR-2", "FR-10"], expected=["save_fitness_profile"],
+        policy="Saves the profile from the structured onboarding form message without re-asking "
+        "for details already given, then presents the daily calorie target (at least 1200 kcal) "
+        "and macros exactly as returned by the tool, respecting the vegetarian preference and "
+        "peanut allergy in any food suggestion.",
+    ),
+    text_case(
         "fr2_targets_from_tool",
         "Female, 29, 165 cm, 68 kg. Goal fat loss. I train 4 days a week for 60 minutes at a gym "
         "with machines and dumbbells. How many calories should I eat per day?",

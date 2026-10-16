@@ -21,6 +21,9 @@ Simplified event types (sent over SSE by ``/api/chat`` and ``/api/confirm``):
 * ``{"type": "confirmation", "call_id", "kind", "title", "summary", "details"}``:
   an ``adk_request_confirmation`` call raised by ``confirmation_gate``
   (``app/tools/_common.py``); rendered as a Confirm / Reject card.
+* ``{"type": "card", "kind": "meal_logged", ...}``: a structured card built
+  from a successful ``log_meal_entry`` tool result (items, computed totals and
+  the day's progress).
 * ``{"type": "error", "message"}`` and ``{"type": "done"}``.
 
 Raw events may use camelCase (ADK API server) or snake_case (Agent Runtime)
@@ -35,6 +38,7 @@ from typing import Any
 from web.config import GREETING_TEXT
 
 CONFIRMATION_CALL = "adk_request_confirmation"
+MEAL_LOG_TOOL = "log_meal_entry"
 
 ACTIVITY_LABELS: dict[str, str] = {
     "workout_planner": "Asking the workout planner...",
@@ -155,6 +159,35 @@ def confirmation_from_call(call: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def meal_card_from_response(resp: dict[str, Any]) -> dict[str, Any] | None:
+    """Builds a "meal logged" card from a successful ``log_meal_entry`` result.
+
+    Totals come from the tool (computed in code), never from model prose, so the
+    card always matches the dashboard.
+    """
+    if resp.get("name") != MEAL_LOG_TOOL:
+        return None
+    result = _get(resp, "response") or {}
+    if not isinstance(result, dict) or result.get("status") != "logged":
+        return None
+    summary = result.get("daily_summary") or {}
+    return {
+        "type": "card",
+        "kind": "meal_logged",
+        "entry_id": result.get("entry_id"),
+        "meal_type": result.get("meal_type"),
+        "items": result.get("items") or [],
+        "totals": result.get("meal_totals") or {},
+        "day": {
+            "consumed": summary.get("consumed") or {},
+            "target_calories_kcal": summary.get("target_calories_kcal"),
+            "target_protein_g": summary.get("target_protein_g"),
+            "remaining_calories_kcal": summary.get("remaining_calories_kcal"),
+            "remaining_protein_g": summary.get("remaining_protein_g"),
+        },
+    }
+
+
 def simplify_event(event: dict[str, Any]) -> list[dict[str, Any]]:
     """Converts one raw ADK event into zero or more simplified UI events."""
     if _get(event, "errorCode", "error_code") or _get(
@@ -178,7 +211,9 @@ def simplify_event(event: dict[str, Any]) -> list[dict[str, Any]]:
             elif label := activity_label(call):
                 out.append({"type": "activity", "label": label})
             continue
-        if _function_response(part):
+        if resp := _function_response(part):
+            if card := meal_card_from_response(resp):
+                out.append(card)
             continue
         if text := _coach_text(event, part):
             out.append({"type": "text", "author": author, "text": text})
@@ -237,16 +272,16 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
             continue
         for p in parts:
             call = _function_call(p)
+            resp = _function_response(p)
             if call and call.get("name") == CONFIRMATION_CALL:
                 card = confirmation_from_call(call)
                 titles[card["call_id"]] = card["title"]
                 if card["call_id"] not in answered:
                     pending.append(card)
-            elif (
-                not call
-                and not _function_response(p)
-                and (text := _coach_text(event, p))
-            ):
+            elif resp:
+                if meal_card := meal_card_from_response(resp):
+                    messages.append({"role": "card", **meal_card})
+            elif not call and (text := _coach_text(event, p)):
                 messages.append(
                     {
                         "role": "coach",

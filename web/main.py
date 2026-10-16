@@ -244,7 +244,16 @@ def create_app(
             raise
         log_event("sign_in", outcome="allowed", user=_pseudonym(user.user_id))
         response = JSONResponse({"email": user.email})
-        write_session(request, response, {"sub": user.user_id, "email": user.email})
+        write_session(
+            request,
+            response,
+            {
+                "sub": user.user_id,
+                "email": user.email,
+                "given_name": user.given_name,
+                "picture": user.picture,
+            },
+        )
         return response
 
     @app.post("/auth/logout")
@@ -255,7 +264,12 @@ def create_app(
 
     @app.get("/api/me")
     async def me(user: UserDep) -> dict[str, Any]:
-        return {"email": user.email, "dev_auth_bypass": settings.dev_auth_bypass}
+        return {
+            "email": user.email,
+            "given_name": user.given_name,
+            "picture": user.picture,
+            "dev_auth_bypass": settings.dev_auth_bypass,
+        }
 
     # ------------------------------------------------------------- sessions
     def _usable(session: dict[str, Any] | None) -> bool:
@@ -505,10 +519,12 @@ def create_app(
 
     # ------------------------------------------------------------ dashboard
     @app.get("/api/dashboard")
-    async def dashboard(user: UserDep) -> dict[str, Any]:
+    async def dashboard(user: UserDep, range: int | None = None) -> dict[str, Any]:
         with web_span("dashboard"):
             try:
-                return await build_dashboard(get_repository(), user.user_id)
+                return await build_dashboard(
+                    get_repository(), user.user_id, range_days=range
+                )
             except Exception as exc:  # surface a friendly error instead
                 log_event(
                     "dashboard_failed", severity=logging.ERROR, error=type(exc).__name__

@@ -22,7 +22,7 @@ import json
 import time
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -30,6 +30,7 @@ from fastapi.testclient import TestClient
 
 from fitness_core import repository as repo_module
 from fitness_core.models import (
+    WEEKDAYS,
     BodyMeasurement,
     EnergyTargets,
     FitnessProfile,
@@ -45,6 +46,7 @@ from fitness_core.nutrition import daily_nutrition_summary, sum_meal_items
 from fitness_core.progress import user_local_date
 from fitness_core.trends import weight_trend
 from web.config import GREETING_TEXT, WebSettings
+from web.dashboard import logging_streak
 from web.events import build_history, simplify_event
 from web.main import create_app
 
@@ -284,6 +286,8 @@ def test_google_sign_in_enforces_allowlist(monkeypatch: pytest.MonkeyPatch) -> N
         "sub": "1234567890",
         "email": "Coach.User@example.com",
         "email_verified": True,
+        "given_name": "Coach",
+        "picture": "https://lh3.googleusercontent.com/a/avatar",
     }
 
     def fake_verify(token: str, request: Any, audience: str) -> dict[str, Any]:
@@ -299,7 +303,10 @@ def test_google_sign_in_enforces_allowlist(monkeypatch: pytest.MonkeyPatch) -> N
     assert resp.status_code == 200
     assert "httponly" in resp.headers["set-cookie"].lower()
     assert "samesite=lax" in resp.headers["set-cookie"].lower()
-    assert client.get("/api/me").json()["email"] == "coach.user@example.com"
+    me = client.get("/api/me").json()
+    assert me["email"] == "coach.user@example.com"
+    assert me["given_name"] == "Coach"
+    assert me["picture"] == "https://lh3.googleusercontent.com/a/avatar"
     # The agent user_id is the Google `sub`.
     client.post("/api/session")
     assert list(agent.sessions) == ["1234567890"]
@@ -773,6 +780,87 @@ def test_dashboard_numbers_come_from_fitness_core(memory_repo) -> None:
         "wednesday",
         "friday",
     ]
+    # Today page data.
+    assert data["range_days"] == 30
+    assert len(data["nutrition"]["meals_today"]) == 2
+    assert data["nutrition"]["meals_today"][0]["totals"]["calories_kcal"] == 900
+    assert data["nutrition"]["logging_streak_days"] == 2  # today + yesterday
+    assert [w["sessions"] for w in data["week"]["history"]] == [0, 0, 1, 2]
+    assert data["weekday"] == WEEKDAYS[today.weekday()]
+    if data["weekday"] in ("monday", "wednesday", "friday"):
+        assert data["today_session"]["focus"] == "Full body"
+    else:
+        assert data["today_session"] is None
+    assert data["today_session_done"] is True  # workout logged today
+    assert data["latest_review"] is None
+
+    # Range selector: 2W keeps only weigh-ins from the last 14 days; bad values
+    # fall back to the default 1M window.
+    short = client.get("/api/dashboard?range=14").json()
+    assert short["range_days"] == 14
+    assert all(p["local_date"] >= iso(13) for p in short["weight"]["points"])
+    assert len(short["nutrition"]["days"]) == 14
+    assert client.get("/api/dashboard?range=7").json()["range_days"] == 30
+
+
+def test_logging_streak_counts_back_from_yesterday() -> None:
+    today = date(2026, 10, 16)
+    logged = {"2026-10-15", "2026-10-14", "2026-10-12"}
+    assert logging_streak(logged, today) == 2
+    assert logging_streak(logged | {"2026-10-16"}, today) == 3
+    assert logging_streak({"2026-10-13"}, today) == 0
+
+
+def test_meal_log_result_becomes_card_in_stream_and_history() -> None:
+    response = {
+        "status": "logged",
+        "entry_id": "e1",
+        "meal_type": "lunch",
+        "items": [
+            {
+                "name": "Beef noodle soup",
+                "portion_grams": 650,
+                "calories_kcal": 850,
+                "protein_g": 48,
+                "carbs_g": 92,
+                "fat_g": 30,
+                "confidence": "medium",
+            }
+        ],
+        "meal_totals": {"calories_kcal": 850, "protein_g": 48, "carbs_g": 92, "fat_g": 30},
+        "daily_summary": {
+            "consumed": {"calories_kcal": 1170, "protein_g": 74, "carbs_g": 150, "fat_g": 40},
+            "target_calories_kcal": 2300,
+            "target_protein_g": 150,
+            "remaining_calories_kcal": 1130,
+            "remaining_protein_g": 76,
+        },
+    }
+    event = {
+        "author": "nutrition_coach",
+        "content": {
+            "role": "user",
+            "parts": [
+                {"function_response": {"id": "c1", "name": "log_meal_entry", "response": response}}
+            ],
+        },
+    }
+    [card] = simplify_event(event)
+    assert card["type"] == "card" and card["kind"] == "meal_logged"
+    assert card["totals"]["calories_kcal"] == 850
+    assert card["items"][0]["name"] == "Beef noodle soup"
+    assert card["day"]["remaining_protein_g"] == 76
+
+    # Failed / guided-error results never become cards.
+    failed = copy.deepcopy(event)
+    failed["content"]["parts"][0]["function_response"]["response"] = {
+        "status": "error",
+        "error": "The meal date is in the future.",
+    }
+    assert simplify_event(failed) == []
+
+    history = build_history([event])
+    assert history["messages"] == [{"role": "card", **card}]
 
 
 def test_dashboard_without_profile(memory_repo) -> None:
