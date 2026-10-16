@@ -8,7 +8,8 @@ import { renderToday, renderProgress, renderPlan, loadingView, errorView, setupP
 import { startOnboarding, rerenderOnboarding } from "./js/onboarding.js";
 import { buildOnboardingMessage, initials } from "./js/logic.js";
 import { t, getLang, setLang, detectLang, applyStatic } from "./js/i18n.js";
-import { settingsMenu, langSwitch } from "./js/settings.js";
+import { settingsMenu, langSwitch, themeToggle, refreshThemeToggles } from "./js/settings.js";
+import { THEME_EVENT } from "./js/theme.js";
 import { initLanding, localizeLandingImages } from "./js/landing.js";
 
 const ROUTES = ["today", "coach", "progress", "plan"];
@@ -176,6 +177,7 @@ function setLanguage(lang) {
   setLang(lang);
   applyStatic();
   renderMenus();
+  refreshThemeToggles();
   renderLandingLang();
   renderSuggestions(state.dashboard);
   if (state.onboarding) rerenderOnboarding();
@@ -251,14 +253,7 @@ function leaveOnboarding() {
 }
 
 // ------------------------------------------------------------- auth
-/** Effective theme for the landing page (manual choice or the system preference). */
-function effectiveTheme() {
-  const attr = document.documentElement.getAttribute("data-theme");
-  if (attr === "light" || attr === "dark") return attr;
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-}
-
-/** Renders the Google button into the hero and final CTA slots (placeholders keep the layout stable). */
+/** Renders the standard white Google button into the hero and final CTA slots. */
 function renderGisButton() {
   const slots = ["gis-hero", "gis-cta"].map((id) => $(id)).filter(Boolean);
   if (!state.config.google_client_id) {
@@ -270,10 +265,10 @@ function renderGisButton() {
     for (const child of [...slot.children]) if (!child.classList.contains("gis-placeholder")) child.remove();
     const host = el("div", { class: "gis-host" });
     slot.append(host);
-    const width = Math.max(220, Math.min(320, slot.clientWidth || 300));
+    // Same width as the placeholder pill: full width (max 360) on phones, 280 px otherwise.
+    const width = Math.round(Math.max(200, Math.min(360, slot.getBoundingClientRect().width || 280)));
     window.google.accounts.id.renderButton(host, {
-      theme: effectiveTheme() === "dark" ? "filled_black" : "outline",
-      size: "large", shape: "pill", text: "signin_with", width,
+      theme: "outline", size: "large", shape: "pill", text: "signin_with", logo_alignment: "left", width,
       locale: getLang() === "zh" ? "zh_CN" : "en",
     });
     slot.classList.add("gis-ready");
@@ -382,7 +377,9 @@ async function boot() {
   bindMenus();
 
   window.addEventListener("hashchange", applyRoute);
-  window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+  for (const id of ["lp-theme-slot", "topbar-theme-slot", "rail-theme-slot"]) $(id).replaceChildren(themeToggle());
+  document.addEventListener(THEME_EVENT, () => {
+    renderMenus();
     if (!$("landing-view").hidden) renderGisButton();
   });
   desktop.addEventListener("change", applyRoute);

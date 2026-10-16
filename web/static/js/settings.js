@@ -3,7 +3,7 @@
 // language (EN / 中文).
 import { el, icon } from "./util.js";
 import { t, getLang, LANGS } from "./i18n.js";
-import { THEMES, getTheme, setTheme } from "./theme.js";
+import { THEMES, getTheme, setTheme, effectiveTheme, toggleTheme, THEME_EVENT } from "./theme.js";
 import { actions } from "./state.js";
 
 function segmented(label, options, current, onPick, cls = "") {
@@ -25,6 +25,29 @@ export function themeSwitch() {
   });
   return node;
 }
+
+function paintThemeToggle(btn) {
+  const dark = effectiveTheme() === "dark";
+  // The icon shows the theme you will switch TO.
+  btn.replaceChildren(icon(dark ? "light-mode" : "dark-mode"));
+  btn.setAttribute("aria-pressed", String(dark));
+  btn.setAttribute("aria-label", t("theme.darkToggle"));
+  btn.title = t(dark ? "theme.toLight" : "theme.toDark");
+}
+
+/** Round one-click dark/light toggle; all instances stay in sync via THEME_EVENT. */
+export function themeToggle(extraClass = "") {
+  const btn = el("button", { type: "button", class: `icon-btn theme-toggle ${extraClass}`.trim() });
+  btn.addEventListener("click", (e) => { e.stopPropagation(); toggleTheme(); });
+  paintThemeToggle(btn);
+  return btn;
+}
+
+/** Re-labels every toggle (after a theme or language change). */
+export function refreshThemeToggles() {
+  for (const btn of document.querySelectorAll(".theme-toggle")) paintThemeToggle(btn);
+}
+document.addEventListener(THEME_EVENT, refreshThemeToggles);
 
 /** EN / 中文 switch; switching re-renders the app through actions.setLanguage. */
 export function langSwitch() {

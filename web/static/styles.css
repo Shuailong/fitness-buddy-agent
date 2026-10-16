@@ -705,15 +705,20 @@ details[open] > summary .chev { transform: rotate(180deg); }
 .lp-title .hl { background: linear-gradient(transparent 72%, var(--primary-soft) 72%); }
 .lp-sub { font-size: clamp(1rem, 1.6vw, 1.2rem); line-height: 1.6; color: var(--muted); max-width: 34em; }
 .lp-cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
-.lp-how-link { min-height: 44px; }
 .lp-how-link .icon { width: 18px; height: 18px; }
-.gis-slot { position: relative; display: inline-grid; place-items: center; min-width: 260px; min-height: 44px; border-radius: var(--r-full); outline-offset: 4px; }
-.gis-slot .gis-host { grid-area: 1 / 1; min-height: 44px; display: grid; place-items: center; }
-.gis-placeholder { grid-area: 1 / 1; display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 260px; height: 44px; border-radius: var(--r-full); background: var(--card); border: 1px solid var(--line); color: var(--muted); font-weight: 600; font-size: 0.9rem; }
-.g-dot { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(#4285F4 0 25%, #34A853 0 50%, #FBBC05 0 75%, #EA4335 0); }
+/* Google sign-in: the standard white "outline" button in both themes. The
+   placeholder has the same size/shape so nothing jumps while GIS loads. */
+.lp { --gis-h: 40px; --gis-w: 280px; }
+.gis-slot { position: relative; display: inline-grid; place-items: center start; width: var(--gis-w); max-width: 100%; height: var(--gis-h); border-radius: var(--r-full); background: transparent; border: 0; outline-offset: 4px; }
+.gis-slot .gis-host { grid-area: 1 / 1; width: 100%; height: var(--gis-h); display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: var(--r-full); background: transparent; }
+.gis-slot .gis-host iframe { display: block; margin: 0 !important; color-scheme: light; }
+.gis-placeholder { grid-area: 1 / 1; position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: var(--gis-h); padding: 0 12px 0 44px; border-radius: var(--r-full); background: #FFFFFF; border: 1px solid #DADCE0; color: #3C4043; font-family: "Inter", Roboto, Arial, sans-serif; font-weight: 500; font-size: 14px; letter-spacing: 0.01em; white-space: nowrap; }
+.gis-placeholder .g-logo { position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); }
 .gis-slot.gis-ready .gis-placeholder { visibility: hidden; }
 .gis-slot.pulse { animation: lp-pulse 1.2s ease-out 2; }
 @keyframes lp-pulse { 0% { box-shadow: 0 0 0 0 var(--primary-border); } 100% { box-shadow: 0 0 0 14px transparent; } }
+.lp-how-link { min-height: var(--gis-h); height: var(--gis-h); padding: 0 20px; border-radius: var(--r-full); font-size: 0.9rem; }
+.lp-final-card .gis-slot { place-items: center; }
 
 /* Phone frame */
 .phone { position: relative; width: min(300px, 74vw); aspect-ratio: 390 / 844; border-radius: 46px; padding: 9px; background: linear-gradient(150deg, #3a414b, #11151a 40%, #0b0d10); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10), 0 30px 70px var(--shadow-color), 0 0 90px var(--primary-glow); margin-inline: auto; }
@@ -806,7 +811,8 @@ details[open] > summary .chev { transform: rotate(180deg); }
 @media (max-width: 399px) {
   .lp-logo .brand-name { display: none; }
   .lp-title { font-size: 2.1rem; }
-  .gis-slot, .gis-placeholder { min-width: 0; width: 100%; }
+  .lp { --gis-w: 100%; }
+  .gis-slot { width: 100%; max-width: 360px; }
   .lp-cta-row { width: 100%; }
   .lp-cta-row > * { flex: 1 1 100%; justify-content: center; }
 }
@@ -1030,6 +1036,19 @@ textarea.text-input { resize: vertical; min-height: 52px; }
 @supports (color: light-dark(#000, #fff)) {
   .toast-main .icon, .toast-action { color: light-dark(#C6F432, #0F766E); }
 }
+
+/* Smooth color change when the theme is toggled (class set briefly by js/theme.js). */
+html.theme-anim, html.theme-anim *, html.theme-anim *::before, html.theme-anim *::after {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, fill 0.3s ease, stroke 0.3s ease !important;
+}
+
+/* Theme toggle buttons */
+.theme-slot { display: inline-flex; }
+.theme-toggle { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--text-strong); }
+.theme-toggle:hover { color: var(--primary-text); border-color: var(--primary-border); background: var(--card); }
+.theme-toggle .icon { width: 22px; height: 22px; }
+.topbar .theme-slot { margin-left: auto; margin-right: 6px; }
+.rail-foot .theme-toggle { background: transparent; }
 
 /* -------------------------------------------------------- reduced motion */
 @media (prefers-reduced-motion: reduce) {
