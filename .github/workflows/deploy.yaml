@@ -23,6 +23,8 @@ on:
       - 'tests/eval/**'
       - 'pyproject.toml'
       - 'uv.lock'
+      - '.github/workflows/deploy.yaml'
+      - '.github/workflows/ci.yaml'
   workflow_dispatch:
 
 concurrency:
@@ -33,8 +35,32 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yaml
 
+  # Only agent-affecting changes run the (LLM-heavy) eval gate and redeploy the
+  # agent; web-only changes go straight to the web deploy after CI.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      agent: ${{ steps.filter.outputs.agent }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            agent:
+              - 'app/**'
+              - 'fitness_core/**'
+              - 'tests/eval/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/deploy.yaml'
+
   eval-gate:
-    needs: ci
+    needs: [ci, changes]
+    if: needs.changes.outputs.agent == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -77,6 +103,7 @@ jobs:
 
   deploy-agent:
     needs: eval-gate
+    if: needs.eval-gate.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -106,7 +133,10 @@ jobs:
             --update-env-vars="FITNESS_GCP_PROJECT=${{ vars.GCP_PROJECT_ID }},FITNESS_STORAGE_BACKEND=firestore,MODEL_ARMOR_ENABLED=true,MODEL_ARMOR_LOCATION=${{ vars.GCP_REGION }},MODEL_ARMOR_TEMPLATE_ID=fitness-buddy-guard,DLP_ENABLED=true,HEALTH_JUDGE_ENABLED=true,GEMINI_PROJECT=${{ vars.GEMINI_PROJECT }},OTEL_RESOURCE_ATTRIBUTES=service.version=${{ github.sha }}"
 
   deploy-web:
-    needs: eval-gate
+    needs: [ci, eval-gate]
+    if: >-
+      always() && needs.ci.result == 'success' &&
+      (needs.eval-gate.result == 'success' || needs.eval-gate.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
