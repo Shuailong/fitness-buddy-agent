@@ -91,6 +91,11 @@ class FitnessRepository(Protocol):
     async def add_feedback(self, record: dict[str, Any]) -> None: ...
 
 
+def _sort_key(entry: BaseModel) -> str:
+    """Chronological key for any stored record (weekly reviews have no local_date)."""
+    return str(getattr(entry, "local_date", None) or getattr(entry, "week_start", None) or "")
+
+
 def _in_range(local_date: str, start: str | None, end: str | None) -> bool:
     return (start is None or local_date >= start) and (end is None or local_date <= end)
 
@@ -236,7 +241,7 @@ class FirestoreFitnessRepository:
             query = query.where("local_date", "<=", end)
         model = _MODEL_BY_COLLECTION[collection]
         items = [model.model_validate(doc.to_dict()) async for doc in query.stream()]
-        return sorted(items, key=lambda e: e.local_date)  # type: ignore[attr-defined]
+        return sorted(items, key=_sort_key)
 
     async def list_workouts(self, user_id: str, start: str | None = None, end: str | None = None) -> list[WorkoutSession]:
         return await self._list(user_id, "workout_logs", start, end)

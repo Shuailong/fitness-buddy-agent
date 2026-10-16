@@ -1089,3 +1089,21 @@ def test_pwa_manifest_and_icons_are_served() -> None:
     assert touch.status_code == 200 and touch.headers["content-type"] == "image/png"
     index = client.get("/").text
     assert 'rel="apple-touch-icon"' in index and 'rel="manifest"' in index
+
+
+def test_repository_sort_key_handles_weekly_reviews() -> None:
+    """Regression: Firestore listing sorted weekly reviews by a missing local_date."""
+    from fitness_core.models import WeeklyReviewRecord
+    from fitness_core.repository import _sort_key
+
+    review = WeeklyReviewRecord(
+        entry_id="r1",
+        user_id="u",
+        week_start="2026-10-05",
+        week_end="2026-10-11",
+        created_at=datetime.now(UTC),
+        summary="ok",
+    )
+    meal = _meal("u", "2026-10-16", 500, 30)
+    assert _sort_key(review) == "2026-10-05"
+    assert _sort_key(meal) == "2026-10-16"

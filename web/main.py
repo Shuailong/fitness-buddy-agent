@@ -685,7 +685,7 @@ def create_app(
                 ) from exc
             except Exception as exc:  # surface a friendly error instead
                 log_event(
-                    "dashboard_failed", severity=logging.ERROR, error=type(exc).__name__
+                    "dashboard_failed", severity=logging.ERROR, error=type(exc).__name__, detail=str(exc)[:200]
                 )
                 raise HTTPException(
                     status_code=502, detail="Could not load your progress right now."
