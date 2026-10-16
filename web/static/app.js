@@ -196,7 +196,7 @@ function setLanguage(lang) {
   renderSuggestions(state.dashboard);
   if (state.onboarding) rerenderOnboarding();
   if (!$("app-view").hidden && currentView() !== "coach") renderView(currentView());
-  if (!$("landing-view").hidden) { localizeLandingImages(); renderGisButton(); }
+  if (!$("landing-view").hidden) { localizeLandingImages(); renderGisButton(); renderWaitlistNotice(); }
   updateTitle();
 }
 
@@ -334,17 +334,37 @@ function showSignIn() {
   }
 }
 
+let waitlistedEmail = null;
+
+function renderWaitlistNotice() {
+  if (!waitlistedEmail) return;
+  const node = $("signin-error");
+  node.classList.add("signin-waitlist");
+  node.replaceChildren(
+    el("strong", { class: "waitlist-title", text: t("signin.waitlistTitle") }),
+    el("span", { class: "waitlist-body", text: t("signin.waitlistBody", { email: waitlistedEmail }) }),
+  );
+}
+
 async function onGoogleCredential(response) {
-  $("signin-error").textContent = "";
+  const node = $("signin-error");
+  waitlistedEmail = null;
+  node.classList.remove("signin-waitlist");
+  node.textContent = "";
   try {
     await api("/auth/google", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ credential: response.credential }),
+      body: JSON.stringify({ credential: response.credential, lang: getLang() }),
     });
     await startApp();
   } catch (err) {
-    $("signin-error").textContent = err.message;
+    if (err && err.code === "waitlisted") {
+      waitlistedEmail = err.email || "";
+      renderWaitlistNotice();
+    } else {
+      node.textContent = err.message;
+    }
   }
 }
 

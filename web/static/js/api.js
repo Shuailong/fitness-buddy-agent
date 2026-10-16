@@ -4,13 +4,14 @@ import { t } from "./i18n.js";
 
 /** Error with the HTTP status and, for 429s, { code, scope, retryAfter (seconds) }. */
 export class ApiError extends Error {
-  constructor(message, { status = 0, code = null, scope = null, retryAfter = 0 } = {}) {
+  constructor(message, { status = 0, code = null, scope = null, retryAfter = 0, email = null } = {}) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.scope = scope;
     this.retryAfter = retryAfter;
+    this.email = email;
   }
 }
 
@@ -33,6 +34,7 @@ export async function api(path, options = {}) {
       code: (body && body.code) || (res.status === 429 ? "rate_limited" : null),
       scope: (body && body.scope) || null,
       retryAfter,
+      email: (body && body.email) || null,
     });
   }
   return res;

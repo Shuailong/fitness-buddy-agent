@@ -124,6 +124,8 @@ const en = {
   "lp.img.progress": "Progress screen: 30-day weight trend with a 7-day average, 14-day calories versus target and protein consistency.",
   "lp.img.coach": "Coach chat: a welcome-back check-in and dinner suggestions based on the calories and protein left today.",
   "signin.notConfigured": "Google sign-in is not configured on this server.",
+  "signin.waitlistTitle": "You're on the beta waitlist!",
+  "signin.waitlistBody": "We've added {email} to our invite list and will notify you as soon as your spot opens.",
 
   // ---- shared vocab
   "macro.protein": "Protein",
@@ -710,6 +712,8 @@ const zh = {
   "lp.img.progress": "进展页面：30 天体重趋势和 7 日均值、14 天热量对比目标以及蛋白质达标情况。",
   "lp.img.coach": "教练对话：欢迎回来的问候，以及根据今天剩余热量和蛋白质给出的晚餐建议。",
   "signin.notConfigured": "此服务器尚未配置 Google 登录。",
+  "signin.waitlistTitle": "🎉 已加入内测候补名单！",
+  "signin.waitlistBody": "已登记你的邮箱 {email}，内测名额开通后我们将第一时间通知你。",
 
   "macro.protein": "蛋白质",
   "macro.carbs": "碳水",

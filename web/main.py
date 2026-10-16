@@ -50,11 +50,13 @@ from fitness_core.models import utc_now
 from fitness_core.repository import get_repository
 from web.agent_client import AgentClient, AgentError, build_agent_client
 from web.auth import (
+    AllowlistDeniedError,
     CookieSigner,
     CurrentUser,
     clear_session,
     current_user,
     read_session,
+    save_waitlist_entry,
     verify_google_credential,
     write_session,
 )
@@ -128,6 +130,7 @@ class GoogleCredential(BaseModel):
     """ID token returned by Google Identity Services."""
 
     credential: str = Field(min_length=10, max_length=8192)
+    lang: str | None = Field(default=None, description="UI language: en or zh.")
 
 
 class SessionRequest(BaseModel):
@@ -384,6 +387,40 @@ def create_app(
         try:
             user = await run_in_threadpool(
                 verify_google_credential, body.credential, settings
+            )
+        except AllowlistDeniedError as exc:
+            try:
+                await save_waitlist_entry(
+                    get_repository(),
+                    exc.email,
+                    {
+                        "email": exc.email,
+                        "given_name": exc.given_name,
+                        "lang": normalize_lang(body.lang),
+                        "requested_at": utc_now().isoformat(),
+                        "status": "pending",
+                    },
+                )
+            except Exception as store_exc:
+                log_event(
+                    "waitlist_store_failed",
+                    severity=logging.WARNING,
+                    detail=str(store_exc)[:200],
+                )
+            log_event(
+                "sign_in",
+                severity=logging.INFO,
+                outcome="waitlisted",
+                status=exc.status_code,
+                user=_pseudonym(exc.user_id) if exc.user_id else None,
+            )
+            return JSONResponse(
+                {
+                    "detail": exc.detail,
+                    "code": "waitlisted",
+                    "email": exc.email,
+                },
+                status_code=exc.status_code,
             )
         except HTTPException as exc:
             log_event(

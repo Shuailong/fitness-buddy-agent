@@ -159,6 +159,32 @@ def current_user(request: Request) -> CurrentUser:
     )
 
 
+class AllowlistDeniedError(HTTPException):
+    """Raised when a verified Google account is not yet on the beta allowlist."""
+
+    def __init__(self, email: str, given_name: str = "", user_id: str = "") -> None:
+        super().__init__(
+            status_code=403,
+            detail="This Google account is not on the allowlist.",
+        )
+        self.email = email
+        self.given_name = given_name
+        self.user_id = user_id
+
+
+async def save_waitlist_entry(repo: Any, email: str, record: dict[str, Any]) -> None:
+    """Persists a beta waitlist request to Firestore (or in-memory repo for tests)."""
+    db = getattr(repo, "_db", None)
+    if db is not None:
+        await db.collection("waitlist").document(email).set(record, merge=True)
+        return
+    waitlist: dict[str, dict[str, Any]] = getattr(repo, "waitlist", None)
+    if waitlist is None:
+        waitlist = {}
+        repo.waitlist = waitlist
+    waitlist[email] = {**waitlist.get(email, {}), **record}
+
+
 def verify_google_credential(credential: str, settings: WebSettings) -> CurrentUser:
     """Verifies a Google ID token and enforces the e-mail allowlist.
 
@@ -190,15 +216,19 @@ def verify_google_credential(credential: str, settings: WebSettings) -> CurrentU
         raise HTTPException(
             status_code=403, detail="Your Google e-mail address is not verified."
         )
+    given_name = str(claims.get("given_name") or "")[:60]
+    user_id = str(claims.get("sub") or "")
     if email not in settings.allowed_emails:
-        raise HTTPException(
-            status_code=403, detail="This Google account is not on the allowlist."
+        raise AllowlistDeniedError(
+            email=email,
+            given_name=given_name,
+            user_id=user_id,
         )
     picture = str(claims.get("picture") or "")
     return CurrentUser(
-        user_id=str(claims["sub"]),
+        user_id=user_id,
         email=email,
-        given_name=str(claims.get("given_name") or "")[:60],
+        given_name=given_name,
         # Only Google-hosted avatars are allowed by the CSP (img-src).
         picture=picture
         if picture.startswith("https://lh3.googleusercontent.com/")

@@ -297,7 +297,9 @@ def test_tampered_cookie_is_rejected() -> None:
     assert client.get("/api/me").status_code == 401
 
 
-def test_google_sign_in_enforces_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_google_sign_in_enforces_allowlist(
+    monkeypatch: pytest.MonkeyPatch, memory_repo
+) -> None:
     from google.oauth2 import id_token
 
     claims: dict[str, Any] = {
@@ -333,12 +335,19 @@ def test_google_sign_in_enforces_allowlist(monkeypatch: pytest.MonkeyPatch) -> N
     assert client.get("/api/me").status_code == 401
 
     claims["email"] = "stranger@example.com"
-    assert (
-        client.post(
-            "/auth/google", json={"credential": "valid-token-value"}
-        ).status_code
-        == 403
+    wait_resp = client.post(
+        "/auth/google", json={"credential": "valid-token-value", "lang": "zh-CN"}
     )
+    assert wait_resp.status_code == 403
+    assert wait_resp.json() == {
+        "detail": "This Google account is not on the allowlist.",
+        "code": "waitlisted",
+        "email": "stranger@example.com",
+    }
+    assert memory_repo.waitlist["stranger@example.com"]["given_name"] == "Coach"
+    assert memory_repo.waitlist["stranger@example.com"]["lang"] == "zh"
+    assert memory_repo.waitlist["stranger@example.com"]["status"] == "pending"
+
     claims.update(email="coach.user@example.com", email_verified=False)
     assert (
         client.post(

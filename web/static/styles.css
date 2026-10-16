@@ -692,6 +692,9 @@ details[open] > summary .chev { transform: rotate(180deg); }
 /* Chinese headings: break at spaces/punctuation instead of mid-word. */
 :lang(zh) .lp-title, :lang(zh) .lp h2, :lang(zh) .ob-title { word-break: keep-all; overflow-wrap: anywhere; }
 .signin-error { font-size: 0.875rem; color: var(--warn-text); min-height: 1.2em; }
+.signin-error.signin-waitlist { display: flex; flex-direction: column; gap: 4px; max-width: 460px; margin-top: 8px; padding: 12px 16px; border-radius: var(--radius); background: var(--primary-soft); border: 1px solid var(--primary-border); color: var(--text); line-height: 1.5; }
+.signin-waitlist .waitlist-title { color: var(--primary-text); font-weight: 600; font-size: 0.9375rem; }
+.signin-waitlist .waitlist-body { color: var(--text-muted); font-size: 0.84375rem; }
 
 .lp { --lp-nav-h: 64px; position: relative; min-height: 100vh; background: var(--surface); overflow-x: clip; }
 .lp-wrap { width: 100%; max-width: 1200px; margin: 0 auto; padding-inline: clamp(16px, 4vw, 32px); }
