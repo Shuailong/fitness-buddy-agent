@@ -1628,6 +1628,48 @@ def test_coach_personas_and_live_form_check() -> None:
         assert tts_body["ok"] is True
         assert tts_body["audio_b64"]
         assert tts_body["audio_mime"] in ("audio/wav", "audio/mpeg")
+        for lang_code in ("zh", "en"):
+            static_mp3 = client.get(f"/static/audio/personas/{pid}_{lang_code}.mp3")
+            assert static_mp3.status_code == 200
+            assert len(static_mp3.content) > 10000
+
+    # 7. Scheme C: Bidirectional WebSocket /api/live-coach/ws streams vision_result + voice_audio
+    import base64 as b64_mod
+
+    with client.websocket_connect("/api/live-coach/ws") as ws:
+        ready = ws.receive_json()
+        assert ready["type"] == "ready"
+        assert ready["mode"] == "live_ws_stream"
+
+        ws.send_json({"type": "ping"})
+        assert ws.receive_json()["type"] == "pong"
+
+        # Dark camera frame over WebSocket -> strict insufficient_evidence + voice_audio
+        ws.send_json(
+            {
+                "type": "frame",
+                "exercise_id": "bodyweight_squat",
+                "exercise_name": "Bodyweight Squat",
+                "lang": "zh",
+                "persona": "warm_maya",
+                "frame_index": 7,
+                "simulation": False,
+                "frame_hint": "dark",
+                "voice_enabled": True,
+                "image_b64": b64_mod.b64encode(jpeg_bytes).decode("ascii"),
+            }
+        )
+        vision_msg = ws.receive_json()
+        assert vision_msg["type"] == "vision_result"
+        assert vision_msg["frame_index"] == 7
+        assert vision_msg["status"] == "insufficient_evidence"
+        assert vision_msg["score"] is None
+        assert vision_msg["rep_increment"] == 0
+
+        voice_msg = ws.receive_json()
+        assert voice_msg["type"] == "voice_audio"
+        assert voice_msg["frame_index"] == 7
+        assert voice_msg["audio_b64"]
 
 
 

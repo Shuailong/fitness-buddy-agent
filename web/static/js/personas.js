@@ -41,6 +41,7 @@ export const PERSONAS = [
       bio: "前竞技体能主教练，崇尚有效训练容量与标准动作纪律。说话直接有力，在你想偷懒的最后两下给你最猛的推力，同时死守关节安全底线。",
       quote: "「核心绷紧！别跟重量讨价还价，高质量完成这一组，我替你盯紧每一度关节轨迹！」",
       sampleTts: "嘿，搭档！我是雷奥教练。今天咱们不整虚的，把核心收紧，每一组都拿出身体的最佳状态，准备好咱们就开练！",
+      sampleAudio: "/static/audio/personas/iron_leo_zh.mp3",
       tipPrefix: "雷奥教练划重点：",
     },
     en: {
@@ -52,6 +53,7 @@ export const PERSONAS = [
       bio: "Former strength & conditioning head coach focused on progressive overload and crisp execution. Direct, fiery motivation that pushes you through the last two reps safely.",
       quote: "\"Brace that core! Don't negotiate with the bar—own every rep with textbook control!\"",
       sampleTts: "Hey partner, I'm Coach Leo! Lock in your focus, brace your core, and let's make every single rep count today!",
+      sampleAudio: "/static/audio/personas/iron_leo_en.mp3",
       tipPrefix: "Coach Leo's Take:",
     },
   },
@@ -75,6 +77,7 @@ export const PERSONAS = [
       bio: "专注女性与大众可持续体态管理、运动营养与反焦虑饮食。永远先看见你的努力与进步，帮你把健康融入生活，而不是让训练变成压力。",
       quote: "「哪怕今天只完成了 20 分钟，也是对身体超棒的投资～放轻松，我们一步步稳稳变强！」",
       sampleTts: "嗨，我是林悦教练，今天能打开训练就已经超棒啦，放轻松，跟着自己的呼吸节奏，我们一起开心地动起来吧！",
+      sampleAudio: "/static/audio/personas/warm_maya_zh.mp3",
       tipPrefix: "林悦教练贴心提醒：",
     },
     en: {
@@ -86,6 +89,7 @@ export const PERSONAS = [
       bio: "Holistic fitness and nutrition coach who believes consistency beats perfection. Celebrates every win and helps you build lifelong habits without guilt.",
       quote: "\"Even a 20-minute session is a wonderful gift to your body. Breathe easy—we're building this step by step!\"",
       sampleTts: "Hi there, I'm Coach Maya! Take a deep breath, listen to your body, and let's enjoy a great session together.",
+      sampleAudio: "/static/audio/personas/warm_maya_en.mp3",
       tipPrefix: "Coach Maya's Note:",
     },
   },
@@ -109,6 +113,7 @@ export const PERSONAS = [
       bio: "运动人体科学实验室出身，擅长用第一性原理拆解力臂、肌纤维募集、RPE 与营养代谢，让你不仅练对动作，更彻底搞懂背后的科学逻辑。",
       quote: "「将离心阶段控制在 2.5 秒可显著提升机械张力；我们用数据说话，精准优化你的每一卡路里。」",
       sampleTts: "你好，我是陈博士。今天我们会结合运动生物力学和代谢数据，一步步陪你把每个动作细节都做到科学、精准。",
+      sampleAudio: "/static/audio/personas/science_dr_chen_zh.mp3",
       tipPrefix: "陈博士循证解析：",
     },
     en: {
@@ -120,6 +125,7 @@ export const PERSONAS = [
       bio: "Exercise physiologist and sports nutrition researcher. Breaks down moment arms, motor-unit recruitment, and energy balance with crystal-clear scientific logic.",
       quote: "\"A controlled 2.5-second eccentric maximizes mechanical tension. Let's optimize your protocol with data.\"",
       sampleTts: "Hello, I'm Doctor Alex Chen. Let's apply evidence-based biomechanics and metabolic data to optimize your training today.",
+      sampleAudio: "/static/audio/personas/science_dr_chen_en.mp3",
       tipPrefix: "Dr. Chen's Lab Note:",
     },
   },
@@ -479,15 +485,67 @@ export function prefetchPersonaSamples(lang = getLang()) {
   if (typeof window === "undefined") return;
   for (const raw of PERSONAS) {
     const p = getPersona(raw.id, lang);
-    const clean = normalizeSpeechText(p.copy.sampleTts, lang);
-    if (clean) {
-      fetchNeuralTts(clean, p.id, lang).catch(() => {});
+    const staticUrl = p.copy && p.copy.sampleAudio;
+    if (staticUrl) {
+      fetch(staticUrl, { credentials: "same-origin" }).catch(() => {});
     }
   }
 }
 
 /**
- * Speaks coaching text using Backend Neural TTS with automatic fallback to
+ * Scheme A: Plays the pre-generated studio neural MP3 asset synchronously inside
+ * the user click gesture (0ms synthesis latency, 100% immune to browser autoplay blocking).
+ * Automatically falls back to dynamic TTS if the static file fails to play.
+ */
+export async function playStaticPersonaSample(personaId = getPersonaId(), lang = getLang(), { onStart, onEnd } = {}) {
+  const p = getPersona(personaId, lang);
+  const staticUrl = p.copy && p.copy.sampleAudio;
+  if (!staticUrl) {
+    return speakCoachText(p.copy.sampleTts, { personaId: p.id, lang, onStart, onEnd });
+  }
+
+  if (activeAudioFinish) {
+    try { activeAudioFinish(false); } catch { /* ignore */ }
+  }
+  try {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  } catch { /* ignore */ }
+
+  const token = ++currentPlayToken;
+  let ended = false;
+  const doneEnd = () => {
+    if (ended) return;
+    ended = true;
+    if (onEnd) {
+      try { onEnd(); } catch { /* ignore */ }
+    }
+  };
+
+  // Play the static MP3 directly in the synchronous click event frame
+  const played = await playAudioDataUri(staticUrl, {
+    rate: 1.0,
+    token,
+    onStart,
+    onEnd: doneEnd,
+  });
+  if (played || token !== currentPlayToken) {
+    doneEnd();
+    return played;
+  }
+
+  // Fallback to dynamic Scheme B TTS if static asset failed
+  return speakCoachText(p.copy.sampleTts, {
+    personaId: p.id,
+    lang,
+    onStart,
+    onEnd: doneEnd,
+  });
+}
+
+/**
+ * Speaks coaching text using Backend Neural TTS (Scheme B) with automatic fallback to
  * enhanced Web Speech API. Returns a Promise<boolean> that resolves when playback finishes.
  */
 export async function speakCoachText(
@@ -524,13 +582,12 @@ export async function speakCoachText(
   const cacheKey = `${p.id}:${lang}:${clean}`;
 
   try {
-    // 1. Play pre-bundled neural audio (e.g. returned directly by /api/form-check)
+    // 1. Play pre-bundled neural audio (e.g. returned directly by /api/form-check or WebSocket)
     if (audioB64) {
       const mime = audioMime || "audio/mpeg";
       const uri = `data:${mime};base64,${audioB64}`;
       ttsAudioCache.set(cacheKey, { uri, mime, source: "bundled" });
-      const rate = mime === "audio/mpeg" ? (p.voice.rate || 1.0) : 1.0;
-      const played = await playAudioDataUri(uri, { rate, token, onStart, onEnd: doneEnd });
+      const played = await playAudioDataUri(uri, { rate: 1.0, token, onStart, onEnd: doneEnd });
       if (played || token !== currentPlayToken) {
         doneEnd();
         return played;
@@ -540,8 +597,7 @@ export async function speakCoachText(
     // 2. Check client-side neural TTS cache (instant 0ms playback)
     if (ttsAudioCache.has(cacheKey)) {
       const cached = ttsAudioCache.get(cacheKey);
-      const rate = cached.mime === "audio/mpeg" ? (p.voice.rate || 1.0) : 1.0;
-      const played = await playAudioDataUri(cached.uri, { rate, token, onStart, onEnd: doneEnd });
+      const played = await playAudioDataUri(cached.uri, { rate: 1.0, token, onStart, onEnd: doneEnd });
       if (played || token !== currentPlayToken) {
         doneEnd();
         return played;
@@ -555,8 +611,7 @@ export async function speakCoachText(
       return false;
     }
     if (entry && entry.uri) {
-      const rate = entry.mime === "audio/mpeg" ? (p.voice.rate || 1.0) : 1.0;
-      const played = await playAudioDataUri(entry.uri, { rate, token, onStart, onEnd: doneEnd });
+      const played = await playAudioDataUri(entry.uri, { rate: 1.0, token, onStart, onEnd: doneEnd });
       if (played || token !== currentPlayToken) {
         doneEnd();
         return played;
@@ -628,7 +683,7 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
   let currentId = getPersonaId();
   let playingPersonaId = null;
 
-  // Pre-warm neural TTS audio for all 3 personas so clicking "Preview Voice" is instantaneous
+  // Pre-warm static neural audio assets for all 3 personas
   prefetchPersonaSamples(lang);
 
   const renderCards = (container) => {
@@ -650,9 +705,7 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
           }
           playingPersonaId = p.id;
           renderCards(container);
-          await speakCoachText(p.copy.sampleTts, {
-            personaId: p.id,
-            lang,
+          await playStaticPersonaSample(p.id, lang, {
             onEnd: () => {
               if (playingPersonaId === p.id) {
                 playingPersonaId = null;

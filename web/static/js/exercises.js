@@ -989,9 +989,74 @@ export function openLiveFormCoachModal(exOrId, actions) {
     }
   };
 
+  let liveWs = null;
+  let wsPendingHandler = null;
+
+  const closeLiveWs = () => {
+    wsPendingHandler = null;
+    if (liveWs) {
+      try {
+        liveWs.onopen = null;
+        liveWs.onmessage = null;
+        liveWs.onerror = null;
+        liveWs.onclose = null;
+        liveWs.close();
+      } catch { /* ignore */ }
+      liveWs = null;
+    }
+  };
+
+  const ensureLiveWs = () => new Promise((resolve) => {
+    if (typeof WebSocket === "undefined" || typeof window === "undefined") {
+      resolve(null);
+      return;
+    }
+    if (liveWs && liveWs.readyState === WebSocket.OPEN) {
+      resolve(liveWs);
+      return;
+    }
+    closeLiveWs();
+    let settled = false;
+    const finish = (sock) => {
+      if (settled) return;
+      settled = true;
+      resolve(sock);
+    };
+    const timer = setTimeout(() => finish(null), 2200);
+    try {
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(`${proto}//${window.location.host}/api/live-coach/ws`);
+      liveWs = ws;
+      ws.onopen = () => {
+        clearTimeout(timer);
+        finish(ws);
+      };
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (wsPendingHandler) wsPendingHandler(msg);
+        } catch { /* ignore */ }
+      };
+      ws.onerror = () => {
+        clearTimeout(timer);
+        closeLiveWs();
+        finish(null);
+      };
+      ws.onclose = () => {
+        clearTimeout(timer);
+        if (liveWs === ws) liveWs = null;
+        finish(null);
+      };
+    } catch {
+      clearTimeout(timer);
+      finish(null);
+    }
+  });
+
   const stopAll = () => {
     isCoaching = false;
     clearLoopTimer();
+    closeLiveWs();
     if (stream) {
       for (const trk of stream.getTracks()) {
         try { trk.stop(); } catch { /* ignore */ }
@@ -1039,14 +1104,15 @@ export function openLiveFormCoachModal(exOrId, actions) {
     const ctx = captureCanvas.getContext("2d");
     if (!simulationMode) {
       if (!stream || videoEl.readyState < 2 || videoEl.videoWidth <= 0) {
-        resolve({ blob: null, frameHint: "no_video" });
+        resolve({ blob: null, dataUrl: "", frameHint: "no_video" });
         return;
       }
       captureCanvas.width = 640;
       captureCanvas.height = Math.round((videoEl.videoHeight / videoEl.videoWidth) * 640) || 480;
       ctx.drawImage(videoEl, 0, 0, captureCanvas.width, captureCanvas.height);
       const frameHint = inspectCanvasFrameStats(ctx, captureCanvas.width, captureCanvas.height);
-      captureCanvas.toBlob((blob) => resolve({ blob, frameHint }), "image/jpeg", 0.78);
+      const dataUrl = captureCanvas.toDataURL("image/jpeg", 0.78);
+      captureCanvas.toBlob((blob) => resolve({ blob, dataUrl, frameHint }), "image/jpeg", 0.78);
       return;
     }
 
@@ -1064,26 +1130,175 @@ export function openLiveFormCoachModal(exOrId, actions) {
     ctx.lineTo(350, 360);
     ctx.lineTo(340, 440);
     ctx.stroke();
-    captureCanvas.toBlob((blob) => resolve({ blob, frameHint: "simulation" }), "image/jpeg", 0.72);
+    const dataUrl = captureCanvas.toDataURL("image/jpeg", 0.72);
+    captureCanvas.toBlob((blob) => resolve({ blob, dataUrl, frameHint: "simulation" }), "image/jpeg", 0.72);
   });
+
+  const applyVisionHudUpdate = (res) => {
+    const status = res.status || "insufficient_evidence";
+    const hasValidScore = typeof res.score === "number" && res.evidence_ok !== false && status !== "insufficient_evidence";
+
+    if (!hasValidScore) {
+      statusBadge.className = "live-hud-status insufficient";
+      statusBadge.textContent = isZh ? "🟠 画面证据不足 · 请调整机位" : "🟠 Insufficient View · Adjust Camera";
+      scoreBadge.textContent = isZh ? "动作评分 -- (未入镜)" : "Score -- (Not in Frame)";
+    } else {
+      lastScore = res.score;
+      if (res.rep_increment && Number(res.rep_increment) > 0) {
+        repCount += Number(res.rep_increment);
+      }
+      statusBadge.className = `live-hud-status ${status}`;
+      if (status === "good") {
+        statusBadge.textContent = isZh ? "🟢 姿态标准 · 保持节奏" : "🟢 Great Form · Keep Going";
+      } else if (status === "bad") {
+        statusBadge.textContent = isZh ? "🔴 动作变形 · 请立即调整" : "🔴 Form Breakdown · Adjust Now";
+      } else {
+        statusBadge.textContent = isZh ? "🟡 发现细节可微调" : "🟡 Form Adjustment Cue";
+      }
+      scoreBadge.textContent = isZh ? `动作评分 ${lastScore}` : `Score ${lastScore}`;
+    }
+    repBadge.textContent = isZh ? `本组计数: ${repCount}` : `Reps: ${repCount}`;
+
+    if (res.observed_scene) {
+      observedSceneBar.textContent = isZh
+        ? `👁 AI 画面实测：${res.observed_scene}`
+        : `👁 AI Observed: ${res.observed_scene}`;
+    }
+
+    if (res.voice_cue) {
+      voiceTextEl.textContent = res.voice_cue;
+      voiceCueBanner.classList.remove("pulse");
+      void voiceCueBanner.offsetWidth;
+      voiceCueBanner.classList.add("pulse");
+    }
+
+    if (Array.isArray(res.checks) && res.checks.length) {
+      checksWrap.replaceChildren(...res.checks.map((chk) =>
+        el("div", { class: `live-check-item ${chk.ok ? "ok" : "warn"}` }, [
+          el("div", { class: "live-check-top" }, [
+            icon(chk.ok ? "check-circle" : "error-outline"),
+            el("strong", { text: chk.label }),
+          ]),
+          el("p", { class: "muted small", text: chk.detail }),
+        ])
+      ));
+    }
+    return status;
+  };
+
+  const maybePlayCueAudio = async (cueText, status, audioB64, audioMime) => {
+    if (!cueText) return;
+    if (audioB64) {
+      lastAudioB64 = audioB64;
+      lastAudioMime = audioMime || "audio/mpeg";
+    }
+    const now = Date.now();
+    const shouldRepeatReminder = status !== "good" && (now - lastSpokenAt > 8500);
+    if (voiceEnabled && (cueText !== lastSpokenCue || shouldRepeatReminder)) {
+      lastSpokenCue = cueText;
+      lastSpokenAt = now;
+      voiceCueBanner.classList.add("is-speaking");
+      await speakCoachText(cueText, {
+        personaId: getPersonaId(),
+        lang,
+        audioB64: audioB64 || "",
+        audioMime: audioMime || "audio/mpeg",
+      });
+      voiceCueBanner.classList.remove("is-speaking");
+    }
+  };
+
+  const analyzeViaWebSocket = async ({ dataUrl, frameHint, fIdx }) => {
+    const ws = await ensureLiveWs();
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+
+    const now = Date.now();
+    const wantVoice = voiceEnabled && (now - lastSpokenAt > 2500);
+
+    return new Promise((resolve) => {
+      let visionData = null;
+      let status = "insufficient_evidence";
+      let done = false;
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timeoutId);
+        wsPendingHandler = null;
+        resolve(ok);
+      };
+      const timeoutId = setTimeout(() => {
+        finish(Boolean(visionData));
+      }, 9500);
+
+      wsPendingHandler = async (msg) => {
+        if (!msg || msg.frame_index !== fIdx) return;
+        if (msg.type === "vision_result") {
+          visionData = msg;
+          status = applyVisionHudUpdate(msg);
+          if (!wantVoice || !msg.voice_cue) {
+            finish(true);
+          }
+        } else if (msg.type === "voice_audio") {
+          wsPendingHandler = null;
+          clearTimeout(timeoutId);
+          const cue = (visionData && visionData.voice_cue) || msg.voice_cue || "";
+          await maybePlayCueAudio(cue, status, msg.audio_b64, msg.audio_mime);
+          finish(true);
+        } else if (msg.type === "voice_audio_done") {
+          wsPendingHandler = null;
+          clearTimeout(timeoutId);
+          const cue = (visionData && visionData.voice_cue) || "";
+          await maybePlayCueAudio(cue, status, "", "");
+          finish(true);
+        }
+      };
+
+      try {
+        ws.send(JSON.stringify({
+          type: "frame",
+          exercise_id: guide.id,
+          exercise_name: guide.rawName,
+          lang,
+          persona: getPersonaId(),
+          frame_index: fIdx,
+          simulation: simulationMode,
+          frame_hint: frameHint,
+          voice_enabled: wantVoice,
+          image_b64: dataUrl,
+        }));
+      } catch {
+        closeLiveWs();
+        finish(false);
+      }
+    });
+  };
 
   const analyzeSingleFrame = async () => {
     if (inFlight) return;
     inFlight = true;
     try {
-      const { blob, frameHint } = await captureFramePayload();
+      const { blob, dataUrl, frameHint } = await captureFramePayload();
       if (!blob) {
         statusBadge.className = "live-hud-status insufficient";
         statusBadge.textContent = isZh ? "🟠 等待摄像头画面就绪…" : "🟠 Waiting for Camera Video…";
         scoreBadge.textContent = isZh ? "动作评分 -- (未入镜)" : "Score -- (No Video)";
         return;
       }
+      const fIdx = frameIndex++;
+
+      // Scheme C primary: Real-time bidirectional WebSocket stream (/api/live-coach/ws)
+      if (dataUrl) {
+        const wsOk = await analyzeViaWebSocket({ dataUrl, frameHint, fIdx });
+        if (wsOk) return;
+      }
+
+      // Automatic fallback to HTTP POST /api/form-check if WebSocket is unavailable
       const fd = new FormData();
       fd.append("exercise_id", guide.id);
       fd.append("exercise_name", guide.rawName);
       fd.append("lang", lang);
       fd.append("persona", getPersonaId());
-      fd.append("frame_index", String(frameIndex++));
+      fd.append("frame_index", String(fIdx));
       fd.append("simulation", simulationMode ? "1" : "0");
       fd.append("frame_hint", frameHint);
       fd.append("image", blob, "frame.jpg");
@@ -1095,72 +1310,8 @@ export function openLiveFormCoachModal(exOrId, actions) {
       });
       if (!resp.ok) return;
       const res = await resp.json();
-
-      const status = res.status || "insufficient_evidence";
-      const hasValidScore = typeof res.score === "number" && res.evidence_ok !== false && status !== "insufficient_evidence";
-
-      if (!hasValidScore) {
-        statusBadge.className = "live-hud-status insufficient";
-        statusBadge.textContent = isZh ? "🟠 画面证据不足 · 请调整机位" : "🟠 Insufficient View · Adjust Camera";
-        scoreBadge.textContent = isZh ? "动作评分 -- (未入镜)" : "Score -- (Not in Frame)";
-      } else {
-        lastScore = res.score;
-        if (res.rep_increment && Number(res.rep_increment) > 0) {
-          repCount += Number(res.rep_increment);
-        }
-        statusBadge.className = `live-hud-status ${status}`;
-        if (status === "good") {
-          statusBadge.textContent = isZh ? "🟢 姿态标准 · 保持节奏" : "🟢 Great Form · Keep Going";
-        } else if (status === "bad") {
-          statusBadge.textContent = isZh ? "🔴 动作变形 · 请立即调整" : "🔴 Form Breakdown · Adjust Now";
-        } else {
-          statusBadge.textContent = isZh ? "🟡 发现细节可微调" : "🟡 Form Adjustment Cue";
-        }
-        scoreBadge.textContent = isZh ? `动作评分 ${lastScore}` : `Score ${lastScore}`;
-      }
-      repBadge.textContent = isZh ? `本组计数: ${repCount}` : `Reps: ${repCount}`;
-
-      if (res.observed_scene) {
-        observedSceneBar.textContent = isZh
-          ? `👁 AI 画面实测：${res.observed_scene}`
-          : `👁 AI Observed: ${res.observed_scene}`;
-      }
-
-      if (res.voice_cue) {
-        voiceTextEl.textContent = res.voice_cue;
-        lastAudioB64 = res.audio_b64 || null;
-        lastAudioMime = res.audio_mime || "audio/wav";
-        voiceCueBanner.classList.remove("pulse");
-        void voiceCueBanner.offsetWidth;
-        voiceCueBanner.classList.add("pulse");
-
-        const now = Date.now();
-        const shouldRepeatReminder = status !== "good" && (now - lastSpokenAt > 8500);
-        if (voiceEnabled && (res.voice_cue !== lastSpokenCue || shouldRepeatReminder)) {
-          lastSpokenCue = res.voice_cue;
-          lastSpokenAt = now;
-          voiceCueBanner.classList.add("is-speaking");
-          await speakCoachText(res.voice_cue, {
-            personaId: getPersonaId(),
-            lang,
-            audioB64: res.audio_b64,
-            audioMime: res.audio_mime,
-          });
-          voiceCueBanner.classList.remove("is-speaking");
-        }
-      }
-
-      if (Array.isArray(res.checks) && res.checks.length) {
-        checksWrap.replaceChildren(...res.checks.map((chk) =>
-          el("div", { class: `live-check-item ${chk.ok ? "ok" : "warn"}` }, [
-            el("div", { class: "live-check-top" }, [
-              icon(chk.ok ? "check-circle" : "error-outline"),
-              el("strong", { text: chk.label }),
-            ]),
-            el("p", { class: "muted small", text: chk.detail }),
-          ])
-        ));
-      }
+      const status = applyVisionHudUpdate(res);
+      await maybePlayCueAudio(res.voice_cue, status, res.audio_b64, res.audio_mime);
     } catch { /* ignore transient network error */ } finally {
       inFlight = false;
     }

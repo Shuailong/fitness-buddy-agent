@@ -850,6 +850,75 @@ def _call_neural_http_tts_sync(
     return None
 
 
+_EDGE_CLOCK_SYNCED = False
+
+_EDGE_PERSONA_VOICES: dict[str, dict[str, tuple[str, str, str]]] = {
+    "iron_leo": {
+        "zh": ("zh-CN-YunjianNeural", "+6%", "+0Hz"),
+        "en": ("en-US-GuyNeural", "+6%", "+0Hz"),
+    },
+    "warm_maya": {
+        "zh": ("zh-CN-XiaoxiaoNeural", "+0%", "+0Hz"),
+        "en": ("en-US-AriaNeural", "+0%", "+0Hz"),
+    },
+    "science_dr_chen": {
+        "zh": ("zh-CN-YunxiNeural", "+2%", "-2Hz"),
+        "en": ("en-US-BrianNeural", "+0%", "+0Hz"),
+    },
+}
+
+
+async def _call_edge_neural_tts(
+    clean_text: str, persona: str, lang: str
+) -> dict[str, str] | None:
+    """Synthesizes studio-grade multi-gender neural speech (Yunjian / Xiaoxiao / Yunxi)."""
+    global _EDGE_CLOCK_SYNCED
+    try:
+        import email.utils
+        import time
+
+        import edge_tts
+        from edge_tts.drm import DRM
+    except Exception:
+        return None
+
+    is_zh = str(lang or "zh").lower().startswith("zh")
+    norm_lang = "zh" if is_zh else "en"
+    norm_persona = (persona or "iron_leo").strip().lower()
+    voice_map = _EDGE_PERSONA_VOICES.get(norm_persona) or _EDGE_PERSONA_VOICES["iron_leo"]
+    voice_name, rate, pitch = voice_map[norm_lang]
+
+    for attempt in range(2):
+        try:
+            if not _EDGE_CLOCK_SYNCED or attempt > 0:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    r = await client.head("https://www.bing.com")
+                    if "Date" in r.headers:
+                        srv_ts = email.utils.parsedate_to_datetime(
+                            r.headers["Date"]
+                        ).timestamp()
+                        DRM.clock_skew_seconds = srv_ts - time.time()
+                        _EDGE_CLOCK_SYNCED = True
+
+            comm = edge_tts.Communicate(
+                clean_text, voice_name, rate=rate, pitch=pitch
+            )
+            mp3_buf = bytearray()
+            async for chunk in comm.stream():
+                if chunk.get("type") == "audio" and chunk.get("data"):
+                    mp3_buf.extend(chunk["data"])
+            if len(mp3_buf) > 512:
+                return {
+                    "audio_b64": base64.b64encode(bytes(mp3_buf)).decode("ascii"),
+                    "audio_mime": "audio/mpeg",
+                    "source": f"neural_voice:{voice_name}",
+                }
+        except Exception:
+            _EDGE_CLOCK_SYNCED = False
+            continue
+    return None
+
+
 def _proxy_headers(proxy_url: str) -> dict[str, str]:
     """Builds headers for calling the internal vision/TTS Cloud Run worker."""
     headers = {"X-Coach-Internal": _INTERNAL_HEADER}
@@ -892,7 +961,7 @@ async def synthesize_coach_speech(
         _TTS_CACHE[cache_key] = stub
         return stub
 
-    # 1. Optional Gemini 2.5 Native Audio / Cloud TTS (only when explicitly enabled)
+    # 1. Optional Gemini 2.5 Native Audio / Cloud TTS Chirp3-HD (when explicitly enabled)
     if os.environ.get("FORM_COACH_GEMINI_TTS") == "1":
         try:
             res = await asyncio.wait_for(
@@ -924,7 +993,21 @@ async def synthesize_coach_speech(
         except Exception:
             pass
 
-    # 2. Fast low-latency (<450ms) neural MP3 TTS for both Chinese & English
+    # 2. Scheme B primary: Studio-grade multi-gender neural voice (Yunjian / Xiaoxiao / Yunxi)
+    try:
+        res = await asyncio.wait_for(
+            _call_edge_neural_tts(clean_text, norm_persona, norm_lang),
+            timeout=3.8,
+        )
+        if res and res.get("audio_b64"):
+            _TTS_CACHE[cache_key] = res
+            if len(_TTS_CACHE) > _TTS_CACHE_MAX:
+                _TTS_CACHE.popitem(last=False)
+            return res
+    except Exception:
+        pass
+
+    # 3. Fallback: Fast low-latency Google neural MP3 TTS
     try:
         res = await asyncio.wait_for(
             asyncio.to_thread(
@@ -1183,6 +1266,19 @@ async def analyze_exercise_form(
             frame_index=frame_index,
             persona=norm_persona,
         )
+        if (
+            include_tts
+            and simulation
+            and not os.environ.get("PYTEST_CURRENT_TEST")
+            and res.get("voice_cue")
+        ):
+            tts = await synthesize_coach_speech(
+                res["voice_cue"], persona=norm_persona, lang=norm_lang
+            )
+            if tts:
+                res["audio_b64"] = tts["audio_b64"]
+                res["audio_mime"] = tts["audio_mime"]
+                res["tts_source"] = tts.get("source", "")
         return res
 
     # 3. Real camera frame on fitness-buddy-web: forward to companion vision service
@@ -1201,6 +1297,7 @@ async def analyze_exercise_form(
                         "lang": norm_lang,
                         "persona": norm_persona,
                         "frame_index": str(frame_index),
+                        "include_tts": "1" if include_tts else "0",
                     },
                     files={"image": ("frame.jpg", image_bytes, mime_type)},
                     headers=headers,

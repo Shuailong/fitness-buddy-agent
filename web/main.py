@@ -35,7 +35,17 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import (
     FileResponse,
@@ -141,7 +151,7 @@ _CSP = "; ".join(
         "script-src 'self' https://accounts.google.com/gsi/client",
         "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
         "frame-src https://accounts.google.com/gsi/",
-        "connect-src 'self' https://accounts.google.com/gsi/",
+        "connect-src 'self' ws: wss: https://accounts.google.com/gsi/",
         "img-src 'self' data: blob: https://*.googleusercontent.com",
         "media-src 'self' data: blob: mediastream:",
         "base-uri 'none'",
@@ -962,6 +972,7 @@ def create_app(
         lang: Annotated[str | None, Form()] = None,
         persona: Annotated[str | None, Form()] = None,
         frame_index: Annotated[int, Form()] = 0,
+        include_tts: Annotated[str | None, Form()] = "1",
         image: Annotated[UploadFile | None, File()] = None,
     ) -> dict[str, Any]:
         """Internal worker route executed by fitness-buddy-vision (agent SA)."""
@@ -969,6 +980,7 @@ def create_app(
             raise HTTPException(status_code=403, detail="Forbidden")
         data = await image.read(MAX_IMAGE_BYTES) if image is not None else b""
         mime = (_sniff_image(data) if data else None) or "image/jpeg"
+        want_tts = str(include_tts or "1").strip() != "0"
         return await analyze_exercise_form(
             exercise_id=exercise_id.strip()[:80],
             exercise_name=exercise_name.strip()[:80],
@@ -977,6 +989,7 @@ def create_app(
             lang=normalize_lang(lang),
             frame_index=max(0, min(frame_index, 10000)),
             persona=(persona or "").strip()[:40],
+            include_tts=want_tts,
             enable_gemini=True,
         )
 
@@ -993,6 +1006,120 @@ def create_app(
         if not res:
             return {"ok": False}
         return {"ok": True, **res}
+
+    @app.websocket("/api/live-coach/ws")
+    async def live_coach_ws(websocket: WebSocket) -> None:
+        """Scheme C: Bidirectional WebSocket stream for real-time form coaching & voice."""
+        try:
+            user = current_user(websocket)  # type: ignore[arg-type]
+        except HTTPException:
+            await websocket.close(code=4401)
+            return
+
+        await websocket.accept()
+        await websocket.send_json({"type": "ready", "mode": "live_ws_stream"})
+        repo = get_repository()
+
+        try:
+            while True:
+                msg = await websocket.receive_json()
+                if not isinstance(msg, dict):
+                    continue
+                msg_type = str(msg.get("type") or "").strip().lower()
+                if msg_type == "ping":
+                    await websocket.send_json({"type": "pong"})
+                    continue
+                if msg_type != "frame":
+                    continue
+
+                ex_id = str(msg.get("exercise_id") or "").strip()[:80]
+                ex_name = str(msg.get("exercise_name") or "").strip()[:80]
+                norm_lang = normalize_lang(str(msg.get("lang") or "zh"))
+                persona_id = str(msg.get("persona") or "iron_leo").strip()[:40]
+                try:
+                    f_idx = max(0, min(int(msg.get("frame_index") or 0), 10000))
+                except (TypeError, ValueError):
+                    f_idx = 0
+                is_sim = bool(msg.get("simulation"))
+                frame_hint = str(msg.get("frame_hint") or "").strip()[:40]
+                want_voice = bool(msg.get("voice_enabled", True))
+
+                raw_b64 = str(msg.get("image_b64") or "").strip()
+                if "," in raw_b64 and raw_b64.startswith("data:"):
+                    raw_b64 = raw_b64.split(",", 1)[1]
+                img_bytes = b""
+                if raw_b64:
+                    try:
+                        img_bytes = base64.b64decode(raw_b64)
+                    except Exception:
+                        img_bytes = b""
+                if len(img_bytes) > MAX_IMAGE_BYTES:
+                    img_bytes = b""
+                mime = (_sniff_image(img_bytes) if img_bytes else None) or "image/jpeg"
+
+                # Stage 1: Fast visual evidence + biomechanical check (push HUD immediately)
+                vision_res = await analyze_exercise_form(
+                    exercise_id=ex_id,
+                    exercise_name=ex_name,
+                    image_bytes=img_bytes,
+                    mime_type=mime,
+                    lang=norm_lang,
+                    frame_index=f_idx,
+                    persona=persona_id,
+                    simulation=is_sim,
+                    frame_hint=frame_hint,
+                    include_tts=False,
+                )
+                await websocket.send_json(
+                    {
+                        "type": "vision_result",
+                        "frame_index": f_idx,
+                        **vision_res,
+                    }
+                )
+
+                # Stage 2: Stream neural voice audio packet for the cue
+                cue_text = str(vision_res.get("voice_cue") or "").strip()
+                if want_voice and cue_text:
+                    tts = await synthesize_coach_speech(
+                        cue_text, persona=persona_id, lang=norm_lang
+                    )
+                    if tts and tts.get("audio_b64"):
+                        await websocket.send_json(
+                            {
+                                "type": "voice_audio",
+                                "frame_index": f_idx,
+                                "voice_cue": cue_text,
+                                "audio_b64": tts["audio_b64"],
+                                "audio_mime": tts["audio_mime"],
+                                "tts_source": tts.get("source", ""),
+                            }
+                        )
+                    else:
+                        await websocket.send_json(
+                            {
+                                "type": "voice_audio_done",
+                                "frame_index": f_idx,
+                            }
+                        )
+
+                await record_ops_event(
+                    repo,
+                    "telemetry",
+                    user_id=user.user_id,
+                    email=user.email,
+                    name="form_check_ws",
+                    exercise_id=ex_id[:40],
+                    score=vision_res.get("score"),
+                )
+        except WebSocketDisconnect:
+            return
+        except Exception as exc:
+            log_event(
+                "live_coach_ws_closed",
+                severity=logging.WARNING,
+                error=type(exc).__name__,
+            )
 
     @app.post("/api/confirm")
     async def confirm(
