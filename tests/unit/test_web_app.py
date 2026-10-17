@@ -1600,7 +1600,7 @@ def test_coach_personas_and_live_form_check() -> None:
     assert unverified_payload["rep_increment"] == 0
 
     # 6. PCM-to-WAV helper, Chinese oral prosody normalization, and /api/tts validation
-    from web.form_coach import _clean_tts_text, _pcm_to_wav
+    from web.form_coach import _clean_tts_text, _pcm_to_wav, _split_tts_chunks
 
     wav = _pcm_to_wav(b"\x00\x00" * 240, sample_rate=24000)
     assert wav.startswith(b"RIFF")
@@ -1614,11 +1614,20 @@ def test_coach_personas_and_live_form_check() -> None:
     assert "200大卡" in zh_norm
     assert "MPS" not in zh_norm
     assert "就能" in zh_norm
+    long_text = "第一句话很清晰。" * 25
+    chunks = _split_tts_chunks(long_text, max_len=80)
+    assert len(chunks) >= 3 and all(len(c) <= 80 for c in chunks)
     assert client.post("/api/tts", json={"text": "   "}).json()["ok"] is False
-    tts_ok = client.post(
-        "/api/tts", json={"text": "来，核心收紧！", "persona": "iron_leo", "lang": "zh"}
-    )
-    assert tts_ok.status_code == 200
-    assert tts_ok.json()["ok"] is True
+    for pid in ("iron_leo", "warm_maya", "science_dr_chen"):
+        tts_ok = client.post(
+            "/api/tts",
+            json={"text": "来，核心收紧！", "persona": pid, "lang": "zh"},
+        )
+        assert tts_ok.status_code == 200
+        tts_body = tts_ok.json()
+        assert tts_body["ok"] is True
+        assert tts_body["audio_b64"]
+        assert tts_body["audio_mime"] in ("audio/wav", "audio/mpeg")
+
 
 

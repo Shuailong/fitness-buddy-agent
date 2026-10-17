@@ -2382,6 +2382,20 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
   margin-top: auto;
   padding-top: 4px;
 }
+.persona-preview-btn {
+  position: relative;
+  z-index: 2;
+  cursor: pointer;
+}
+.persona-preview-btn.is-playing .icon,
+.science-tts-btn.is-playing .icon {
+  animation: liveVoicePulse 0.9s ease-in-out infinite;
+}
+.science-tts-btn.is-playing {
+  color: var(--primary-text);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
 .coach-msg-foot {
   display: flex;
   align-items: center;

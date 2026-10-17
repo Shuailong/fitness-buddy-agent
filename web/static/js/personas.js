@@ -16,7 +16,9 @@ const SILENT_WAV_DATA_URI =
 let sharedAudio = null;
 let audioUnlocked = false;
 let currentPlayToken = 0;
+let activeAudioFinish = null;
 const ttsAudioCache = new Map();
+const ttsInFlight = new Map();
 
 export const PERSONAS = [
   {
@@ -172,17 +174,19 @@ export function unlockCoachAudio() {
   if (typeof window === "undefined") return;
   try {
     const audio = getSharedAudio();
-    if (audio && !audioUnlocked) {
+    if (audio && !audioUnlocked && !activeAudioFinish) {
+      audioUnlocked = true;
       audio.src = SILENT_WAV_DATA_URI;
       audio.volume = 0.01;
       const p = audio.play();
       if (p && typeof p.then === "function") {
         p.then(() => {
-          audio.pause();
-          audio.volume = 1.0;
-          audioUnlocked = true;
+          if (audio.src === SILENT_WAV_DATA_URI && !activeAudioFinish) {
+            audio.volume = 1.0;
+          }
         }).catch(() => {
-          audio.volume = 1.0;
+          audioUnlocked = false;
+          if (!activeAudioFinish) audio.volume = 1.0;
         });
       }
     }
@@ -200,16 +204,25 @@ function playAudioDataUri(dataUri, { rate = 1.0, token, onStart, onEnd } = {}) {
       resolve(false);
       return;
     }
+    if (activeAudioFinish) {
+      try { activeAudioFinish(false); } catch { /* ignore */ }
+    }
     let settled = false;
+    let safetyTimer = null;
     const finish = (ok) => {
       if (settled) return;
       settled = true;
+      if (safetyTimer) clearTimeout(safetyTimer);
+      if (activeAudioFinish === finish) activeAudioFinish = null;
       audio.onended = null;
       audio.onerror = null;
       if (onEnd) onEnd();
       resolve(ok);
     };
+    activeAudioFinish = finish;
+    safetyTimer = setTimeout(() => finish(true), 16000);
     try {
+      audioUnlocked = true;
       audio.pause();
       audio.src = dataUri;
       audio.volume = 1.0;
@@ -221,7 +234,6 @@ function playAudioDataUri(dataUri, { rate = 1.0, token, onStart, onEnd } = {}) {
       if (playPromise && typeof playPromise.then === "function") {
         playPromise
           .then(() => {
-            audioUnlocked = true;
             if (onStart) onStart();
           })
           .catch(() => finish(false));
@@ -422,73 +434,155 @@ function speakWithWebSpeechFallback(text, { personaId, lang, token, onStart, onE
   });
 }
 
+async function fetchNeuralTts(clean, personaId, lang) {
+  const cacheKey = `${personaId}:${lang}:${clean}`;
+  if (ttsAudioCache.has(cacheKey)) {
+    return ttsAudioCache.get(cacheKey);
+  }
+  if (ttsInFlight.has(cacheKey)) {
+    return ttsInFlight.get(cacheKey);
+  }
+  const job = (async () => {
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 3200) : null;
+    try {
+      const resp = await fetch("/api/tts", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean, persona: personaId, lang }),
+        signal: ctrl ? ctrl.signal : undefined,
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      if (data && data.ok && data.audio_b64) {
+        const mime = data.audio_mime || "audio/mpeg";
+        const entry = {
+          uri: `data:${mime};base64,${data.audio_b64}`,
+          mime,
+          source: data.source || "",
+        };
+        ttsAudioCache.set(cacheKey, entry);
+        return entry;
+      }
+    } catch { /* fall through */ } finally {
+      if (timer) clearTimeout(timer);
+      ttsInFlight.delete(cacheKey);
+    }
+    return null;
+  })();
+  ttsInFlight.set(cacheKey, job);
+  return job;
+}
+
+export function prefetchPersonaSamples(lang = getLang()) {
+  if (typeof window === "undefined") return;
+  for (const raw of PERSONAS) {
+    const p = getPersona(raw.id, lang);
+    const clean = normalizeSpeechText(p.copy.sampleTts, lang);
+    if (clean) {
+      fetchNeuralTts(clean, p.id, lang).catch(() => {});
+    }
+  }
+}
+
 /**
- * Speaks coaching text using Backend Neural TTS (Gemini 2.5 Native Audio / Chirp3-HD)
- * with automatic fallback to enhanced Web Speech API. Returns a Promise<boolean>
- * that resolves when playback finishes.
+ * Speaks coaching text using Backend Neural TTS with automatic fallback to
+ * enhanced Web Speech API. Returns a Promise<boolean> that resolves when playback finishes.
  */
 export async function speakCoachText(
   text,
   { personaId = getPersonaId(), lang = getLang(), audioB64 = "", audioMime = "", onStart, onEnd } = {},
 ) {
+  let ended = false;
+  const doneEnd = () => {
+    if (ended) return;
+    ended = true;
+    if (onEnd) {
+      try { onEnd(); } catch { /* ignore */ }
+    }
+  };
+
   const clean = normalizeSpeechText(text, lang);
   if (!clean) {
-    if (onEnd) onEnd();
+    doneEnd();
     return false;
   }
+
+  // Stop any previously active speech before starting the new utterance
+  if (activeAudioFinish) {
+    try { activeAudioFinish(false); } catch { /* ignore */ }
+  }
+  try {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  } catch { /* ignore */ }
+
   const token = ++currentPlayToken;
   const p = getPersona(personaId, lang);
   const cacheKey = `${p.id}:${lang}:${clean}`;
 
-  // 1. Play pre-bundled neural audio (e.g. returned directly by /api/form-check)
-  if (audioB64) {
-    const mime = audioMime || "audio/wav";
-    const uri = `data:${mime};base64,${audioB64}`;
-    ttsAudioCache.set(cacheKey, { uri, mime });
-    const rate = mime === "audio/mpeg" ? (p.voice.rate || 1.0) : 1.0;
-    const played = await playAudioDataUri(uri, { rate, token, onStart, onEnd });
-    if (played || token !== currentPlayToken) return played;
-  }
-
-  // 2. Check client-side neural TTS cache
-  if (ttsAudioCache.has(cacheKey)) {
-    const cached = ttsAudioCache.get(cacheKey);
-    const rate = cached.mime === "audio/mpeg" ? (p.voice.rate || 1.0) : 1.0;
-    const played = await playAudioDataUri(cached.uri, { rate, token, onStart, onEnd });
-    if (played || token !== currentPlayToken) return played;
-  }
-
-  // 3. Request Neural TTS from /api/tts
   try {
-    const resp = await fetch("/api/tts", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: clean, persona: p.id, lang }),
-    });
-    if (token !== currentPlayToken) {
-      if (onEnd) onEnd();
-      return false;
-    }
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data && data.ok && data.audio_b64) {
-        const mime = data.audio_mime || "audio/wav";
-        const uri = `data:${mime};base64,${data.audio_b64}`;
-        ttsAudioCache.set(cacheKey, { uri, mime });
-        const rate = data.source === "google_neural_mp3" ? (p.voice.rate || 1.0) : 1.0;
-        const played = await playAudioDataUri(uri, { rate, token, onStart, onEnd });
-        if (played || token !== currentPlayToken) return played;
+    // 1. Play pre-bundled neural audio (e.g. returned directly by /api/form-check)
+    if (audioB64) {
+      const mime = audioMime || "audio/mpeg";
+      const uri = `data:${mime};base64,${audioB64}`;
+      ttsAudioCache.set(cacheKey, { uri, mime, source: "bundled" });
+      const rate = mime === "audio/mpeg" ? (p.voice.rate || 1.0) : 1.0;
+      const played = await playAudioDataUri(uri, { rate, token, onStart, onEnd: doneEnd });
+      if (played || token !== currentPlayToken) {
+        doneEnd();
+        return played;
       }
     }
-  } catch { /* fall through to Web Speech fallback */ }
 
-  // 4. Fallback to browser Web Speech API
-  return speakWithWebSpeechFallback(clean, { personaId: p.id, lang, token, onStart, onEnd });
+    // 2. Check client-side neural TTS cache (instant 0ms playback)
+    if (ttsAudioCache.has(cacheKey)) {
+      const cached = ttsAudioCache.get(cacheKey);
+      const rate = cached.mime === "audio/mpeg" ? (p.voice.rate || 1.0) : 1.0;
+      const played = await playAudioDataUri(cached.uri, { rate, token, onStart, onEnd: doneEnd });
+      if (played || token !== currentPlayToken) {
+        doneEnd();
+        return played;
+      }
+    }
+
+    // 3. Request Neural TTS from /api/tts (with 3.2s timeout protection)
+    const entry = await fetchNeuralTts(clean, p.id, lang);
+    if (token !== currentPlayToken) {
+      doneEnd();
+      return false;
+    }
+    if (entry && entry.uri) {
+      const rate = entry.mime === "audio/mpeg" ? (p.voice.rate || 1.0) : 1.0;
+      const played = await playAudioDataUri(entry.uri, { rate, token, onStart, onEnd: doneEnd });
+      if (played || token !== currentPlayToken) {
+        doneEnd();
+        return played;
+      }
+    }
+
+    // 4. Fallback to browser Web Speech API
+    const fallbackPlayed = await speakWithWebSpeechFallback(clean, {
+      personaId: p.id,
+      lang,
+      token,
+      onStart,
+      onEnd: doneEnd,
+    });
+    doneEnd();
+    return fallbackPlayed;
+  } finally {
+    doneEnd();
+  }
 }
 
 export function stopCoachSpeech() {
   currentPlayToken++;
+  if (activeAudioFinish) {
+    try { activeAudioFinish(false); } catch { /* ignore */ }
+  }
   try {
     if (sharedAudio) {
       sharedAudio.pause();
@@ -512,6 +606,7 @@ export function personaSwitchPill({ onSwitched, compact = false } = {}) {
     type: "button",
     class: `persona-pill ${p.accentClass}${compact ? " is-compact" : ""}`,
     title: lang === "zh" ? "点击切换 AI 教练性格与风格" : "Switch AI Coach Persona",
+    onmouseenter: () => prefetchPersonaSamples(lang),
     onclick: () => {
       unlockCoachAudio();
       openPersonaSelectorModal({ onSwitched });
@@ -531,50 +626,68 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
   const lang = getLang();
   const isZh = lang === "zh";
   let currentId = getPersonaId();
+  let playingPersonaId = null;
+
+  // Pre-warm neural TTS audio for all 3 personas so clicking "Preview Voice" is instantaneous
+  prefetchPersonaSamples(lang);
 
   const renderCards = (container) => {
     container.replaceChildren(...PERSONAS.map((raw) => {
       const p = getPersona(raw.id, lang);
       const active = p.id === currentId;
+      const isPlaying = playingPersonaId === p.id;
       const previewBtn = el("button", {
         type: "button",
-        class: "btn btn-outline btn-sm persona-preview-btn",
+        class: `btn ${isPlaying ? "btn-primary" : "btn-outline"} btn-sm persona-preview-btn${isPlaying ? " is-playing" : ""}`,
         onclick: async (e) => {
+          e.preventDefault();
           e.stopPropagation();
-          unlockCoachAudio();
-          previewBtn.disabled = true;
-          previewBtn.replaceChildren(icon("volume-up"), isZh ? "正在播报教练语音…" : "Playing Voice…");
+          if (playingPersonaId === p.id) {
+            playingPersonaId = null;
+            stopCoachSpeech();
+            renderCards(container);
+            return;
+          }
+          playingPersonaId = p.id;
+          renderCards(container);
           await speakCoachText(p.copy.sampleTts, {
             personaId: p.id,
             lang,
             onEnd: () => {
-              previewBtn.disabled = false;
-              previewBtn.replaceChildren(icon("volume-up"), isZh ? "试听教练语音" : "Preview Voice");
+              if (playingPersonaId === p.id) {
+                playingPersonaId = null;
+                renderCards(container);
+              }
             },
           });
         },
-      }, [icon("volume-up"), isZh ? "试听教练语音" : "Preview Voice"]);
+      }, [
+        icon("volume-up"),
+        isPlaying
+          ? (isZh ? "正在播报语音… (点击停止)" : "Playing Voice… (Tap to Stop)")
+          : (isZh ? "试听教练语音" : "Preview Voice"),
+      ]);
 
-      return el("div", {
+      const selectCard = () => {
+        unlockCoachAudio();
+        currentId = setPersonaId(p.id);
+        renderCards(container);
+        showToast(isZh ? `已切换为「${p.copy.name}」` : `Switched to ${p.copy.name}`);
+        if (onSwitched) onSwitched(currentId);
+      };
+
+      return el("article", {
         class: `persona-card ${p.accentClass}${active ? " is-active" : ""}`,
-        role: "button",
         tabindex: "0",
         onclick: (e) => {
-          if (e.target.closest(".persona-preview-btn")) return;
-          unlockCoachAudio();
-          currentId = setPersonaId(p.id);
-          renderCards(container);
-          showToast(isZh ? `已切换为「${p.copy.name}」` : `Switched to ${p.copy.name}`);
-          if (onSwitched) onSwitched(currentId);
+          if (e.target && e.target.closest && e.target.closest(".persona-preview-btn")) return;
+          selectCard();
         },
         onkeydown: (e) => {
+          if (e.target && e.target.closest && e.target.closest(".persona-preview-btn")) return;
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            unlockCoachAudio();
-            currentId = setPersonaId(p.id);
-            renderCards(container);
-            showToast(isZh ? `已切换为「${p.copy.name}」` : `Switched to ${p.copy.name}`);
-            if (onSwitched) onSwitched(currentId);
+            selectCard();
           }
         },
       }, [

@@ -4,7 +4,7 @@
 import { el, icon } from "./util.js";
 import { getLang } from "./i18n.js";
 import { showToast } from "./modal.js";
-import { getPersona, getPersonaId, speakCoachText, unlockCoachAudio, personaSwitchPill } from "./personas.js";
+import { getPersona, getPersonaId, speakCoachText, stopCoachSpeech, unlockCoachAudio, personaSwitchPill } from "./personas.js";
 import { track } from "./telemetry.js";
 
 const LEARNED_KEY = "fb_tips_learned_v1";
@@ -405,16 +405,34 @@ export function dailyScienceCard(d, actions) {
             ]),
           ]),
           el("div", { class: "science-persona-actions" }, [
-            el("button", {
-              type: "button",
-              class: "icon-btn science-tts-btn",
-              title: isZh ? "语音朗读本条微课堂" : "Listen to this tip",
-              onclick: () => {
-                unlockCoachAudio();
-                track("tip_interact", { action: "tts_tip", tip_id: currentTip.id });
-                speakCoachText(`${personaNote} ${copy.takeaway}`, { personaId, lang });
-              },
-            }, [icon("volume-up")]),
+            (() => {
+              let tipPlaying = false;
+              const ttsBtn = el("button", {
+                type: "button",
+                class: "icon-btn science-tts-btn",
+                title: isZh ? "语音朗读本条微课堂" : "Listen to this tip",
+                onclick: async () => {
+                  if (tipPlaying) {
+                    tipPlaying = false;
+                    ttsBtn.classList.remove("is-playing");
+                    stopCoachSpeech();
+                    return;
+                  }
+                  tipPlaying = true;
+                  ttsBtn.classList.add("is-playing");
+                  track("tip_interact", { action: "tts_tip", tip_id: currentTip.id });
+                  await speakCoachText(`${personaNote} ${copy.takeaway}`, {
+                    personaId,
+                    lang,
+                    onEnd: () => {
+                      tipPlaying = false;
+                      ttsBtn.classList.remove("is-playing");
+                    },
+                  });
+                },
+              }, [icon("volume-up")]);
+              return ttsBtn;
+            })(),
             personaSwitchPill({ compact: true, onSwitched: () => paint() }),
           ]),
         ]) : null,

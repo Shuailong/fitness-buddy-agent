@@ -794,21 +794,58 @@ def _call_cloud_tts_sync(
     return None
 
 
-def _call_neural_http_tts_sync(clean_text: str, lang: str) -> dict[str, str] | None:
-    """Fast neural MP3 TTS fallback via Google TTS endpoint."""
+def _split_tts_chunks(text: str, max_len: int = 160) -> list[str]:
+    """Splits longer speech into <=160-char sentence chunks for neural TTS."""
+    if len(text) <= max_len:
+        return [text]
+    parts = re.split(r"(?<=[。！？；.!?;])", text)
+    chunks: list[str] = []
+    cur = ""
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if len(cur) + len(p) <= max_len:
+            cur += p
+        else:
+            if cur:
+                chunks.append(cur)
+            cur = p[:max_len]
+    if cur:
+        chunks.append(cur)
+    return chunks or [text[:max_len]]
+
+
+def _call_neural_http_tts_sync(
+    clean_text: str, lang: str, persona: str = "iron_leo"
+) -> dict[str, str] | None:
+    """Fast neural MP3 TTS via Google neural TTS endpoint with persona-matched locale."""
     is_zh = str(lang or "zh").lower().startswith("zh")
-    tl = "zh-CN" if is_zh else "en-US"
-    resp = httpx.get(
-        "https://translate.google.com/translate_tts",
-        params={"ie": "UTF-8", "client": "tw-ob", "tl": tl, "q": clean_text},
-        headers={"User-Agent": "Mozilla/5.0"},
-        timeout=3.5,
-    )
-    if resp.status_code == 200 and len(resp.content) > 512:
+    norm_persona = (persona or "iron_leo").strip().lower()
+    if is_zh:
+        tl = "zh-TW" if norm_persona == "warm_maya" else "zh-CN"
+    else:
+        tl = "en-GB" if norm_persona == "science_dr_chen" else "en-US"
+
+    chunks = _split_tts_chunks(clean_text, max_len=160)
+    mp3_parts: list[bytes] = []
+    with httpx.Client(timeout=3.0, headers={"User-Agent": "Mozilla/5.0"}) as client:
+        for chunk in chunks:
+            resp = client.get(
+                "https://translate.google.com/translate_tts",
+                params={"ie": "UTF-8", "client": "tw-ob", "tl": tl, "q": chunk},
+            )
+            if resp.status_code == 200 and len(resp.content) > 256:
+                mp3_parts.append(resp.content)
+            else:
+                return None
+
+    joined = b"".join(mp3_parts)
+    if len(joined) > 512:
         return {
-            "audio_b64": base64.b64encode(resp.content).decode("ascii"),
+            "audio_b64": base64.b64encode(joined).decode("ascii"),
             "audio_mime": "audio/mpeg",
-            "source": "google_neural_mp3",
+            "source": f"google_neural_mp3:{tl}",
         }
     return None
 
@@ -855,49 +892,14 @@ async def synthesize_coach_speech(
         _TTS_CACHE[cache_key] = stub
         return stub
 
-    proxy_url = os.environ.get("FORM_COACH_SERVICE_URL", "").strip().rstrip("/")
-    is_worker = os.environ.get("IS_VISION_WORKER") == "1"
-
-    # 1. If running on fitness-buddy-web with companion vision/TTS service configured,
-    #    forward to fitness-buddy-vision (which runs as fitness-buddy-agent with Gemini access).
-    if proxy_url and not is_worker:
-        try:
-            headers = await asyncio.to_thread(_proxy_headers, proxy_url)
-            async with httpx.AsyncClient(timeout=_TTS_TIMEOUT_S) as client:
-                r = await client.post(
-                    f"{proxy_url}/api/internal/tts",
-                    json={
-                        "text": clean_text,
-                        "persona": norm_persona,
-                        "lang": norm_lang,
-                    },
-                    headers=headers,
-                )
-                if r.status_code == 200:
-                    data = r.json()
-                    if data.get("audio_b64"):
-                        _TTS_CACHE[cache_key] = data
-                        if len(_TTS_CACHE) > _TTS_CACHE_MAX:
-                            _TTS_CACHE.popitem(last=False)
-                        return data
-        except Exception as exc:
-            log_event(
-                "coach_tts_proxy_fallback",
-                severity=logging.WARNING,
-                error=type(exc).__name__,
-            )
-
-    # 2. Try Gemini 2.5 Native Audio TTS directly (when credentials allow).
-    enable_gemini = bool(
-        os.environ.get("K_SERVICE") or os.environ.get("FORM_COACH_USE_GEMINI") == "1"
-    )
-    if enable_gemini:
+    # 1. Optional Gemini 2.5 Native Audio / Cloud TTS (only when explicitly enabled)
+    if os.environ.get("FORM_COACH_GEMINI_TTS") == "1":
         try:
             res = await asyncio.wait_for(
                 asyncio.to_thread(
                     _call_gemini_tts_sync, clean_text, norm_persona, norm_lang
                 ),
-                timeout=_TTS_TIMEOUT_S,
+                timeout=2.2,
             )
             if res and res.get("audio_b64"):
                 _TTS_CACHE[cache_key] = res
@@ -907,13 +909,12 @@ async def synthesize_coach_speech(
         except Exception:
             pass
 
-        # 2b. Try Google Cloud Text-to-Speech (Chirp3-HD / WaveNet)
         try:
             res = await asyncio.wait_for(
                 asyncio.to_thread(
                     _call_cloud_tts_sync, clean_text, norm_persona, norm_lang
                 ),
-                timeout=3.2,
+                timeout=2.0,
             )
             if res and res.get("audio_b64"):
                 _TTS_CACHE[cache_key] = res
@@ -923,20 +924,21 @@ async def synthesize_coach_speech(
         except Exception:
             pass
 
-    # 3. Fast neural MP3 fallback (enabled for English or when explicitly requested).
-    if norm_lang != "zh" or os.environ.get("FORM_COACH_HTTP_TTS") == "1":
-        try:
-            res = await asyncio.wait_for(
-                asyncio.to_thread(_call_neural_http_tts_sync, clean_text, norm_lang),
-                timeout=3.5,
-            )
-            if res and res.get("audio_b64"):
-                _TTS_CACHE[cache_key] = res
-                if len(_TTS_CACHE) > _TTS_CACHE_MAX:
-                    _TTS_CACHE.popitem(last=False)
-                return res
-        except Exception:
-            pass
+    # 2. Fast low-latency (<450ms) neural MP3 TTS for both Chinese & English
+    try:
+        res = await asyncio.wait_for(
+            asyncio.to_thread(
+                _call_neural_http_tts_sync, clean_text, norm_lang, norm_persona
+            ),
+            timeout=3.5,
+        )
+        if res and res.get("audio_b64"):
+            _TTS_CACHE[cache_key] = res
+            if len(_TTS_CACHE) > _TTS_CACHE_MAX:
+                _TTS_CACHE.popitem(last=False)
+            return res
+    except Exception:
+        pass
 
     return None
 
