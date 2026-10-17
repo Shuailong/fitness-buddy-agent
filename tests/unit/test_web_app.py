@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# ruff: noqa: RUF001
 
 """Unit tests for the web app (no network, no LLM: a fake agent client)."""
 
@@ -1505,3 +1506,52 @@ def test_meal_details_and_photo_persistence_and_backfill(memory_repo) -> None:
     assert hist["messages"][0]["has_image"] is True
     assert hist["messages"][0]["image_url"].startswith("data:image/jpeg;base64,/9j/")
     assert hist["messages"][1]["photo_url"] == hist["messages"][0]["image_url"]
+
+
+def test_coach_personas_and_live_form_check() -> None:
+    """Verify Coach Persona directive injection/stripping and live camera /api/form-check."""
+    client, agent = _dev_client()
+    client.post("/api/session")
+
+    # 1. Chat with a selected persona injects [Coach Persona Directive: ...] into the agent prompt
+    resp = client.post(
+        "/api/chat",
+        data={"text": "怎么把深蹲做得更稳？", "persona": "warm_maya"},
+    )
+    assert resp.status_code == 200
+    sent_text = agent.messages[-1]["parts"][0]["text"]
+    assert sent_text.startswith("[Coach Persona Directive:")
+    assert "林悦教练" in sent_text or "Coach Maya" in sent_text
+    assert sent_text.endswith("怎么把深蹲做得更稳？")
+
+    # 2. build_history strips the internal [Coach Persona Directive: ...] prefix for display
+    user_event = {
+        "author": "user",
+        "content": {
+            "role": "user",
+            "parts": [{"text": sent_text}],
+        },
+    }
+    hist = build_history([user_event])
+    assert hist["messages"][0]["text"] == "怎么把深蹲做得更稳？"
+
+    # 3. Live Form Check endpoint works with and without camera frame and adapts to each persona
+    for pid in ("iron_leo", "warm_maya", "science_dr_chen"):
+        form_resp = client.post(
+            "/api/form-check",
+            data={
+                "exercise_name": "Goblet Squat",
+                "persona": pid,
+                "lang": "zh",
+                "rep_count": "3",
+                "frame_index": "1",
+            },
+        )
+        assert form_resp.status_code == 200
+        payload = form_resp.json()
+        assert payload["ok"] is True
+        assert payload["persona"] == pid
+        assert 70 <= payload["score"] <= 100
+        assert payload["status"] in ("good", "adjust", "ready")
+        assert isinstance(payload["voice_cue"], str) and len(payload["voice_cue"]) > 4
+        assert len(payload["checks"]) >= 2

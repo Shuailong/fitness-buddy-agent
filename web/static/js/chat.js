@@ -10,6 +10,7 @@ import { TurnProgress } from "./progress.js";
 import { feedbackThumbs, dailyPromptAfterTurn } from "./feedback.js";
 import { track } from "./telemetry.js";
 import { openPhotoLightbox } from "./modal.js";
+import { getPersona, getPersonaId, onPersonaChange, personaSwitchPill, speakCoachText } from "./personas.js";
 
 const messagesEl = () => $("messages");
 let receivedCoachText = false;
@@ -36,8 +37,11 @@ function appendMessage(node) {
 }
 
 function coachRow(children, { avatar = true, indent = false } = {}) {
+  const p = getPersona(getPersonaId(), getLang());
   return el("div", { class: `row from-coach${avatar ? "" : " no-avatar"}${indent ? " indent" : ""}` }, [
-    avatar ? el("span", { class: "bot-avatar", "aria-hidden": "true" }, [icon("smart-toy", { fill: true })]) : el("span", { class: "bot-avatar spacer", "aria-hidden": "true" }),
+    avatar
+      ? el("span", { class: `bot-avatar ${p.accentClass}`, "aria-hidden": "true" }, [icon(p.icon || "smart-toy", { fill: true })])
+      : el("span", { class: "bot-avatar spacer", "aria-hidden": "true" }),
     el("div", { class: "row-body" }, children),
   ]);
 }
@@ -66,13 +70,26 @@ export function addUserMessage(text, imageUrl, hadImage) {
 
 function addCoachMessage(text, author, eventId = null) {
   const body = [];
+  const p = getPersona(getPersonaId(), getLang());
+  const personaLabel = p.copy.shortName;
   if (author && !["fitness_coach", "coach"].includes(author)) {
     const key = `author.${author}`;
     const label = t(key);
-    body.push(el("span", { class: "author", text: label === key ? humanize(author) : label }));
+    body.push(el("span", { class: "author", text: `${personaLabel} · ${label === key ? humanize(author) : label}` }));
+  } else {
+    body.push(el("span", { class: "author", text: personaLabel }));
   }
   body.push(el("div", { class: "bubble bubble-coach md", html: renderMarkdown(text) }));
-  body.push(feedbackThumbs({ eventId }));
+  const footRow = el("div", { class: "coach-msg-foot" }, [
+    feedbackThumbs({ eventId }),
+    el("button", {
+      type: "button",
+      class: "icon-btn msg-tts-btn",
+      title: getLang() === "zh" ? "语音播报此回复" : "Read aloud",
+      onclick: () => speakCoachText(text.replace(/[#*_`>|~-]/g, " "), { personaId: getPersonaId(), lang: getLang() }),
+    }, [icon("volume-up")]),
+  ]);
+  body.push(footRow);
   appendMessage(coachRow(body));
   lastCoachEventId = eventId;
   receivedCoachText = true;
@@ -316,6 +333,7 @@ export async function sendChat(text, photoBlob = null, { hidden = false } = {}) 
   const form = new FormData();
   form.append("text", text);
   form.append("lang", getLang());
+  if (!hidden) form.append("persona", getPersonaId());
   if (photoBlob) form.append("image", photoBlob, "photo.jpg");
   const userRow = hidden ? null : addUserMessage(text, photoBlob ? URL.createObjectURL(photoBlob) : null);
   await streamRequest("/api/chat", { method: "POST", body: form }, {
@@ -437,7 +455,33 @@ export function pickPhoto(kind = "camera") {
   $(kind === "gallery" ? "gallery-input" : "camera-input").click();
 }
 
+export function syncCoachPersonaHeader() {
+  const head = document.querySelector(".coach-head");
+  if (!head) return;
+  const p = getPersona(getPersonaId(), getLang());
+  const titleEl = $("coach-title");
+  if (titleEl) {
+    titleEl.removeAttribute("data-i18n");
+    titleEl.textContent = p.copy.shortName;
+  }
+  const subEl = head.querySelector(".coach-titles p");
+  if (subEl) {
+    subEl.removeAttribute("data-i18n");
+    subEl.textContent = p.copy.genderTag;
+  }
+  let slot = head.querySelector(".coach-persona-slot");
+  if (!slot) {
+    slot = el("span", { class: "coach-persona-slot" });
+    const newChatBtn = $("new-chat-btn");
+    if (newChatBtn) head.insertBefore(slot, newChatBtn);
+    else head.append(slot);
+  }
+  slot.replaceChildren(personaSwitchPill({ compact: true }));
+}
+
 export function initChat() {
+  syncCoachPersonaHeader();
+  onPersonaChange(() => syncCoachPersonaHeader());
   $("composer").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (state.streaming) return;

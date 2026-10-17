@@ -10,6 +10,9 @@ import {
 import { state, actions } from "./state.js";
 import { track } from "./telemetry.js";
 import { openModal, openPhotoLightbox } from "./modal.js";
+import { dailyScienceCard } from "./tips.js";
+import { openExerciseDetailModal, openLiveFormCoachModal, getExerciseGuide } from "./exercises.js";
+import { personaSwitchPill } from "./personas.js";
 
 const goalLabel = (g) => t(`goal.${g}`);
 const mealName = (type) => t(`meal.${type || "meal"}`);
@@ -161,6 +164,7 @@ function workoutCard(d) {
   const position = sessions.findIndex((x) => x.day_of_week === s.day_of_week) + 1;
   const preview = s.exercises.slice(0, 4);
   const more = s.exercises.length - preview.length;
+  const isZh = getLang() === "zh";
   return card("workout", [
     el("div", { class: "card-header" }, [
       el("div", {}, [
@@ -173,12 +177,45 @@ function workoutCard(d) {
       el("span", {}, [icon("schedule", { cls: "accent" }), mins(s.estimated_minutes)]),
       el("span", { class: "sep", "aria-hidden": "true", text: "•" }),
       el("span", {}, [icon("fitness-center", { cls: "accent" }), t("today.exercises", { n: s.exercises.length })]),
+      el("span", { class: "sep", "aria-hidden": "true", text: "•" }),
+      el("span", { class: "accent small", text: isZh ? "点击动作查看演示与 AI 摄像指导" : "Tap exercise for form & live AI camera" }),
     ]),
-    el("ol", { class: "ex-preview" }, preview.map((ex, i) => el("li", {}, [
-      el("span", { class: "num", text: String(i + 1) }),
-      el("span", { class: "ex-name", text: ex.name }),
-      el("span", { class: "ex-spec", text: exerciseSpec(ex, getLang()) }),
-    ]))),
+    el("ol", { class: "ex-preview" }, preview.map((ex, i) => {
+      const guide = getExerciseGuide(ex, getLang());
+      return el("li", {
+        class: "ex-row-interactive",
+        role: "button",
+        tabindex: "0",
+        onclick: (e) => {
+          if (e.target.closest(".ex-cam-mini-btn")) return;
+          openExerciseDetailModal(ex, actions);
+        },
+        onkeydown: (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openExerciseDetailModal(ex, actions);
+          }
+        },
+      }, [
+        el("span", { class: "num", text: String(i + 1) }),
+        el("div", { class: "ex-row-main" }, [
+          el("span", { class: "ex-name", text: guide.displayName }),
+          el("span", { class: "ex-row-sub muted small", text: `${guide.muscles.slice(0, 2).join(" · ")} · ${isZh ? "动作要点" : "Form Guide"}` }),
+        ]),
+        el("div", { class: "ex-row-right" }, [
+          el("span", { class: "ex-spec", text: exerciseSpec(ex, getLang()) }),
+          el("button", {
+            type: "button",
+            class: "icon-btn ex-cam-mini-btn",
+            title: isZh ? "开启摄像头 AI 实时动作与语音指导" : "Live Camera AI Form Coach",
+            onclick: (e) => {
+              e.stopPropagation();
+              openLiveFormCoachModal(ex, actions);
+            },
+          }, [icon("videocam")]),
+        ]),
+      ]);
+    })),
     more > 0 ? el("button", { type: "button", class: "link-btn", onclick: () => actions.navigate("plan") }, [t("today.more", { n: more }), icon("chevron-right")]) : null,
     d.today_session_done
       ? secondaryBtn(t("today.sessionLogged"), "check-circle", () => actions.navigate("plan"), "btn-block")
@@ -441,12 +478,14 @@ export function renderToday(root, d) {
       el("div", { class: "chips" }, [
         el("span", { class: "chip" }, [icon("target", { cls: "accent", fill: true }), t("today.goalChip"), el("strong", { text: goalLabel(d.goal) })]),
         streak > 0 ? el("span", { class: "chip" }, [icon("local-fire-department", { cls: "streak", fill: true }), t("today.streak", { n: streak })]) : null,
+        personaSwitchPill({ onSwitched: () => renderToday(root, d) }),
       ]),
     ]),
     el("div", { class: "dash-grid today-grid" }, [
       el("div", { class: "area-tip" }, [tipCard(d)]),
       el("div", { class: "area-hero" }, [heroCard(d)]),
       el("div", { class: "area-quick" }, [quickActions()]),
+      el("div", { class: "area-science" }, [dailyScienceCard(d, actions)]),
       el("div", { class: "area-weight" }, [weightMiniCard(d)]),
       el("div", { class: "area-workout" }, [workoutCard(d)]),
       el("div", { class: "area-meals" }, [mealsCard(d)]),
@@ -635,6 +674,7 @@ function weekStrip(d, sessionsByDay, onPick) {
 
 function sessionCard(s, { isToday, isDone, open }) {
   const status = t(isDone ? "plan.status.done" : isToday ? "plan.status.today" : "plan.status.scheduled");
+  const isZh = getLang() === "zh";
   return el("details", { class: `card session-card${isToday ? " is-today" : ""}`, open, id: `session-${s.day_of_week}` }, [
     el("summary", {}, [
       el("span", { class: `status-icon${isDone ? " done" : ""}`, "aria-hidden": "true" }, [icon(isDone ? "check-circle" : isToday ? "fitness-center" : "calendar-today")]),
@@ -649,18 +689,48 @@ function sessionCard(s, { isToday, isDone, open }) {
       ]),
       icon("expand-more", { cls: "chev" }),
     ]),
-    el("ol", { class: "plan-exercises" }, s.exercises.map((ex, i) => el("li", {}, [
-      el("span", { class: "num", text: String(i + 1) }),
-      el("div", { class: "ex-body" }, [
-        el("p", { class: "ex-name", text: ex.name }),
-        el("p", { class: "ex-sub" }, [
-          ex.rest_seconds ? el("span", { text: t("plan.restSec", { n: ex.rest_seconds }) }) : null,
-          ex.target_rpe ? el("span", { text: t("plan.rpe", { n: ex.target_rpe }) }) : null,
-          ex.notes ? el("span", { class: "tag", text: ex.notes }) : null,
+    el("ol", { class: "plan-exercises" }, s.exercises.map((ex, i) => {
+      const guide = getExerciseGuide(ex, getLang());
+      return el("li", {
+        class: "ex-row-interactive",
+        role: "button",
+        tabindex: "0",
+        onclick: (e) => {
+          if (e.target.closest(".ex-cam-mini-btn")) return;
+          openExerciseDetailModal(ex, actions);
+        },
+        onkeydown: (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openExerciseDetailModal(ex, actions);
+          }
+        },
+      }, [
+        el("span", { class: "num", text: String(i + 1) }),
+        el("div", { class: "ex-body" }, [
+          el("p", { class: "ex-name", text: guide.displayName }),
+          el("p", { class: "ex-sub" }, [
+            el("span", { class: "tag", text: guide.muscles[0] || "" }),
+            ex.rest_seconds ? el("span", { text: t("plan.restSec", { n: ex.rest_seconds }) }) : null,
+            ex.target_rpe ? el("span", { text: t("plan.rpe", { n: ex.target_rpe }) }) : null,
+            ex.notes ? el("span", { class: "tag", text: ex.notes }) : null,
+            el("span", { class: "accent small", text: isZh ? "动作演示 ›" : "Form Guide ›" }),
+          ]),
         ]),
-      ]),
-      el("span", { class: "ex-spec", text: exerciseSpec(ex, getLang()) }),
-    ]))),
+        el("div", { class: "ex-row-right" }, [
+          el("span", { class: "ex-spec", text: exerciseSpec(ex, getLang()) }),
+          el("button", {
+            type: "button",
+            class: "icon-btn ex-cam-mini-btn",
+            title: isZh ? "开启摄像头 AI 实时动作与语音指导" : "Live Camera AI Form Coach",
+            onclick: (e) => {
+              e.stopPropagation();
+              openLiveFormCoachModal(ex, actions);
+            },
+          }, [icon("videocam")]),
+        ]),
+      ]);
+    })),
     el("div", { class: "session-actions" }, [
       primaryBtn(t("today.start"), "play-arrow", () => startSession(s, isToday), "btn-block"),
       secondaryBtn(t("plan.swap"), "swap-horiz", () => actions.openCoach({ prefill: t("send.swap", { day: dayLong(s.day_of_week), focus: s.focus }) }), "btn-block"),

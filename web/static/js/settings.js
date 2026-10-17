@@ -6,6 +6,7 @@ import { t, getLang, LANGS } from "./i18n.js";
 import { THEMES, getTheme, setTheme, effectiveTheme, toggleTheme, THEME_EVENT } from "./theme.js";
 import { actions } from "./state.js";
 import { track } from "./telemetry.js";
+import { getPersona, getPersonaId, openPersonaSelectorModal } from "./personas.js";
 
 function segmented(label, options, current, onPick, cls = "") {
   return el("div", { class: `menu-seg ${cls}`.trim(), role: "group", "aria-label": label }, options.map((o) =>
@@ -60,11 +61,16 @@ export function langSwitch() {
 /** Content of the account/settings menu. */
 export function settingsMenu({ email = "", isAdmin = false, onAdmin = null, showSignOut = true, onSignOut, onFeedback = null, onExport = null, onDelete = null } = {}) {
   const item = (iconName, label, onclick, cls = "") => el("button", { type: "button", class: `menu-item ${cls}`.trim(), onclick }, [icon(iconName), el("span", { text: label })]);
+  const isZh = getLang() === "zh";
+  const currentPersona = getPersona(getPersonaId(), getLang());
   return [
     email ? el("p", { class: "menu-email", text: email }) : null,
     isAdmin && onAdmin ? el("div", { class: "menu-group menu-group-top" }, [
       item("shield", t("menu.admin"), onAdmin, "admin-item"),
     ]) : null,
+    el("div", { class: "menu-group" }, [
+      item("smart-toy", isZh ? `教练人设：${currentPersona.copy.shortName}` : `Coach: ${currentPersona.copy.shortName}`, () => openPersonaSelectorModal()),
+    ]),
     el("p", { class: "menu-label", text: t("menu.theme") }),
     themeSwitch(),
     el("p", { class: "menu-label", text: t("menu.language") }),

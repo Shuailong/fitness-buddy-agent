@@ -95,6 +95,7 @@ from web.events import (
     session_last_update,
     simplify_event,
 )
+from web.form_coach import analyze_exercise_form, build_persona_prefix
 from web.observability import (
     log_event,
     redact_text,
@@ -138,6 +139,7 @@ _CSP = "; ".join(
         "frame-src https://accounts.google.com/gsi/",
         "connect-src 'self' https://accounts.google.com/gsi/",
         "img-src 'self' data: blob: https://*.googleusercontent.com",
+        "media-src 'self' blob: mediastream:",
         "base-uri 'none'",
         "form-action 'self'",
     ]
@@ -171,6 +173,10 @@ TELEMETRY_EVENTS = frozenset(
         "lang_change",
         "card_action",
         "feedback_open",
+        "tip_interact",
+        "exercise_guide",
+        "form_check",
+        "persona_change",
     }
 )
 DASHBOARD_TIMEOUT_S = 15.0
@@ -797,6 +803,7 @@ def create_app(
         text: Annotated[str, Form()] = "",
         image: Annotated[UploadFile | None, File()] = None,
         lang: Annotated[str | None, Form()] = None,
+        persona: Annotated[str | None, Form()] = None,
     ) -> StreamingResponse:
         session_id = active_session_id(request, user)
         text = text.strip()
@@ -805,10 +812,16 @@ def create_app(
                 status_code=413,
                 detail=f"Messages are limited to {MAX_TEXT_CHARS} characters.",
             )
+        norm_lang = normalize_lang(lang)
         parts: list[dict[str, Any]] = []
         uploaded_photo: tuple[str, bytes] | None = None
         if text:
-            parts.append({"text": text})
+            prefix = (
+                build_persona_prefix(persona, norm_lang)
+                if text not in GREETING_TEXTS.values()
+                else ""
+            )
+            parts.append({"text": f"{prefix}{text}"})
         if image is not None and (image.filename or image.size):
             data = await image.read(MAX_IMAGE_BYTES + 1)
             if len(data) > MAX_IMAGE_BYTES:
@@ -860,10 +873,57 @@ def create_app(
                 message,
                 intent,
                 preview,
-                normalize_lang(lang),
+                norm_lang,
                 request=request,
             )
         )
+
+    @app.post("/api/form-check")
+    async def form_check(
+        request: Request,
+        user: UserDep,
+        exercise_id: Annotated[str, Form()] = "",
+        exercise_name: Annotated[str, Form()] = "",
+        lang: Annotated[str | None, Form()] = None,
+        persona: Annotated[str | None, Form()] = None,
+        frame_index: Annotated[int, Form()] = 0,
+        image: Annotated[UploadFile | None, File()] = None,
+    ) -> dict[str, Any]:
+        """Analyzes a live camera frame for real-time exercise form & voice coaching."""
+        data = b""
+        mime = "image/jpeg"
+        if image is not None and (image.filename or image.size):
+            data = await image.read(MAX_IMAGE_BYTES + 1)
+            if len(data) > MAX_IMAGE_BYTES:
+                raise HTTPException(status_code=413, detail="Frame is too large.")
+            sniffed = _sniff_image(data)
+            if sniffed not in ALLOWED_IMAGE_TYPES:
+                raise HTTPException(
+                    status_code=415, detail="Please upload a JPEG, PNG or WebP frame."
+                )
+            mime = sniffed
+        norm_lang = normalize_lang(lang)
+        result = await analyze_exercise_form(
+            exercise_id=exercise_id.strip()[:80],
+            exercise_name=exercise_name.strip()[:80],
+            image_bytes=data,
+            mime_type=mime,
+            lang=norm_lang,
+            frame_index=max(0, min(frame_index, 10000)),
+            persona=(persona or "").strip()[:40],
+        )
+        repo = get_repository()
+        await touch_user_presence(repo, user, request=request, lang=norm_lang)
+        await record_ops_event(
+            repo,
+            "telemetry",
+            user_id=user.user_id,
+            email=user.email,
+            name="form_check",
+            exercise_id=exercise_id.strip()[:40],
+            score=result.get("score"),
+        )
+        return result
 
     @app.post("/api/confirm")
     async def confirm(

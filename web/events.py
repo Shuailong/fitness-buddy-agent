@@ -375,6 +375,10 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
             if image_url:
                 last_user_image_url = image_url
             text = "\n".join(texts)
+            if text.startswith("[Coach Persona Directive:"):
+                end_idx = text.find("]\n\n")
+                if end_idx != -1:
+                    text = text[end_idx + 3 :].lstrip()
             if (text and text not in _HIDDEN_GREETINGS) or has_image:
                 user_msg: dict[str, Any] = {
                     "role": "user",
