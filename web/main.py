@@ -95,7 +95,11 @@ from web.events import (
     session_last_update,
     simplify_event,
 )
-from web.form_coach import analyze_exercise_form, build_persona_prefix
+from web.form_coach import (
+    analyze_exercise_form,
+    build_persona_prefix,
+    synthesize_coach_speech,
+)
 from web.observability import (
     log_event,
     redact_text,
@@ -139,11 +143,19 @@ _CSP = "; ".join(
         "frame-src https://accounts.google.com/gsi/",
         "connect-src 'self' https://accounts.google.com/gsi/",
         "img-src 'self' data: blob: https://*.googleusercontent.com",
-        "media-src 'self' blob: mediastream:",
+        "media-src 'self' data: blob: mediastream:",
         "base-uri 'none'",
         "form-action 'self'",
     ]
 )
+
+
+class TtsRequest(BaseModel):
+    """Request payload for synthesizing natural neural coach speech."""
+
+    text: str = Field(min_length=1, max_length=320)
+    persona: str = Field(default="iron_leo", max_length=40)
+    lang: str | None = Field(default="zh", max_length=12)
 
 
 class GoogleCredential(BaseModel):
@@ -887,6 +899,8 @@ def create_app(
         lang: Annotated[str | None, Form()] = None,
         persona: Annotated[str | None, Form()] = None,
         frame_index: Annotated[int, Form()] = 0,
+        simulation: Annotated[str | None, Form()] = None,
+        frame_hint: Annotated[str | None, Form()] = None,
         image: Annotated[UploadFile | None, File()] = None,
     ) -> dict[str, Any]:
         """Analyzes a live camera frame for real-time exercise form & voice coaching."""
@@ -903,6 +917,7 @@ def create_app(
                 )
             mime = sniffed
         norm_lang = normalize_lang(lang)
+        is_sim = str(simulation or "").strip().lower() in ("1", "true", "yes")
         result = await analyze_exercise_form(
             exercise_id=exercise_id.strip()[:80],
             exercise_name=exercise_name.strip()[:80],
@@ -911,6 +926,8 @@ def create_app(
             lang=norm_lang,
             frame_index=max(0, min(frame_index, 10000)),
             persona=(persona or "").strip()[:40],
+            simulation=is_sim,
+            frame_hint=(frame_hint or "").strip()[:40],
         )
         repo = get_repository()
         await touch_user_presence(repo, user, request=request, lang=norm_lang)
@@ -924,6 +941,58 @@ def create_app(
             score=result.get("score"),
         )
         return result
+
+    @app.post("/api/tts")
+    async def coach_tts(body: TtsRequest, user: UserDep) -> dict[str, Any]:
+        """Synthesizes natural neural speech for the active coach persona."""
+        res = await synthesize_coach_speech(
+            text=body.text,
+            persona=body.persona,
+            lang=normalize_lang(body.lang),
+        )
+        if not res:
+            return {"ok": False}
+        return {"ok": True, **res}
+
+    @app.post("/api/internal/form-check")
+    async def internal_form_check(
+        request: Request,
+        exercise_id: Annotated[str, Form()] = "",
+        exercise_name: Annotated[str, Form()] = "",
+        lang: Annotated[str | None, Form()] = None,
+        persona: Annotated[str | None, Form()] = None,
+        frame_index: Annotated[int, Form()] = 0,
+        image: Annotated[UploadFile | None, File()] = None,
+    ) -> dict[str, Any]:
+        """Internal worker route executed by fitness-buddy-vision (agent SA)."""
+        if request.headers.get("X-Coach-Internal") != "fitness-buddy-internal-v1":
+            raise HTTPException(status_code=403, detail="Forbidden")
+        data = await image.read(MAX_IMAGE_BYTES) if image is not None else b""
+        mime = (_sniff_image(data) if data else None) or "image/jpeg"
+        return await analyze_exercise_form(
+            exercise_id=exercise_id.strip()[:80],
+            exercise_name=exercise_name.strip()[:80],
+            image_bytes=data,
+            mime_type=mime,
+            lang=normalize_lang(lang),
+            frame_index=max(0, min(frame_index, 10000)),
+            persona=(persona or "").strip()[:40],
+            enable_gemini=True,
+        )
+
+    @app.post("/api/internal/tts")
+    async def internal_tts(request: Request, body: TtsRequest) -> dict[str, Any]:
+        """Internal worker route for Gemini 2.5 Native Audio TTS."""
+        if request.headers.get("X-Coach-Internal") != "fitness-buddy-internal-v1":
+            raise HTTPException(status_code=403, detail="Forbidden")
+        res = await synthesize_coach_speech(
+            text=body.text,
+            persona=body.persona,
+            lang=normalize_lang(body.lang),
+        )
+        if not res:
+            return {"ok": False}
+        return {"ok": True, **res}
 
     @app.post("/api/confirm")
     async def confirm(

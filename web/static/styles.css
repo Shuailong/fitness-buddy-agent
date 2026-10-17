@@ -2879,9 +2879,18 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
   border-color: rgba(74, 222, 128, 0.45);
   color: #4ADE80;
 }
+.live-hud-status.warn,
 .live-hud-status.adjust {
   border-color: rgba(251, 191, 36, 0.45);
   color: #FBBF24;
+}
+.live-hud-status.insufficient {
+  border-color: rgba(251, 146, 60, 0.55);
+  color: #FB923C;
+}
+.live-hud-status.bad {
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #F87171;
 }
 .live-hud-metrics {
   display: flex;
@@ -2912,20 +2921,47 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
   display: flex;
   justify-content: center;
 }
+.live-observed-scene {
+  padding: 8px 12px;
+  border-radius: var(--r);
+  background: var(--inset);
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
 .live-voice-banner {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   padding: 12px 14px;
   border-radius: var(--r);
   background: var(--elevated);
   border: 1px solid var(--primary-border);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.live-voice-banner.is-speaking {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-glow);
+}
+.live-voice-banner.is-speaking .live-voice-icon {
+  animation: liveVoicePulse 1s ease-in-out infinite;
+}
+@keyframes liveVoicePulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.18); opacity: 0.75; }
 }
 .live-voice-text {
+  flex: 1;
+  min-width: 0;
   font-size: 0.88rem;
   font-weight: 600;
   color: var(--text-strong);
   line-height: 1.45;
+}
+.live-replay-btn {
+  flex: none;
 }
 .live-checks-grid {
   display: grid;

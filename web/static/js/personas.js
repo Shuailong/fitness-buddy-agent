@@ -1,5 +1,5 @@
 // Coach Persona system: 3 selectable coaching personalities with distinct
-// gender, tone, visual identity, and Web Speech TTS voice tuning.
+// gender, tone, visual identity, and Neural AI TTS voice synthesis.
 import { el, icon } from "./util.js";
 import { getLang } from "./i18n.js";
 import { openModal, closeModal, showToast } from "./modal.js";
@@ -9,6 +9,15 @@ const STORAGE_KEY = "fb_coach_persona_v1";
 const DEFAULT_PERSONA_ID = "iron_leo";
 const listeners = new Set();
 
+// Silent 1-sample WAV used to unlock browser audio playback on user click gestures
+const SILENT_WAV_DATA_URI =
+  "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+
+let sharedAudio = null;
+let audioUnlocked = false;
+let currentPlayToken = 0;
+const ttsAudioCache = new Map();
+
 export const PERSONAS = [
   {
     id: "iron_leo",
@@ -16,7 +25,11 @@ export const PERSONAS = [
     avatarText: "LEO",
     accentClass: "persona-leo",
     gender: "male",
-    voice: { pitch: 0.88, rate: 1.06, voiceHints: ["Male", "Daniel", "Alex", "Reed", "Eddy", "Yunxi", "Kangkang"] },
+    voice: {
+      pitch: 1.0,
+      rate: 1.03,
+      voiceHints: ["Yunjian", "Yunxi", "Yunyang", "Google 普通话", "Binbin", "Lili", "Meijia", "Daniel", "Google US English"],
+    },
     zh: {
       name: "雷奥教练 · Coach Leo",
       shortName: "雷奥教练",
@@ -25,7 +38,7 @@ export const PERSONAS = [
       tags: ["力量突破", "干脆利落", "拒绝借口"],
       bio: "前竞技体能主教练，崇尚有效训练容量与标准动作纪律。说话直接有力，在你想偷懒的最后两下给你最猛的推力，同时死守关节安全底线。",
       quote: "「核心绷紧！别跟重量讨价还价，高质量完成这一组，我替你盯紧每一度关节轨迹！」",
-      sampleTts: "我是雷奥教练！今天我们不整虚的，核心绷紧，每一组都拿出身体的最佳状态，准备好了就开练！",
+      sampleTts: "嘿，搭档！我是雷奥教练。今天咱们不整虚的，把核心收紧，每一组都拿出身体的最佳状态，准备好咱们就开练！",
       tipPrefix: "雷奥教练划重点：",
     },
     en: {
@@ -36,7 +49,7 @@ export const PERSONAS = [
       tags: ["Strength & Power", "Direct & Punchy", "Strict Form"],
       bio: "Former strength & conditioning head coach focused on progressive overload and crisp execution. Direct, fiery motivation that pushes you through the last two reps safely.",
       quote: "\"Brace that core! Don't negotiate with the bar—own every rep with textbook control!\"",
-      sampleTts: "I'm Coach Leo! Lock in your focus, brace your core, and let's make every single rep count today!",
+      sampleTts: "Hey partner, I'm Coach Leo! Lock in your focus, brace your core, and let's make every single rep count today!",
       tipPrefix: "Coach Leo's Take:",
     },
   },
@@ -46,7 +59,11 @@ export const PERSONAS = [
     avatarText: "MAYA",
     accentClass: "persona-maya",
     gender: "female",
-    voice: { pitch: 1.12, rate: 1.0, voiceHints: ["Female", "Samantha", "Tingting", "Xiaoxiao", "Mei-Jia", "Victoria", "Karen"] },
+    voice: {
+      pitch: 1.0,
+      rate: 1.0,
+      voiceHints: ["Xiaoxiao", "Xiaoyi", "Google 國語", "Google 普通话", "Meijia", "Mei-Jia", "Yue", "Lili", "Samantha"],
+    },
     zh: {
       name: "林悦教练 · Coach Maya",
       shortName: "林悦教练",
@@ -55,7 +72,7 @@ export const PERSONAS = [
       tags: ["温柔鼓励", "外食友好", "倾听身体"],
       bio: "专注女性与大众可持续体态管理、运动营养与反焦虑饮食。永远先看见你的努力与进步，帮你把健康融入生活，而不是让训练变成压力。",
       quote: "「哪怕今天只完成了 20 分钟，也是对身体超棒的投资～放轻松，我们一步步稳稳变强！」",
-      sampleTts: "嗨，我是林悦教练～不用给自己太大压力，今天我们依然顺着身体的节奏，开心地动起来吧！",
+      sampleTts: "嗨，我是林悦教练，今天能打开训练就已经超棒啦，放轻松，跟着自己的呼吸节奏，我们一起开心地动起来吧！",
       tipPrefix: "林悦教练贴心提醒：",
     },
     en: {
@@ -66,7 +83,7 @@ export const PERSONAS = [
       tags: ["Empathetic", "Flexible Diet", "Body Awareness"],
       bio: "Holistic fitness and nutrition coach who believes consistency beats perfection. Celebrates every win and helps you build lifelong habits without guilt.",
       quote: "\"Even a 20-minute session is a wonderful gift to your body. Breathe easy—we're building this step by step!\"",
-      sampleTts: "Hi there, I'm Coach Maya! Take a deep breath—let's listen to your body and enjoy a great session together.",
+      sampleTts: "Hi there, I'm Coach Maya! Take a deep breath, listen to your body, and let's enjoy a great session together.",
       tipPrefix: "Coach Maya's Note:",
     },
   },
@@ -76,7 +93,11 @@ export const PERSONAS = [
     avatarText: "CHEN",
     accentClass: "persona-chen",
     gender: "neutral",
-    voice: { pitch: 0.98, rate: 1.03, voiceHints: ["Sin-ji", "Aaron", "Arthur", "Daniel", "Tingting"] },
+    voice: {
+      pitch: 1.0,
+      rate: 1.0,
+      voiceHints: ["Yunxi", "Yunyang", "Google 普通话", "Sin-ji", "Meijia", "Arthur", "Daniel", "Google US English"],
+    },
     zh: {
       name: "陈博士 · Dr. Alex Chen",
       shortName: "陈博士",
@@ -85,7 +106,7 @@ export const PERSONAS = [
       tags: ["运动生物力学", "代谢机制", "精准量化"],
       bio: "运动人体科学实验室出身，擅长用第一性原理拆解力臂、肌纤维募集、RPE 与营养代谢，让你不仅练对动作，更彻底搞懂背后的科学逻辑。",
       quote: "「将离心阶段控制在 2.5 秒可显著提升机械张力；我们用数据说话，精准优化你的每一卡路里。」",
-      sampleTts: "你好，我是陈博士。今天我们将结合运动生物力学与能量代谢数据，精准优化你的训练与营养方案。",
+      sampleTts: "你好，我是陈博士。今天我们会结合运动生物力学和代谢数据，一步步陪你把每个动作细节都做到科学、精准。",
       tipPrefix: "陈博士循证解析：",
     },
     en: {
@@ -133,51 +154,347 @@ export function onPersonaChange(fn) {
   return () => listeners.delete(fn);
 }
 
-/**
- * Speaks coaching text using Web Speech API tuned to the persona's gender/style.
- */
-export function speakCoachText(text, { personaId = getPersonaId(), lang = getLang(), onStart, onEnd } = {}) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window) || !text) {
-    if (onEnd) onEnd();
-    return false;
+function getSharedAudio() {
+  if (typeof window === "undefined") return null;
+  if (!sharedAudio) {
+    sharedAudio = new Audio();
+    sharedAudio.preload = "auto";
+    sharedAudio.playsInline = true;
   }
-  try {
-    const synth = window.speechSynthesis;
-    synth.cancel();
-    const p = getPersona(personaId, lang);
-    const utter = new SpeechSynthesisUtterance(String(text));
-    const targetLang = lang === "zh" ? "zh-CN" : "en-US";
-    utter.lang = targetLang;
-    utter.pitch = p.voice.pitch || 1.0;
-    utter.rate = p.voice.rate || 1.0;
+  return sharedAudio;
+}
 
-    const voices = synth.getVoices ? synth.getVoices() : [];
-    const langVoices = voices.filter((v) =>
-      String(v.lang || "").toLowerCase().startsWith(lang === "zh" ? "zh" : "en")
-    );
-    if (langVoices.length) {
-      const hints = p.voice.voiceHints || [];
-      let picked = null;
-      for (const h of hints) {
-        picked = langVoices.find((v) => String(v.name || "").toLowerCase().includes(h.toLowerCase()));
-        if (picked) break;
+/**
+ * Unlocks browser audio playback on user gesture (click/tap) so subsequent
+ * async live-coaching cues play reliably without autoplay blocking.
+ */
+export function unlockCoachAudio() {
+  if (typeof window === "undefined") return;
+  try {
+    const audio = getSharedAudio();
+    if (audio && !audioUnlocked) {
+      audio.src = SILENT_WAV_DATA_URI;
+      audio.volume = 0.01;
+      const p = audio.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => {
+          audio.pause();
+          audio.volume = 1.0;
+          audioUnlocked = true;
+        }).catch(() => {
+          audio.volume = 1.0;
+        });
       }
-      utter.voice = picked || langVoices[0];
     }
-    if (onStart) utter.onstart = onStart;
-    if (onEnd) {
-      utter.onend = onEnd;
-      utter.onerror = onEnd;
+    if ("speechSynthesis" in window && window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
     }
-    synth.speak(utter);
-    return true;
-  } catch {
+  } catch { /* ignore */ }
+}
+
+function playAudioDataUri(dataUri, { rate = 1.0, token, onStart, onEnd } = {}) {
+  return new Promise((resolve) => {
+    const audio = getSharedAudio();
+    if (!audio || token !== currentPlayToken) {
+      if (onEnd) onEnd();
+      resolve(false);
+      return;
+    }
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      audio.onended = null;
+      audio.onerror = null;
+      if (onEnd) onEnd();
+      resolve(ok);
+    };
+    try {
+      audio.pause();
+      audio.src = dataUri;
+      audio.volume = 1.0;
+      audio.preservesPitch = true;
+      audio.playbackRate = rate;
+      audio.onended = () => finish(true);
+      audio.onerror = () => finish(false);
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.then === "function") {
+        playPromise
+          .then(() => {
+            audioUnlocked = true;
+            if (onStart) onStart();
+          })
+          .catch(() => finish(false));
+      } else {
+        if (onStart) onStart();
+      }
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+// Pre-warm speechSynthesis voice catalog on load (Chrome populates voices asynchronously)
+if (typeof window !== "undefined" && "speechSynthesis" in window) {
+  try {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", () => {
+      try { window.speechSynthesis.getVoices(); } catch { /* ignore */ }
+    });
+  } catch { /* ignore */ }
+}
+
+/**
+ * Normalizes written Chinese/English UI text into natural, colloquial spoken prosody
+ * so TTS engines never read "25–40g" as "25 dash 40 G" or spell out "(MPS)".
+ */
+export function normalizeSpeechText(text, lang = "zh") {
+  let s = String(text || "")
+    .replace(/[\*#_`>|]/g, "")
+    .replace(/[🟢🟡🔴🟠⚪✅❌⚠️📷⏱🔥🎉💡🔬🎯♂♀⚧✨👁🔊]/g, "");
+
+  const hasZh = /[\u4e00-\u9fff]/.test(s) || lang === "zh";
+  if (hasZh) {
+    s = s
+      // Remove pure English acronym/jargon parentheses in Chinese sentences, e.g. （MPS）, (Why It Works)
+      .replace(/[（(]\s*[A-Za-z0-9\-\s/.,%+~～–—]+\s*[）)]/g, "")
+      // Turn remaining Chinese parenthetical notes into natural comma pauses
+      .replace(/[（(]\s*([^）)]+?)\s*[）)]/g, "，$1，")
+      // Remove stiff quote brackets
+      .replace(/[「」『』【】]/g, "")
+      .replace(/·/g, "，")
+      // Percentage ranges: 15%–30% -> 百分之15到30
+      .replace(/(\d+(?:\.\d+)?)\s*[%％]?\s*[–—\-~～]\s*(\d+(?:\.\d+)?)\s*[%％]/g, "百分之$1到$2")
+      .replace(/(\d+(?:\.\d+)?)\s*[%％]/g, "百分之$1")
+      // Numeric ranges: 25–40 -> 25到40
+      .replace(/(\d+(?:\.\d+)?)\s*[–—\-~～]\s*(\d+(?:\.\d+)?)/g, "$1到$2")
+      // Measurement units after numbers
+      .replace(/(\d)\s*kcal\b/gi, "$1大卡")
+      .replace(/(\d)\s*cal\b/gi, "$1大卡")
+      .replace(/(\d)\s*kg\b/gi, "$1公斤")
+      .replace(/(\d)\s*mg\b/gi, "$1毫克")
+      .replace(/(\d)\s*ml\b/gi, "$1毫升")
+      .replace(/(\d)\s*cm\b/gi, "$1厘米")
+      .replace(/(\d)\s*g(?![a-zA-Z])/gi, "$1克")
+      .replace(/(\d)\s*mins?\b/gi, "$1分钟")
+      .replace(/(\d)\s*(?:hrs?|h)(?![a-zA-Z])/gi, "$1小时")
+      .replace(/(\d)\s*(?:secs?|s)(?![a-zA-Z])/gi, "$1秒")
+      // Fitness acronyms in Chinese text
+      .replace(/\bRPE\s*(\d+(?:到\d+)?)/g, "自觉费力程度$1级")
+      .replace(/\bRIR\s*(\d+)/g, "保留$1次余力")
+      .replace(/\bNEAT\b/g, "日常非运动消耗")
+      .replace(/\bMPS\b/g, "肌肉蛋白合成")
+      .replace(/\bTEF\b/g, "食物热效应")
+      .replace(/\bTDEE\b/g, "全天总消耗")
+      .replace(/\bATP-CP\b/g, "磷酸肌酸")
+      // Slashes between Chinese chars
+      .replace(/([\u4e00-\u9fff])\s*\/\s*([\u4e00-\u9fff])/g, "$1或$2")
+      // Soften stiff written words into conversational Mandarin
+      .replace(/即可/g, "就能")
+      .replace(/显著提升/g, "大大提高")
+      .replace(/显著降低/g, "明显减少")
+      .replace(/显著增强/g, "明显增强")
+      .replace(/未见/g, "没看到")
+      .replace(/[，,]{2,}/g, "，");
+  }
+  return s.replace(/\s+/g, " ").replace(/^[，,\s]+|[，,\s]+$/g, "").trim();
+}
+
+function pickBestSpeechVoice(voices, persona, lang) {
+  const isZh = lang === "zh";
+  const prefix = isZh ? "zh" : "en";
+  const langVoices = (voices || []).filter((v) => {
+    const l = String(v.lang || "").toLowerCase();
+    return l.startsWith(prefix) || (isZh && l.includes("cmn"));
+  });
+  if (!langVoices.length) return null;
+
+  const hints = (persona && persona.voice && persona.voice.voiceHints) || [];
+  let bestVoice = langVoices[0];
+  let bestScore = -999;
+
+  for (const v of langVoices) {
+    const name = String(v.name || "");
+    const lower = name.toLowerCase();
+    let score = 0;
+
+    // 1. Persona-specific preferred voice hints (in priority order)
+    for (let i = 0; i < hints.length; i++) {
+      if (lower.includes(hints[i].toLowerCase())) {
+        score += 120 - i * 8;
+        break;
+      }
+    }
+
+    // 2. Strongly prefer cloud/neural/natural voices over legacy offline robotic synthesizers
+    if (lower.includes("natural") || lower.includes("online")) score += 90;
+    if (lower.includes("google") || !v.localService) score += 75;
+    if (lower.includes("premium") || lower.includes("enhanced") || lower.includes("siri")) score += 60;
+    if (lower.includes("meijia") || lower.includes("mei-jia") || lower.includes("sin-ji")) score += 40;
+
+    // 3. Heavy penalty for legacy macOS offline "Tingting" which sounds robotic
+    if (lower.includes("tingting") || lower.includes("ting-ting")) score -= 80;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestVoice = v;
+    }
+  }
+  return bestVoice;
+}
+
+function speakWithWebSpeechFallback(text, { personaId, lang, token, onStart, onEnd } = {}) {
+  return new Promise((resolve) => {
+    const spokenText = normalizeSpeechText(text, lang);
+    if (typeof window === "undefined" || !("speechSynthesis" in window) || !spokenText || token !== currentPlayToken) {
+      if (onEnd) onEnd();
+      resolve(false);
+      return;
+    }
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      if (onEnd) onEnd();
+      resolve(ok);
+    };
+    try {
+      const synth = window.speechSynthesis;
+      if (synth.paused) synth.resume();
+      if (synth.speaking || synth.pending) {
+        synth.cancel();
+      }
+      const p = getPersona(personaId, lang);
+
+      const startSpeaking = () => {
+        if (token !== currentPlayToken) {
+          finish(false);
+          return;
+        }
+        const utter = new SpeechSynthesisUtterance(spokenText);
+        // Retain global reference so Chrome/Safari GC never collects active utterance
+        window.__activeCoachUtterance = utter;
+
+        const voices = synth.getVoices ? synth.getVoices() : [];
+        const picked = pickBestSpeechVoice(voices, p, lang);
+        if (picked) {
+          utter.voice = picked;
+          utter.lang = picked.lang || (lang === "zh" ? "zh-CN" : "en-US");
+        } else {
+          utter.lang = lang === "zh" ? "zh-CN" : "en-US";
+        }
+        utter.pitch = p.voice.pitch || 1.0;
+        utter.rate = p.voice.rate || 1.0;
+
+        utter.onstart = () => {
+          if (onStart) onStart();
+        };
+        utter.onend = () => finish(true);
+        utter.onerror = () => finish(false);
+
+        const maxWaitMs = Math.min(14000, Math.max(3500, spokenText.length * 320));
+        setTimeout(() => finish(true), maxWaitMs);
+
+        try {
+          synth.speak(utter);
+        } catch {
+          finish(false);
+        }
+      };
+
+      const initialVoices = synth.getVoices ? synth.getVoices() : [];
+      if (!initialVoices.length) {
+        // Wait briefly for Chrome's async voiceschanged event so Google 普通话 is available
+        let started = false;
+        const go = () => {
+          if (started) return;
+          started = true;
+          startSpeaking();
+        };
+        synth.addEventListener("voiceschanged", go, { once: true });
+        setTimeout(go, 150);
+      } else {
+        setTimeout(startSpeaking, 45);
+      }
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+/**
+ * Speaks coaching text using Backend Neural TTS (Gemini 2.5 Native Audio / Chirp3-HD)
+ * with automatic fallback to enhanced Web Speech API. Returns a Promise<boolean>
+ * that resolves when playback finishes.
+ */
+export async function speakCoachText(
+  text,
+  { personaId = getPersonaId(), lang = getLang(), audioB64 = "", audioMime = "", onStart, onEnd } = {},
+) {
+  const clean = normalizeSpeechText(text, lang);
+  if (!clean) {
     if (onEnd) onEnd();
     return false;
   }
+  const token = ++currentPlayToken;
+  const p = getPersona(personaId, lang);
+  const cacheKey = `${p.id}:${lang}:${clean}`;
+
+  // 1. Play pre-bundled neural audio (e.g. returned directly by /api/form-check)
+  if (audioB64) {
+    const mime = audioMime || "audio/wav";
+    const uri = `data:${mime};base64,${audioB64}`;
+    ttsAudioCache.set(cacheKey, { uri, mime });
+    const rate = mime === "audio/mpeg" ? (p.voice.rate || 1.0) : 1.0;
+    const played = await playAudioDataUri(uri, { rate, token, onStart, onEnd });
+    if (played || token !== currentPlayToken) return played;
+  }
+
+  // 2. Check client-side neural TTS cache
+  if (ttsAudioCache.has(cacheKey)) {
+    const cached = ttsAudioCache.get(cacheKey);
+    const rate = cached.mime === "audio/mpeg" ? (p.voice.rate || 1.0) : 1.0;
+    const played = await playAudioDataUri(cached.uri, { rate, token, onStart, onEnd });
+    if (played || token !== currentPlayToken) return played;
+  }
+
+  // 3. Request Neural TTS from /api/tts
+  try {
+    const resp = await fetch("/api/tts", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: clean, persona: p.id, lang }),
+    });
+    if (token !== currentPlayToken) {
+      if (onEnd) onEnd();
+      return false;
+    }
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.ok && data.audio_b64) {
+        const mime = data.audio_mime || "audio/wav";
+        const uri = `data:${mime};base64,${data.audio_b64}`;
+        ttsAudioCache.set(cacheKey, { uri, mime });
+        const rate = data.source === "google_neural_mp3" ? (p.voice.rate || 1.0) : 1.0;
+        const played = await playAudioDataUri(uri, { rate, token, onStart, onEnd });
+        if (played || token !== currentPlayToken) return played;
+      }
+    }
+  } catch { /* fall through to Web Speech fallback */ }
+
+  // 4. Fallback to browser Web Speech API
+  return speakWithWebSpeechFallback(clean, { personaId: p.id, lang, token, onStart, onEnd });
 }
 
 export function stopCoachSpeech() {
+  currentPlayToken++;
+  try {
+    if (sharedAudio) {
+      sharedAudio.pause();
+      sharedAudio.currentTime = 0;
+    }
+  } catch { /* ignore */ }
   try {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
@@ -195,7 +512,10 @@ export function personaSwitchPill({ onSwitched, compact = false } = {}) {
     type: "button",
     class: `persona-pill ${p.accentClass}${compact ? " is-compact" : ""}`,
     title: lang === "zh" ? "点击切换 AI 教练性格与风格" : "Switch AI Coach Persona",
-    onclick: () => openPersonaSelectorModal({ onSwitched }),
+    onclick: () => {
+      unlockCoachAudio();
+      openPersonaSelectorModal({ onSwitched });
+    },
   }, [
     el("span", { class: "persona-avatar-mini", text: p.avatarText }),
     el("span", { class: "persona-pill-name", text: compact ? p.copy.shortName : p.copy.name }),
@@ -216,12 +536,32 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
     container.replaceChildren(...PERSONAS.map((raw) => {
       const p = getPersona(raw.id, lang);
       const active = p.id === currentId;
+      const previewBtn = el("button", {
+        type: "button",
+        class: "btn btn-outline btn-sm persona-preview-btn",
+        onclick: async (e) => {
+          e.stopPropagation();
+          unlockCoachAudio();
+          previewBtn.disabled = true;
+          previewBtn.replaceChildren(icon("volume-up"), isZh ? "正在播报教练语音…" : "Playing Voice…");
+          await speakCoachText(p.copy.sampleTts, {
+            personaId: p.id,
+            lang,
+            onEnd: () => {
+              previewBtn.disabled = false;
+              previewBtn.replaceChildren(icon("volume-up"), isZh ? "试听教练语音" : "Preview Voice");
+            },
+          });
+        },
+      }, [icon("volume-up"), isZh ? "试听教练语音" : "Preview Voice"]);
+
       return el("div", {
         class: `persona-card ${p.accentClass}${active ? " is-active" : ""}`,
         role: "button",
         tabindex: "0",
         onclick: (e) => {
           if (e.target.closest(".persona-preview-btn")) return;
+          unlockCoachAudio();
           currentId = setPersonaId(p.id);
           renderCards(container);
           showToast(isZh ? `已切换为「${p.copy.name}」` : `Switched to ${p.copy.name}`);
@@ -230,6 +570,7 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
         onkeydown: (e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
+            unlockCoachAudio();
             currentId = setPersonaId(p.id);
             renderCards(container);
             showToast(isZh ? `已切换为「${p.copy.name}」` : `Switched to ${p.copy.name}`);
@@ -258,16 +599,7 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
         )),
         el("p", { class: "persona-bio muted small", text: p.copy.bio }),
         el("blockquote", { class: "persona-quote", text: p.copy.quote }),
-        el("div", { class: "persona-card-foot" }, [
-          el("button", {
-            type: "button",
-            class: "btn btn-outline btn-sm persona-preview-btn",
-            onclick: (e) => {
-              e.stopPropagation();
-              speakCoachText(p.copy.sampleTts, { personaId: p.id, lang });
-            },
-          }, [icon("volume-up"), isZh ? "试听教练语音" : "Preview Voice"]),
-        ]),
+        el("div", { class: "persona-card-foot" }, [previewBtn]),
       ]);
     }));
   };
@@ -297,8 +629,8 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
       el("p", {
         class: "muted small",
         text: isZh
-          ? "不同教练拥有截然不同的性格、性别、沟通语气与实时语音指导声线。切换后将在「教练对话」、「每日微课堂」和「摄像头实时动作伴练」中全局生效。"
-          : "Each coach brings a distinct personality, gender, communication tone, and live voice coaching style across Chat, Daily Science Tips, and Live Form Coach.",
+          ? "不同教练拥有截然不同的性格、性别、沟通语气与高拟真神经网络语音声线。切换后将在「教练对话」、「每日微课堂」和「摄像头实时动作伴练」中全局生效。"
+          : "Each coach brings a distinct personality, gender, communication tone, and neural voice coaching style across Chat, Daily Science Tips, and Live Form Coach.",
       }),
       listWrap,
     ]),

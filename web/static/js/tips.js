@@ -4,7 +4,7 @@
 import { el, icon } from "./util.js";
 import { getLang } from "./i18n.js";
 import { showToast } from "./modal.js";
-import { getPersona, getPersonaId, speakCoachText, personaSwitchPill } from "./personas.js";
+import { getPersona, getPersonaId, speakCoachText, unlockCoachAudio, personaSwitchPill } from "./personas.js";
 import { track } from "./telemetry.js";
 
 const LEARNED_KEY = "fb_tips_learned_v1";
@@ -410,8 +410,9 @@ export function dailyScienceCard(d, actions) {
               class: "icon-btn science-tts-btn",
               title: isZh ? "语音朗读本条微课堂" : "Listen to this tip",
               onclick: () => {
+                unlockCoachAudio();
                 track("tip_interact", { action: "tts_tip", tip_id: currentTip.id });
-                speakCoachText(`${copy.takeaway} ${personaNote}`, { personaId, lang });
+                speakCoachText(`${personaNote} ${copy.takeaway}`, { personaId, lang });
               },
             }, [icon("volume-up")]),
             personaSwitchPill({ compact: true, onSwitched: () => paint() }),

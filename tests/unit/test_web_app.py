@@ -1555,3 +1555,70 @@ def test_coach_personas_and_live_form_check() -> None:
         assert payload["status"] in ("good", "adjust", "ready")
         assert isinstance(payload["voice_cue"], str) and len(payload["voice_cue"]) > 4
         assert len(payload["checks"]) >= 2
+
+    # 4. Real camera frame without verified vision evidence NEVER fabricates a score or rep count
+    jpeg_bytes = (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
+    )
+    strict_resp = client.post(
+        "/api/form-check",
+        data={
+            "exercise_id": "bodyweight_squat",
+            "exercise_name": "Bodyweight Squat",
+            "persona": "iron_leo",
+            "lang": "zh",
+            "simulation": "0",
+            "frame_hint": "dark",
+        },
+        files={"image": ("frame.jpg", jpeg_bytes, "image/jpeg")},
+    )
+    assert strict_resp.status_code == 200
+    strict_payload = strict_resp.json()
+    assert strict_payload["ok"] is True
+    assert strict_payload["status"] == "insufficient_evidence"
+    assert strict_payload["score"] is None
+    assert strict_payload["rep_increment"] == 0
+    assert all(chk["ok"] is False for chk in strict_payload["checks"])
+
+    # 5. Real camera frame when vision is unavailable also returns insufficient_evidence (not fake 91)
+    unverified_resp = client.post(
+        "/api/form-check",
+        data={
+            "exercise_id": "push_up",
+            "exercise_name": "Push-Up",
+            "persona": "science_dr_chen",
+            "lang": "zh",
+            "simulation": "0",
+            "frame_hint": "camera",
+        },
+        files={"image": ("frame.jpg", jpeg_bytes, "image/jpeg")},
+    )
+    assert unverified_resp.status_code == 200
+    unverified_payload = unverified_resp.json()
+    assert unverified_payload["status"] == "insufficient_evidence"
+    assert unverified_payload["score"] is None
+    assert unverified_payload["rep_increment"] == 0
+
+    # 6. PCM-to-WAV helper, Chinese oral prosody normalization, and /api/tts validation
+    from web.form_coach import _clean_tts_text, _pcm_to_wav
+
+    wav = _pcm_to_wav(b"\x00\x00" * 240, sample_rate=24000)
+    assert wav.startswith(b"RIFF")
+    assert b"WAVEfmt " in wav
+    assert _clean_tts_text("🔥 雷教练：**稳住核心**！") == "雷教练：稳住核心！"
+    zh_norm = _clean_tts_text(
+        "单餐摄入 25–40g 优质蛋白（MPS）即可消耗 15%–30% 约 200 kcal！"
+    )
+    assert "25到40克" in zh_norm
+    assert "百分之15到30" in zh_norm
+    assert "200大卡" in zh_norm
+    assert "MPS" not in zh_norm
+    assert "就能" in zh_norm
+    assert client.post("/api/tts", json={"text": "   "}).json()["ok"] is False
+    tts_ok = client.post(
+        "/api/tts", json={"text": "来，核心收紧！", "persona": "iron_leo", "lang": "zh"}
+    )
+    assert tts_ok.status_code == 200
+    assert tts_ok.json()["ok"] is True
+
+

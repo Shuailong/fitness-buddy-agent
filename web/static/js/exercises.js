@@ -3,7 +3,7 @@
 import { el, icon } from "./util.js";
 import { getLang } from "./i18n.js";
 import { openModal, closeModal, showToast } from "./modal.js";
-import { getPersona, getPersonaId, speakCoachText, stopCoachSpeech, personaSwitchPill } from "./personas.js";
+import { getPersona, getPersonaId, speakCoachText, stopCoachSpeech, unlockCoachAudio, personaSwitchPill } from "./personas.js";
 import { track } from "./telemetry.js";
 
 // Localized exercise names & muscle mappings for the 50-exercise catalog
@@ -773,6 +773,7 @@ export function openExerciseDetailModal(exOrId, actions) {
           type: "button",
           class: "btn btn-primary ex-live-start-btn",
           onclick: () => {
+            unlockCoachAudio();
             closeModal();
             openLiveFormCoachModal(exOrId, actions);
           },
@@ -843,17 +844,50 @@ export function openExerciseDetailModal(exOrId, actions) {
 }
 
 /**
+ * Inspects a 2D canvas frame for brightness & contrast so covered lenses or
+ * blank walls are detected immediately instead of hallucinating form scores.
+ */
+function inspectCanvasFrameStats(ctx, width, height) {
+  try {
+    const data = ctx.getImageData(0, 0, width, height).data;
+    let sum = 0;
+    let sumSq = 0;
+    let count = 0;
+    // Sample every 16th pixel for speed
+    const step = 16 * 4;
+    for (let i = 0; i < data.length; i += step) {
+      const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      sum += lum;
+      sumSq += lum * lum;
+      count++;
+    }
+    if (!count) return "camera";
+    const mean = sum / count;
+    const variance = Math.max(0, sumSq / count - mean * mean);
+    const std = Math.sqrt(variance);
+    if (mean < 14 && std < 9) return "dark";
+    if (std < 5.5) return "blank";
+    return "camera";
+  } catch {
+    return "camera";
+  }
+}
+
+/**
  * Opens the Live Camera AI Form Coach Studio with real-time frame capture,
- * biomechanical HUD overlay, and live Web Speech voice feedback.
+ * strict evidence verification, biomechanical HUD overlay, and neural TTS voice feedback.
  */
 export function openLiveFormCoachModal(exOrId, actions) {
+  // Synchronously unlock browser audio inside the user click gesture!
+  unlockCoachAudio();
+
   const lang = getLang();
   const isZh = lang === "zh";
   const guide = getExerciseGuide(exOrId, lang);
   track("form_check", { action: "open_studio", exercise_id: guide.id });
 
   let stream = null;
-  let intervalId = null;
+  let loopTimerId = null;
   let isCoaching = false;
   let inFlight = false;
   let voiceEnabled = true;
@@ -863,6 +897,9 @@ export function openLiveFormCoachModal(exOrId, actions) {
   let repCount = 0;
   let lastScore = null;
   let lastSpokenCue = "";
+  let lastSpokenAt = 0;
+  let lastAudioB64 = null;
+  let lastAudioMime = "audio/wav";
 
   const videoEl = el("video", {
     class: "live-coach-video is-mirrored",
@@ -876,7 +913,7 @@ export function openLiveFormCoachModal(exOrId, actions) {
 
   const statusBadge = el("span", {
     class: "live-hud-status waiting",
-    text: isZh ? "⚪ 准备就绪 · 请全身入镜" : "⚪ Ready · Frame Full Body",
+    text: isZh ? "⚪ 正在启动镜头 · 请退后让关键关节入镜" : "⚪ Starting Camera · Step Back Into Frame",
   });
   const scoreBadge = el("span", {
     class: "live-hud-score",
@@ -886,23 +923,53 @@ export function openLiveFormCoachModal(exOrId, actions) {
     class: "live-hud-reps",
     text: isZh ? "本组计数: 0" : "Reps: 0",
   });
+
+  const observedSceneBar = el("div", {
+    class: "live-observed-scene",
+    text: isZh
+      ? "👁 AI 实时视觉核验中：只有完整看清你的身体关键关节并正在做动作时才会打分，绝不盲目瞎编。"
+      : "👁 Strict AI Vision Gate: Scores are only awarded when your body and required joints are clearly visible performing the exercise.",
+  });
+
+  const voiceTextEl = el("p", {
+    class: "live-voice-text",
+    text: isZh
+      ? `${getPersona(getPersonaId(), lang).copy.shortName}正在准备语音伴练，请将手机/电脑放稳，确保全身或关键关节入镜…`
+      : `${getPersona(getPersonaId(), lang).copy.shortName} is getting ready—place your camera so your body is clearly in frame…`,
+  });
+
+  const replayVoiceBtn = el("button", {
+    type: "button",
+    class: "btn btn-outline btn-sm live-replay-btn",
+    title: isZh ? "重播当前教练语音提示" : "Replay current voice cue",
+    onclick: async () => {
+      unlockCoachAudio();
+      const textToSpeak = voiceTextEl.textContent || lastSpokenCue;
+      if (!textToSpeak) return;
+      voiceCueBanner.classList.add("is-speaking");
+      await speakCoachText(textToSpeak, {
+        personaId: getPersonaId(),
+        lang,
+        audioB64: lastAudioB64,
+        audioMime: lastAudioMime,
+      });
+      voiceCueBanner.classList.remove("is-speaking");
+    },
+  }, [icon("volume-up"), isZh ? "播报" : "Speak"]);
+
   const voiceCueBanner = el("div", { class: "live-voice-banner" }, [
-    icon("volume-up", { cls: "accent" }),
-    el("p", {
-      class: "live-voice-text",
-      text: isZh
-        ? `点击下方「开始实时指导」，${getPersona(getPersonaId(), lang).copy.shortName}将全程语音伴练纠错。`
-        : `Tap "Start Live Coaching" below for real-time voice guidance from ${getPersona(getPersonaId(), lang).copy.shortName}.`,
-    }),
+    icon("volume-up", { cls: "accent live-voice-icon" }),
+    voiceTextEl,
+    replayVoiceBtn,
   ]);
 
   const checksWrap = el("div", { class: "live-checks-grid" }, [
     el("div", { class: "live-check-item" }, [
-      el("span", { class: "muted small", text: isZh ? "脊柱与核心" : "Spine & Core" }),
+      el("span", { class: "muted small", text: isZh ? "画面与机位核验" : "Camera & Framing" }),
       el("strong", { text: isZh ? "待检测…" : "Waiting…" }),
     ]),
     el("div", { class: "live-check-item" }, [
-      el("span", { class: "muted small", text: isZh ? "关节轨迹" : "Joint Tracking" }),
+      el("span", { class: "muted small", text: isZh ? "关节轨迹与姿态" : "Joint Tracking" }),
       el("strong", { text: isZh ? "待检测…" : "Waiting…" }),
     ]),
     el("div", { class: "live-check-item" }, [
@@ -915,12 +982,16 @@ export function openLiveFormCoachModal(exOrId, actions) {
     createExerciseAnimStage(guide, { lang }),
   ]);
 
+  const clearLoopTimer = () => {
+    if (loopTimerId) {
+      clearTimeout(loopTimerId);
+      loopTimerId = null;
+    }
+  };
+
   const stopAll = () => {
     isCoaching = false;
-    if (intervalId) {
-      clearInterval(intervalId);
-      intervalId = null;
-    }
+    clearLoopTimer();
     if (stream) {
       for (const trk of stream.getTracks()) {
         try { trk.stop(); } catch { /* ignore */ }
@@ -950,52 +1021,71 @@ export function openLiveFormCoachModal(exOrId, actions) {
       await videoEl.play().catch(() => {});
       return true;
     } catch {
-      // Enable smooth simulation mode if no webcam or permission denied
-      simulationMode = true;
+      // Do NOT silently fake scores when camera fails; inform user honestly!
+      simulationMode = false;
       videoEl.hidden = true;
       simStageWrap.hidden = false;
-      statusBadge.textContent = isZh ? "🟢 模拟伴练模式已就绪" : "🟢 Simulation Mode Active";
+      statusBadge.className = "live-hud-status insufficient";
+      statusBadge.textContent = isZh ? "🟠 未获取到摄像头画面 · 可授权镜头或开启演示" : "🟠 Camera Unavailable · Allow Camera or Use Demo";
+      scoreBadge.textContent = isZh ? "动作评分 -- (无画面)" : "Score -- (No Video)";
+      observedSceneBar.textContent = isZh
+        ? "⚠️ 无法访问摄像头：请检查浏览器摄像头权限，或点击下方「切换演示模式」体验标准模拟伴练。"
+        : "⚠️ Camera permission denied or unavailable. Check browser permissions or click 'Demo Mode' below.";
       return false;
     }
   };
 
-  const captureFrameBlob = () => new Promise((resolve) => {
+  const captureFramePayload = () => new Promise((resolve) => {
     const ctx = captureCanvas.getContext("2d");
-    if (!simulationMode && videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
+    if (!simulationMode) {
+      if (!stream || videoEl.readyState < 2 || videoEl.videoWidth <= 0) {
+        resolve({ blob: null, frameHint: "no_video" });
+        return;
+      }
       captureCanvas.width = 640;
       captureCanvas.height = Math.round((videoEl.videoHeight / videoEl.videoWidth) * 640) || 480;
       ctx.drawImage(videoEl, 0, 0, captureCanvas.width, captureCanvas.height);
-    } else {
-      // Draw synthetic exercise silhouette frame for simulation mode
-      captureCanvas.width = 640;
-      captureCanvas.height = 480;
-      ctx.fillStyle = "#0F172A";
-      ctx.fillRect(0, 0, 640, 480);
-      ctx.strokeStyle = "#10B981";
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.arc(320, 110, 26, 0, Math.PI * 2);
-      ctx.moveTo(320, 136);
-      ctx.lineTo(310, 260);
-      ctx.lineTo(350, 360);
-      ctx.lineTo(340, 440);
-      ctx.stroke();
+      const frameHint = inspectCanvasFrameStats(ctx, captureCanvas.width, captureCanvas.height);
+      captureCanvas.toBlob((blob) => resolve({ blob, frameHint }), "image/jpeg", 0.78);
+      return;
     }
-    captureCanvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.72);
+
+    // Explicit Demo / Simulation mode requested by user
+    captureCanvas.width = 640;
+    captureCanvas.height = 480;
+    ctx.fillStyle = "#0F172A";
+    ctx.fillRect(0, 0, 640, 480);
+    ctx.strokeStyle = "#10B981";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(320, 110, 26, 0, Math.PI * 2);
+    ctx.moveTo(320, 136);
+    ctx.lineTo(310, 260);
+    ctx.lineTo(350, 360);
+    ctx.lineTo(340, 440);
+    ctx.stroke();
+    captureCanvas.toBlob((blob) => resolve({ blob, frameHint: "simulation" }), "image/jpeg", 0.72);
   });
 
   const analyzeSingleFrame = async () => {
     if (inFlight) return;
     inFlight = true;
     try {
-      const blob = await captureFrameBlob();
-      if (!blob) return;
+      const { blob, frameHint } = await captureFramePayload();
+      if (!blob) {
+        statusBadge.className = "live-hud-status insufficient";
+        statusBadge.textContent = isZh ? "🟠 等待摄像头画面就绪…" : "🟠 Waiting for Camera Video…";
+        scoreBadge.textContent = isZh ? "动作评分 -- (未入镜)" : "Score -- (No Video)";
+        return;
+      }
       const fd = new FormData();
       fd.append("exercise_id", guide.id);
       fd.append("exercise_name", guide.rawName);
       fd.append("lang", lang);
       fd.append("persona", getPersonaId());
       fd.append("frame_index", String(frameIndex++));
+      fd.append("simulation", simulationMode ? "1" : "0");
+      fd.append("frame_hint", frameHint);
       fd.append("image", blob, "frame.jpg");
 
       const resp = await fetch("/api/form-check", {
@@ -1006,27 +1096,57 @@ export function openLiveFormCoachModal(exOrId, actions) {
       if (!resp.ok) return;
       const res = await resp.json();
 
-      lastScore = res.score || 88;
-      if (res.rep_increment) repCount += Number(res.rep_increment) || 1;
+      const status = res.status || "insufficient_evidence";
+      const hasValidScore = typeof res.score === "number" && res.evidence_ok !== false && status !== "insufficient_evidence";
 
-      const isGood = res.status === "good";
-      statusBadge.className = `live-hud-status ${res.status || "good"}`;
-      statusBadge.textContent = isGood
-        ? (isZh ? "🟢 姿态标准 · 保持节奏" : "🟢 Great Form · Keep Going")
-        : (isZh ? "🟡 发现细节可微调" : "🟡 Form Adjustment Cue");
-      scoreBadge.textContent = isZh ? `动作评分 ${lastScore}` : `Score ${lastScore}`;
+      if (!hasValidScore) {
+        statusBadge.className = "live-hud-status insufficient";
+        statusBadge.textContent = isZh ? "🟠 画面证据不足 · 请调整机位" : "🟠 Insufficient View · Adjust Camera";
+        scoreBadge.textContent = isZh ? "动作评分 -- (未入镜)" : "Score -- (Not in Frame)";
+      } else {
+        lastScore = res.score;
+        if (res.rep_increment && Number(res.rep_increment) > 0) {
+          repCount += Number(res.rep_increment);
+        }
+        statusBadge.className = `live-hud-status ${status}`;
+        if (status === "good") {
+          statusBadge.textContent = isZh ? "🟢 姿态标准 · 保持节奏" : "🟢 Great Form · Keep Going";
+        } else if (status === "bad") {
+          statusBadge.textContent = isZh ? "🔴 动作变形 · 请立即调整" : "🔴 Form Breakdown · Adjust Now";
+        } else {
+          statusBadge.textContent = isZh ? "🟡 发现细节可微调" : "🟡 Form Adjustment Cue";
+        }
+        scoreBadge.textContent = isZh ? `动作评分 ${lastScore}` : `Score ${lastScore}`;
+      }
       repBadge.textContent = isZh ? `本组计数: ${repCount}` : `Reps: ${repCount}`;
 
+      if (res.observed_scene) {
+        observedSceneBar.textContent = isZh
+          ? `👁 AI 画面实测：${res.observed_scene}`
+          : `👁 AI Observed: ${res.observed_scene}`;
+      }
+
       if (res.voice_cue) {
-        const textNode = voiceCueBanner.querySelector(".live-voice-text");
-        if (textNode) textNode.textContent = res.voice_cue;
+        voiceTextEl.textContent = res.voice_cue;
+        lastAudioB64 = res.audio_b64 || null;
+        lastAudioMime = res.audio_mime || "audio/wav";
         voiceCueBanner.classList.remove("pulse");
         void voiceCueBanner.offsetWidth;
         voiceCueBanner.classList.add("pulse");
 
-        if (voiceEnabled && res.voice_cue !== lastSpokenCue) {
+        const now = Date.now();
+        const shouldRepeatReminder = status !== "good" && (now - lastSpokenAt > 8500);
+        if (voiceEnabled && (res.voice_cue !== lastSpokenCue || shouldRepeatReminder)) {
           lastSpokenCue = res.voice_cue;
-          speakCoachText(res.voice_cue, { personaId: getPersonaId(), lang });
+          lastSpokenAt = now;
+          voiceCueBanner.classList.add("is-speaking");
+          await speakCoachText(res.voice_cue, {
+            personaId: getPersonaId(),
+            lang,
+            audioB64: res.audio_b64,
+            audioMime: res.audio_mime,
+          });
+          voiceCueBanner.classList.remove("is-speaking");
         }
       }
 
@@ -1046,38 +1166,60 @@ export function openLiveFormCoachModal(exOrId, actions) {
     }
   };
 
+  // Sequential loop: waits for frame analysis + voice playback to finish before scheduling next check
+  const runCoachingLoop = async () => {
+    clearLoopTimer();
+    if (!isCoaching || !document.body.contains(dialog)) return;
+    await analyzeSingleFrame();
+    if (isCoaching && document.body.contains(dialog)) {
+      loopTimerId = setTimeout(runCoachingLoop, 2400);
+    }
+  };
+
+  const setCoachingState = async (active, { speakIntro = false } = {}) => {
+    unlockCoachAudio();
+    if (!active) {
+      isCoaching = false;
+      clearLoopTimer();
+      stopCoachSpeech();
+      voiceCueBanner.classList.remove("is-speaking");
+      toggleBtn.replaceChildren(icon("play-arrow"), isZh ? "继续实时语音指导" : "Resume Live Coach");
+      statusBadge.textContent = isZh ? "⏸ 已暂停实时观测" : "⏸ Live Coach Paused";
+      return;
+    }
+    isCoaching = true;
+    toggleBtn.replaceChildren(icon("pause"), isZh ? "暂停实时指导" : "Pause Live Coach");
+    if (speakIntro && voiceEnabled) {
+      const persona = getPersona(getPersonaId(), lang);
+      const intro = isZh
+        ? `${persona.copy.shortName}就位！请退后让全身关键关节入镜，开始做「${guide.zhName}」，我会严格盯紧你的动作。`
+        : `${persona.copy.shortName} ready! Step back so your joints are in frame and start ${guide.rawName}.`;
+      voiceTextEl.textContent = intro;
+      voiceCueBanner.classList.add("is-speaking");
+      await speakCoachText(intro, { personaId: getPersonaId(), lang });
+      voiceCueBanner.classList.remove("is-speaking");
+    }
+    if (isCoaching && document.body.contains(dialog)) {
+      await runCoachingLoop();
+    }
+  };
+
   const toggleBtn = el("button", {
     type: "button",
     class: "btn btn-primary live-toggle-btn",
-    onclick: async () => {
-      if (isCoaching) {
-        isCoaching = false;
-        if (intervalId) { clearInterval(intervalId); intervalId = null; }
-        stopCoachSpeech();
-        toggleBtn.replaceChildren(icon("play-arrow"), isZh ? "继续实时语音指导" : "Resume Live Coach");
-        statusBadge.textContent = isZh ? "⏸ 已暂停实时观测" : "⏸ Live Coach Paused";
-        return;
-      }
-      isCoaching = true;
-      toggleBtn.replaceChildren(icon("pause"), isZh ? "暂停实时指导" : "Pause Live Coach");
-      const persona = getPersona(getPersonaId(), lang);
-      const intro = isZh
-        ? `${persona.copy.shortName}就位！开始做「${guide.zhName}」，我会实时盯紧你的动作。`
-        : `${persona.copy.shortName} here! Start your ${guide.rawName} set—I'm watching your form live.`;
-      if (voiceEnabled) speakCoachText(intro, { personaId: getPersonaId(), lang });
-      await analyzeSingleFrame();
-      intervalId = setInterval(() => {
-        if (isCoaching) analyzeSingleFrame();
-      }, 3800);
-    },
-  }, [icon("play-arrow"), isZh ? "开始实时语音指导" : "Start Live Voice Coach"]);
+    onclick: () => setCoachingState(!isCoaching, { speakIntro: !isCoaching }),
+  }, [icon("pause"), isZh ? "暂停实时指导" : "Pause Live Coach"]);
 
   const voiceToggleBtn = el("button", {
     type: "button",
     class: "btn btn-outline btn-sm",
     onclick: () => {
+      unlockCoachAudio();
       voiceEnabled = !voiceEnabled;
-      if (!voiceEnabled) stopCoachSpeech();
+      if (!voiceEnabled) {
+        stopCoachSpeech();
+        voiceCueBanner.classList.remove("is-speaking");
+      }
       voiceToggleBtn.replaceChildren(
         icon(voiceEnabled ? "volume-up" : "close"),
         isZh ? (voiceEnabled ? "语音播报: 开" : "语音播报: 静音") : (voiceEnabled ? "Voice: ON" : "Voice: Muted"),
@@ -1089,15 +1231,44 @@ export function openLiveFormCoachModal(exOrId, actions) {
     type: "button",
     class: "btn btn-outline btn-sm",
     onclick: async () => {
+      unlockCoachAudio();
       facingMode = facingMode === "user" ? "environment" : "user";
       await startCamera();
     },
   }, [icon("flip-camera-ios"), isZh ? "切换前后镜头" : "Flip Camera"]);
 
+  const demoModeBtn = el("button", {
+    type: "button",
+    class: "btn btn-outline btn-sm",
+    onclick: async () => {
+      unlockCoachAudio();
+      simulationMode = !simulationMode;
+      demoModeBtn.replaceChildren(
+        icon("auto-awesome"),
+        isZh ? (simulationMode ? "退出精讲演示" : "精讲演示模式") : (simulationMode ? "Exit Demo" : "Demo Mode"),
+      );
+      if (simulationMode) {
+        videoEl.hidden = true;
+        simStageWrap.hidden = false;
+        observedSceneBar.textContent = isZh
+          ? "✨ 当前处于「动作精讲演示模式」（非真实摄像头判分），教练将按周期演示各阶段语音指导要点。"
+          : "✨ Demo Mode active (simulated frames): Coach will demonstrate voice cues across exercise phases.";
+        await analyzeSingleFrame();
+      } else {
+        await startCamera();
+        await analyzeSingleFrame();
+      }
+    },
+  }, [icon("auto-awesome"), isZh ? "精讲演示模式" : "Demo Mode"]);
+
   const snapNowBtn = el("button", {
     type: "button",
     class: "btn btn-outline btn-sm",
-    onclick: () => analyzeSingleFrame(),
+    onclick: () => {
+      unlockCoachAudio();
+      lastSpokenCue = "";
+      analyzeSingleFrame();
+    },
   }, [icon("photo-camera"), isZh ? "立即抓拍点评" : "Check Now"]);
 
   const dialog = el("div", {
@@ -1112,7 +1283,14 @@ export function openLiveFormCoachModal(exOrId, actions) {
         el("h3", { id: "live-coach-title", text: guide.displayName }),
       ]),
       el("div", { class: "live-head-actions" }, [
-        personaSwitchPill({ compact: true }),
+        personaSwitchPill({
+          compact: true,
+          onSwitched: () => {
+            unlockCoachAudio();
+            lastSpokenCue = "";
+            if (isCoaching) analyzeSingleFrame();
+          },
+        }),
         el("button", {
           type: "button",
           class: "icon-btn",
@@ -1139,6 +1317,9 @@ export function openLiveFormCoachModal(exOrId, actions) {
         ]),
       ]),
 
+      // Transparent AI scene observation bar
+      observedSceneBar,
+
       // Live voice coaching transcript banner
       voiceCueBanner,
 
@@ -1151,6 +1332,7 @@ export function openLiveFormCoachModal(exOrId, actions) {
         snapNowBtn,
         voiceToggleBtn,
         flipCamBtn,
+        demoModeBtn,
       ]),
 
       // Finish set & send to coach
@@ -1168,15 +1350,19 @@ export function openLiveFormCoachModal(exOrId, actions) {
           type: "button",
           class: "btn btn-primary btn-sm",
           onclick: () => {
-            const finalReps = Math.max(repCount, 8);
             const scoreStr = lastScore ? `（AI 动作评分 ${lastScore} 分）` : "";
+            const repStr = repCount > 0 ? `${repCount} 次` : "";
             stopAll();
             closeModal();
             if (actions && actions.openCoach) {
               actions.openCoach({
                 send: isZh
-                  ? `我刚刚跟着实时语音伴练完成了 1 组「${guide.zhName}」${finalReps} 次${scoreStr}，帮我记录并给点建议！`
-                  : `I just finished a set of ${guide.rawName} for ${finalReps} reps with the Live Form Coach${lastScore ? ` (Form Score: ${lastScore})` : ""}. Please log it!`,
+                  ? (repCount > 0
+                      ? `我刚刚跟着实时语音伴练完成了 1 组「${guide.zhName}」${repStr}${scoreStr}，帮我记录并给点建议！`
+                      : `我刚打开了「${guide.zhName}」实时伴练，请告诉我做这个动作最需要注意的机位角度和发力要点，并帮我记录今天这组训练！`)
+                  : (repCount > 0
+                      ? `I just finished a set of ${guide.rawName} for ${repCount} reps with the Live Form Coach${lastScore ? ` (Form Score: ${lastScore})` : ""}. Please log it!`
+                      : `I just practiced ${guide.rawName} with the Live Form Coach. Can you share key form tips and help me log my set?`),
               });
             }
           },
@@ -1195,5 +1381,18 @@ export function openLiveFormCoachModal(exOrId, actions) {
   });
   obs.observe(document.body, { childList: true, subtree: true });
 
-  startCamera();
+  // Start camera and immediately kick off live voice coaching once video warms up
+  startCamera().then((camOk) => {
+    if (!document.body.contains(dialog)) return;
+    if (camOk) {
+      setTimeout(() => {
+        if (document.body.contains(dialog) && !isCoaching) {
+          setCoachingState(true, { speakIntro: true });
+        }
+      }, 450);
+    } else {
+      isCoaching = false;
+      toggleBtn.replaceChildren(icon("play-arrow"), isZh ? "开始实时语音指导" : "Start Live Voice Coach");
+    }
+  });
 }

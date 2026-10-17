@@ -20,14 +20,32 @@ steps:
 
   - id: deploy
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - deploy
-      - fitness-buddy-web
-      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/fitness-buddy/web:${_TAG}
-      - --region=${_REGION}
-      - --quiet
+      - -c
+      - |
+        set -e
+        IMAGE="${_REGION}-docker.pkg.dev/${PROJECT_ID}/fitness-buddy/web:${_TAG}"
+        VISION_URL=""
+        if gcloud run deploy fitness-buddy-vision \
+          --image="$${IMAGE}" \
+          --region="${_REGION}" \
+          --service-account="fitness-buddy-agent@${PROJECT_ID}.iam.gserviceaccount.com" \
+          --no-allow-unauthenticated \
+          --set-env-vars="IS_VISION_WORKER=1,GEMINI_PROJECT=adk-demo-2-l300,GEMINI_LOCATION=global,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},FITNESS_STORAGE_BACKEND=memory,SESSION_SECRET=internal-vision-worker-secret-2026" \
+          --quiet; then
+          gcloud run services add-iam-policy-binding fitness-buddy-vision \
+            --region="${_REGION}" \
+            --member="serviceAccount:fitness-buddy-web@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --role="roles/run.invoker" \
+            --quiet || true
+          VISION_URL=$$(gcloud run services describe fitness-buddy-vision --region="${_REGION}" --format="value(status.url)" || true)
+        fi
+        gcloud run deploy fitness-buddy-web \
+          --image="$${IMAGE}" \
+          --region="${_REGION}" \
+          --update-env-vars="GEMINI_PROJECT=adk-demo-2-l300,GEMINI_LOCATION=global,FORM_COACH_SERVICE_URL=$${VISION_URL}" \
+          --quiet
 
 substitutions:
   _REGION: us-east1

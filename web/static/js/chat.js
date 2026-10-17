@@ -10,7 +10,7 @@ import { TurnProgress } from "./progress.js";
 import { feedbackThumbs, dailyPromptAfterTurn } from "./feedback.js";
 import { track } from "./telemetry.js";
 import { openPhotoLightbox } from "./modal.js";
-import { getPersona, getPersonaId, onPersonaChange, personaSwitchPill, speakCoachText } from "./personas.js";
+import { getPersona, getPersonaId, onPersonaChange, personaSwitchPill, speakCoachText, unlockCoachAudio } from "./personas.js";
 
 const messagesEl = () => $("messages");
 let receivedCoachText = false;
@@ -86,7 +86,10 @@ function addCoachMessage(text, author, eventId = null) {
       type: "button",
       class: "icon-btn msg-tts-btn",
       title: getLang() === "zh" ? "语音播报此回复" : "Read aloud",
-      onclick: () => speakCoachText(text.replace(/[#*_`>|~-]/g, " "), { personaId: getPersonaId(), lang: getLang() }),
+      onclick: () => {
+        unlockCoachAudio();
+        speakCoachText(text, { personaId: getPersonaId(), lang: getLang() });
+      },
     }, [icon("volume-up")]),
   ]);
   body.push(footRow);
