@@ -224,13 +224,14 @@ function workoutCard(d) {
 }
 
 function openMealDetailModal(m, d) {
+  const isZh = getLang() === "zh";
   const totals = m.totals || {};
   const itemDetails = Array.isArray(m.item_details) && m.item_details.length
     ? m.item_details
     : (m.items || []).map((name) => (typeof name === "object" && name !== null ? name : { name: String(name) }));
   const titleText = (m.items || [])
     .map((x) => (typeof x === "object" && x !== null ? x.name : x))
-    .join(getLang() === "zh" ? "、" : ", ") || mealName(m.meal_type);
+    .join(isZh ? "、" : ", ") || mealName(m.meal_type);
   const timeStr = clock(m.logged_at, d.timezone);
   const modalTitle = timeStr ? `${mealName(m.meal_type)} · ${timeStr}` : mealName(m.meal_type);
 
@@ -241,6 +242,11 @@ function openMealDetailModal(m, d) {
   const pPct = Math.round((pKcal / macroCalSum) * 100);
   const cPct = Math.round((cKcal / macroCalSum) * 100);
   const fPct = Math.max(0, 100 - pPct - cPct);
+
+  const targetKcal = d && d.nutrition && d.nutrition.today && d.nutrition.today.target_calories_kcal;
+  const targetPct = targetKcal && totals.calories_kcal
+    ? Math.round((totals.calories_kcal / targetKcal) * 100)
+    : null;
 
   let photoSection = null;
   if (m.photo_url) {
@@ -276,17 +282,36 @@ function openMealDetailModal(m, d) {
     photoSection = wrap;
   }
 
-  const macroCard = (cls, label, gramsVal, pctVal) =>
+  const macroCard = (cls, label, gramsVal, pctVal, kcalVal) =>
     el("div", { class: `meal-macro-card ${cls}` }, [
       el("div", { class: "meal-macro-top" }, [
-        el("i", { class: "swatch", "aria-hidden": "true" }),
+        el("i", { class: `swatch ${cls}`, "aria-hidden": "true" }),
         el("span", { class: "meal-macro-label", text: label }),
       ]),
       el("strong", { class: "meal-macro-val", text: grams(gramsVal || 0) }),
-      el("span", { class: "muted small", text: t("mealDetail.macroShare", { pct: pctVal }) }),
+      el("span", {
+        class: "muted small",
+        text: `${t("mealDetail.macroShare", { pct: pctVal })} · ${num(Math.round(kcalVal || 0))} kcal`,
+      }),
     ]);
 
   const modalRef = { close: () => {} };
+  const askCoachBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "btn btn-primary btn-sm",
+      onclick: () => {
+        modalRef.close();
+        actions.openCoach({
+          send: isZh
+            ? `帮我点评一下这顿${mealName(m.meal_type)}（${titleText}，共 ${num(totals.calories_kcal || 0)} kcal，蛋白质 ${num(totals.protein_g || 0)}g）：营养搭配合理吗？下一餐怎么吃更好？`
+            : `Can you review my ${mealLower(m.meal_type)} (${titleText}, ${num(totals.calories_kcal || 0)} kcal, ${num(totals.protein_g || 0)}g protein) and suggest how to balance my next meal?`,
+        });
+      },
+    },
+    [icon("smart-toy"), isZh ? "让教练点评这餐" : "Ask Coach to Review"],
+  );
   const fixBtn = el(
     "button",
     {
@@ -312,45 +337,62 @@ function openMealDetailModal(m, d) {
     [icon("undo"), t("card.undo")],
   );
 
-  const body = el("div", { class: "modal-body meal-detail-body" }, [
-    photoSection,
-    el("div", { class: "meal-detail-summary" }, [
+  const overviewCard = el("div", { class: "meal-detail-summary" }, [
+    el("div", { class: "meal-detail-top-meta" }, [
       el("div", { class: "meal-detail-badges" }, [
-        el("span", { class: "pill pill-outline" }, [
-          icon(m.source === "photo" ? "photo-camera" : "edit-square"),
-          el("span", { text: t(m.source === "photo" ? "mealDetail.sourcePhoto" : "mealDetail.sourceText") }),
+        el("span", { class: "badge badge-ok" }, [
+          icon(m.source === "photo" || m.photo_url ? "photo-camera" : "edit-square"),
+          el("span", { text: t(m.source === "photo" || m.photo_url ? "mealDetail.sourcePhoto" : "mealDetail.sourceText") }),
         ]),
-        el("span", { class: "tag-muted", text: t("mealDetail.conf.medium") }),
-      ]),
-      el("div", { class: "meal-detail-kcal" }, [
-        el("b", { text: num(totals.calories_kcal || 0) }),
-        el("span", { text: t("unit.kcalWord") }),
+        targetPct !== null
+          ? el("span", {
+              class: "tag-muted",
+              text: isZh ? `占今日目标 ${targetPct}%` : `${targetPct}% of daily goal`,
+            })
+          : el("span", { class: "tag-muted", text: t("mealDetail.conf.medium") }),
       ]),
     ]),
+    el("div", { class: "meal-detail-kcal-hero" }, [
+      el("span", { class: "meal-detail-kcal-num", text: num(totals.calories_kcal || 0) }),
+      el("span", { class: "meal-detail-kcal-unit", text: t("unit.kcalWord") }),
+    ]),
+    el("p", { class: "meal-detail-dish-summary muted small", text: titleText }),
     el("div", { class: "meal-macro-stack", "aria-hidden": "true" }, [
-      el("span", { class: "seg protein", style: { width: `${pPct}%` } }),
-      el("span", { class: "seg carbs", style: { width: `${cPct}%` } }),
-      el("span", { class: "seg fat", style: { width: `${fPct}%` } }),
+      el("span", { class: "meal-macro-seg protein", style: { width: `${pPct}%` } }),
+      el("span", { class: "meal-macro-seg carbs", style: { width: `${cPct}%` } }),
+      el("span", { class: "meal-macro-seg fat", style: { width: `${fPct}%` } }),
     ]),
+  ]);
+
+  const heroBand = photoSection
+    ? el("div", { class: "meal-detail-hero has-photo" }, [photoSection, overviewCard])
+    : overviewCard;
+
+  const body = el("div", { class: "modal-body meal-detail-body" }, [
+    heroBand,
     el("div", { class: "meal-detail-macros" }, [
-      macroCard("protein", t("macro.protein"), totals.protein_g, pPct),
-      macroCard("carbs", t("macro.carbs"), totals.carbs_g, cPct),
-      macroCard("fat", t("macro.fat"), totals.fat_g, fPct),
+      macroCard("protein", t("macro.protein"), totals.protein_g, pPct, pKcal),
+      macroCard("carbs", t("macro.carbs"), totals.carbs_g, cPct, cKcal),
+      macroCard("fat", t("macro.fat"), totals.fat_g, fPct, fKcal),
     ]),
     itemDetails.length
       ? el("div", { class: "meal-detail-items-sec" }, [
-          el("p", { class: "eyebrow", text: t("mealDetail.itemsTitle", { n: itemDetails.length }) }),
+          el("div", { class: "meal-detail-section-head" }, [
+            el("p", { class: "eyebrow", text: t("mealDetail.itemsTitle", { n: itemDetails.length }) }),
+            el("span", { class: "muted small", text: isZh ? "估算克重与热量明细" : "Estimated portion & macros" }),
+          ]),
           el(
             "ul",
             { class: "meal-detail-items" },
-            itemDetails.map((item) => {
+            itemDetails.map((item, idx) => {
               const confKey = item.confidence ? `mealDetail.conf.${item.confidence}` : null;
               const hasItemMacros =
                 item.protein_g !== undefined || item.carbs_g !== undefined || item.fat_g !== undefined;
               return el("li", { class: "meal-detail-item" }, [
-                el("div", { class: "meal-detail-item-main" }, [
+                el("span", { class: "num", text: String(idx + 1) }),
+                el("div", { class: "meal-item-main" }, [
                   el("div", { class: "meal-detail-item-head" }, [
-                    el("strong", { text: item.name }),
+                    el("strong", { class: "meal-item-name", text: item.name }),
                     item.portion_grams
                       ? el("span", { class: "tag-muted", text: `${num(item.portion_grams)}g` })
                       : null,
@@ -360,94 +402,124 @@ function openMealDetailModal(m, d) {
                   ]),
                   hasItemMacros
                     ? el("p", {
-                        class: "muted small",
-                        text: `${t("macro.protein")} ${num(item.protein_g || 0, 1)}g · ${t("macro.carbs")} ${num(item.carbs_g || 0, 1)}g · ${t("macro.fat")} ${num(item.fat_g || 0, 1)}g`,
+                        class: "meal-item-macros muted small",
+                        text: `P ${num(item.protein_g || 0, 1)}g · C ${num(item.carbs_g || 0, 1)}g · F ${num(item.fat_g || 0, 1)}g`,
                       })
                     : null,
                 ]),
                 item.calories_kcal !== undefined
-                  ? el("span", { class: "meal-detail-item-kcal", text: kcal(item.calories_kcal) })
+                  ? el("div", { class: "meal-item-kcal" }, [
+                      el("strong", { text: num(item.calories_kcal) }),
+                      el("span", { text: t("unit.kcalWord") }),
+                    ])
                   : null,
               ]);
             }),
           ),
         ])
       : null,
-    el("div", { class: "meal-detail-actions" }, [fixBtn, undoBtn]),
+    el("div", { class: "meal-detail-actions" }, [
+      askCoachBtn,
+      el("div", { class: "meal-detail-actions-right" }, [fixBtn, undoBtn]),
+    ]),
   ]);
 
-  const opened = openModal({ title: modalTitle, body, cls: "meal-detail-modal" });
+  const opened = openModal({
+    subtitle: isZh ? "今日饮食营养档案" : "MEAL NUTRITION LOG",
+    title: modalTitle,
+    body,
+    cls: "meal-detail-modal",
+  });
   modalRef.close = opened.close;
 }
 
 function mealsCard(d) {
+  const isZh = getLang() === "zh";
   const meals = d.nutrition.meals_today || [];
   const next = nextMealType(meals, new Date().getHours());
   const total = meals.reduce((sum, m) => sum + ((m.totals && m.totals.calories_kcal) || 0), 0);
-  return el("section", { class: "meals", "aria-label": t("today.meals") }, [
-    el("div", { class: "section-header" }, [
-      el("h2", { text: t("today.meals") }),
-      el("span", { class: "muted small", text: meals.length ? t("today.mealsLogged", { n: meals.length, kcal: kcal(total) }) : t("today.mealsNone") }),
+  const summaryTag = el("span", {
+    class: "tag-muted",
+    text: meals.length ? t("today.mealsLogged", { n: meals.length, kcal: kcal(total) }) : t("today.mealsNone"),
+  });
+
+  return card("meals-card", [
+    cardHeader("restaurant", t("today.meals"), summaryTag),
+    meals.length
+      ? el(
+          "ul",
+          { class: "meal-list" },
+          meals.map((m) => {
+            const titleText =
+              (m.items || [])
+                .map((x) => (typeof x === "object" && x !== null ? x.name : x))
+                .join(isZh ? "、" : ", ") || mealName(m.meal_type);
+            const tot = m.totals || {};
+            const timeStr = clock(m.logged_at, d.timezone);
+            const iconSlot = el("span", { class: `meal-icon ${m.meal_type}`, "aria-hidden": "true" }, [
+              icon(MEAL_ICONS[m.meal_type] || "restaurant"),
+            ]);
+            if (m.photo_url) {
+              const thumb = el("img", { class: "meal-row-thumb", src: m.photo_url, alt: "" });
+              thumb.addEventListener("error", () => thumb.remove());
+              iconSlot.append(thumb);
+            }
+            if (m.source === "photo" || m.photo_url) {
+              iconSlot.append(el("span", { class: "meal-photo-badge" }, [icon("photo-camera")]));
+            }
+            const open = () => openMealDetailModal(m, d);
+            return el(
+              "li",
+              {
+                class: "meal-row is-interactive",
+                role: "button",
+                tabindex: "0",
+                "aria-label": t("mealDetail.viewAria", { meal: titleText }),
+                onclick: open,
+                onkeydown: (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    open();
+                  }
+                },
+              },
+              [
+                iconSlot,
+                el("div", { class: "meal-text" }, [
+                  el("div", { class: "meal-title-row" }, [
+                    el("p", { class: "meal-name", text: titleText }),
+                  ]),
+                  el("div", { class: "meal-meta-row" }, [
+                    el("span", { class: "meal-type-tag", text: timeStr ? `${mealName(m.meal_type)} · ${timeStr}` : mealName(m.meal_type) }),
+                    tot.protein_g !== undefined
+                      ? el("span", { class: "meal-macro-inline" }, [
+                          el("span", { class: "m-dot protein" }, [`P ${num(tot.protein_g)}g`]),
+                          el("span", { class: "m-dot carbs" }, [`C ${num(tot.carbs_g || 0)}g`]),
+                          el("span", { class: "m-dot fat" }, [`F ${num(tot.fat_g || 0)}g`]),
+                        ])
+                      : null,
+                  ]),
+                ]),
+                el("div", { class: "meal-kcal-wrap" }, [
+                  el("div", { class: "meal-kcal" }, [
+                    el("b", { text: num(tot.calories_kcal) }),
+                    el("span", { text: t("unit.kcalWord") }),
+                  ]),
+                  icon("chevron-right", { cls: "meal-chev" }),
+                ]),
+              ],
+            );
+          }),
+        )
+      : el("div", { class: "meals-empty-box" }, [
+          icon("photo-camera", { cls: "accent" }),
+          el("p", { class: "muted small", text: isZh ? "今天还没有记录饮食，拍照或发文字即可自动估算热量与三大营养素。" : "No meals logged today yet. Snap a photo or message your coach to log." }),
+        ]),
+    el("button", { type: "button", class: "add-row", onclick: () => actions.openCoach({ photo: "camera" }) }, [
+      icon("add-circle"),
+      t("today.addMeal", { meal: t(`mealLower.${next}`) }),
     ]),
-    el(
-      "ul",
-      { class: "meal-list" },
-      meals.map((m) => {
-        const titleText =
-          (m.items || [])
-            .map((x) => (typeof x === "object" && x !== null ? x.name : x))
-            .join(getLang() === "zh" ? "、" : ", ") || mealName(m.meal_type);
-        const tot = m.totals || {};
-        const macroMeta =
-          tot.protein_g !== undefined
-            ? ` · P ${num(tot.protein_g)}g · C ${num(tot.carbs_g || 0)}g · F ${num(tot.fat_g || 0)}g`
-            : "";
-        const iconSlot = el("span", { class: `meal-icon ${m.meal_type}`, "aria-hidden": "true" }, [
-          icon(MEAL_ICONS[m.meal_type] || "restaurant"),
-        ]);
-        if (m.photo_url) {
-          const thumb = el("img", { class: "meal-row-thumb", src: m.photo_url, alt: "" });
-          thumb.addEventListener("error", () => thumb.remove());
-          iconSlot.append(thumb);
-        }
-        if (m.source === "photo" || m.photo_url) {
-          iconSlot.append(el("span", { class: "meal-photo-badge" }, [icon("photo-camera")]));
-        }
-        const open = () => openMealDetailModal(m, d);
-        return el(
-          "li",
-          {
-            class: "meal-row is-interactive",
-            role: "button",
-            tabindex: "0",
-            "aria-label": t("mealDetail.viewAria", { meal: titleText }),
-            onclick: open,
-            onkeydown: (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                open();
-              }
-            },
-          },
-          [
-            iconSlot,
-            el("div", { class: "meal-text" }, [
-              el("p", { class: "meal-name", text: titleText }),
-              el("p", { class: "meal-meta", text: `${mealName(m.meal_type)} · ${clock(m.logged_at, d.timezone)}${macroMeta}` }),
-            ]),
-            el("div", { class: "meal-kcal-wrap" }, [
-              el("div", { class: "meal-kcal" }, [
-                el("b", { text: num(tot.calories_kcal) }),
-                el("span", { text: t("unit.kcalWord") }),
-              ]),
-              icon("chevron-right", { cls: "meal-chev" }),
-            ]),
-          ],
-        );
-      }),
-    ),
-    el("button", { type: "button", class: "add-row", onclick: () => actions.openCoach({ photo: "camera" }) }, [icon("add-circle"), t("today.addMeal", { meal: t(`mealLower.${next}`) })]),
-  ]);
+  ], { "aria-label": t("today.meals") });
 }
 
 function weightMiniCard(d) {
