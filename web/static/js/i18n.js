@@ -687,6 +687,18 @@ const en = {
   "adm.sys.rateLimits": "Rate Limit Protection Counters",
   "adm.sys.errors": "Recent System & Agent Errors",
   "adm.sys.noErrors": "Zero system errors recorded in the window.",
+  "adm.tab.overview": "Overview",
+  "adm.tab.access": "Access & Waitlist",
+  "adm.tab.growth": "Growth & Funnel",
+  "adm.tab.ai": "AI & System SLA",
+  "adm.searchPlaceholder": "Search email or name…",
+  "adm.chart.dau": "DAU & New",
+  "adm.chart.activity": "Turns & Logs",
+  "adm.chart.cost": "Daily Cost",
+  "adm.chart.hoverHint": "Hover or tap any day to inspect details",
+  "adm.funnel.dropoff": "{n} dropped ({pct}% conv)",
+  "adm.funnel.topStage": "Entry baseline (100%)",
+  "adm.emptyAccess": "No matching users in this filter.",
 };
 
 const zh = {
@@ -1359,6 +1371,18 @@ const zh = {
   "adm.sys.rateLimits": "限流保护拦截统计 (Rate Limits)",
   "adm.sys.errors": "近期系统与模型异常日志",
   "adm.sys.noErrors": "统计周期内零系统异常。",
+  "adm.tab.overview": "全景概览",
+  "adm.tab.access": "内测与白名单",
+  "adm.tab.growth": "增长与漏斗",
+  "adm.tab.ai": "模型成本与系统",
+  "adm.searchPlaceholder": "搜索邮箱或姓名…",
+  "adm.chart.dau": "活跃与新增",
+  "adm.chart.activity": "对话与打卡",
+  "adm.chart.cost": "每日成本",
+  "adm.chart.hoverHint": "悬停或点击柱状/曲线节点查看单日明细",
+  "adm.funnel.dropoff": "流失 {n} 人 (转化 {pct}%)",
+  "adm.funnel.topStage": "入口基线 (100%)",
+  "adm.emptyAccess": "当前筛选条件下暂无匹配用户。",
 };
 
 export const DICTS = { en, zh };
