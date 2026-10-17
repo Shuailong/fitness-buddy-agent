@@ -9,9 +9,11 @@ import {
 } from "./logic.js";
 import { state, actions } from "./state.js";
 import { track } from "./telemetry.js";
+import { openModal, openPhotoLightbox } from "./modal.js";
 
 const goalLabel = (g) => t(`goal.${g}`);
 const mealName = (type) => t(`meal.${type || "meal"}`);
+const mealLower = (type) => t(`mealLower.${["breakfast", "lunch", "dinner", "snack"].includes(type) ? type : "meal"}`);
 const dayLong = (day) => weekdayLong(weekdayIndex(day));
 
 function card(cls, children, attrs = {}) {
@@ -184,6 +186,163 @@ function workoutCard(d) {
   ], { "aria-label": t("today.workout") });
 }
 
+function openMealDetailModal(m, d) {
+  const totals = m.totals || {};
+  const itemDetails = Array.isArray(m.item_details) && m.item_details.length
+    ? m.item_details
+    : (m.items || []).map((name) => (typeof name === "object" && name !== null ? name : { name: String(name) }));
+  const titleText = (m.items || [])
+    .map((x) => (typeof x === "object" && x !== null ? x.name : x))
+    .join(getLang() === "zh" ? "、" : ", ") || mealName(m.meal_type);
+  const timeStr = clock(m.logged_at, d.timezone);
+  const modalTitle = timeStr ? `${mealName(m.meal_type)} · ${timeStr}` : mealName(m.meal_type);
+
+  const pKcal = (totals.protein_g || 0) * 4;
+  const cKcal = (totals.carbs_g || 0) * 4;
+  const fKcal = (totals.fat_g || 0) * 9;
+  const macroCalSum = Math.max(pKcal + cKcal + fKcal, 1);
+  const pPct = Math.round((pKcal / macroCalSum) * 100);
+  const cPct = Math.round((cKcal / macroCalSum) * 100);
+  const fPct = Math.max(0, 100 - pPct - cPct);
+
+  let photoSection = null;
+  if (m.photo_url) {
+    const img = el("img", {
+      class: "meal-detail-photo",
+      src: m.photo_url,
+      alt: titleText,
+    });
+    const wrap = el(
+      "button",
+      {
+        type: "button",
+        class: "meal-detail-photo-wrap",
+        "aria-label": t("mealDetail.photoHint"),
+        onclick: () => openPhotoLightbox(m.photo_url, titleText),
+      },
+      [
+        img,
+        el("span", { class: "meal-detail-zoom-pill" }, [
+          icon("open-in-new"),
+          el("span", { text: t("mealDetail.photoHint") }),
+        ]),
+      ],
+    );
+    img.addEventListener("error", () => {
+      wrap.replaceWith(
+        el("div", { class: "meal-photo-missing" }, [
+          icon("photo-camera"),
+          el("span", { text: t("mealDetail.photoUnavailable") }),
+        ]),
+      );
+    });
+    photoSection = wrap;
+  }
+
+  const macroCard = (cls, label, gramsVal, pctVal) =>
+    el("div", { class: `meal-macro-card ${cls}` }, [
+      el("div", { class: "meal-macro-top" }, [
+        el("i", { class: "swatch", "aria-hidden": "true" }),
+        el("span", { class: "meal-macro-label", text: label }),
+      ]),
+      el("strong", { class: "meal-macro-val", text: grams(gramsVal || 0) }),
+      el("span", { class: "muted small", text: t("mealDetail.macroShare", { pct: pctVal }) }),
+    ]);
+
+  const modalRef = { close: () => {} };
+  const fixBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "btn btn-secondary btn-sm",
+      onclick: () => {
+        modalRef.close();
+        actions.openCoach({ prefill: t("send.fixMeal", { meal: mealLower(m.meal_type) }) });
+      },
+    },
+    [icon("edit"), t("card.fixIt")],
+  );
+  const undoBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "btn btn-secondary btn-sm",
+      onclick: () => {
+        modalRef.close();
+        actions.openCoach({ send: t("send.undoMeal", { meal: mealLower(m.meal_type) }) });
+      },
+    },
+    [icon("undo"), t("card.undo")],
+  );
+
+  const body = el("div", { class: "modal-body meal-detail-body" }, [
+    photoSection,
+    el("div", { class: "meal-detail-summary" }, [
+      el("div", { class: "meal-detail-badges" }, [
+        el("span", { class: "pill pill-outline" }, [
+          icon(m.source === "photo" ? "photo-camera" : "edit-square"),
+          el("span", { text: t(m.source === "photo" ? "mealDetail.sourcePhoto" : "mealDetail.sourceText") }),
+        ]),
+        el("span", { class: "tag-muted", text: t("mealDetail.conf.medium") }),
+      ]),
+      el("div", { class: "meal-detail-kcal" }, [
+        el("b", { text: num(totals.calories_kcal || 0) }),
+        el("span", { text: t("unit.kcalWord") }),
+      ]),
+    ]),
+    el("div", { class: "meal-macro-stack", "aria-hidden": "true" }, [
+      el("span", { class: "seg protein", style: { width: `${pPct}%` } }),
+      el("span", { class: "seg carbs", style: { width: `${cPct}%` } }),
+      el("span", { class: "seg fat", style: { width: `${fPct}%` } }),
+    ]),
+    el("div", { class: "meal-detail-macros" }, [
+      macroCard("protein", t("macro.protein"), totals.protein_g, pPct),
+      macroCard("carbs", t("macro.carbs"), totals.carbs_g, cPct),
+      macroCard("fat", t("macro.fat"), totals.fat_g, fPct),
+    ]),
+    itemDetails.length
+      ? el("div", { class: "meal-detail-items-sec" }, [
+          el("p", { class: "eyebrow", text: t("mealDetail.itemsTitle", { n: itemDetails.length }) }),
+          el(
+            "ul",
+            { class: "meal-detail-items" },
+            itemDetails.map((item) => {
+              const confKey = item.confidence ? `mealDetail.conf.${item.confidence}` : null;
+              const hasItemMacros =
+                item.protein_g !== undefined || item.carbs_g !== undefined || item.fat_g !== undefined;
+              return el("li", { class: "meal-detail-item" }, [
+                el("div", { class: "meal-detail-item-main" }, [
+                  el("div", { class: "meal-detail-item-head" }, [
+                    el("strong", { text: item.name }),
+                    item.portion_grams
+                      ? el("span", { class: "tag-muted", text: `${num(item.portion_grams)}g` })
+                      : null,
+                    confKey && item.confidence === "low"
+                      ? el("span", { class: "tag-muted", text: t(confKey) })
+                      : null,
+                  ]),
+                  hasItemMacros
+                    ? el("p", {
+                        class: "muted small",
+                        text: `${t("macro.protein")} ${num(item.protein_g || 0, 1)}g · ${t("macro.carbs")} ${num(item.carbs_g || 0, 1)}g · ${t("macro.fat")} ${num(item.fat_g || 0, 1)}g`,
+                      })
+                    : null,
+                ]),
+                item.calories_kcal !== undefined
+                  ? el("span", { class: "meal-detail-item-kcal", text: kcal(item.calories_kcal) })
+                  : null,
+              ]);
+            }),
+          ),
+        ])
+      : null,
+    el("div", { class: "meal-detail-actions" }, [fixBtn, undoBtn]),
+  ]);
+
+  const opened = openModal({ title: modalTitle, body, cls: "meal-detail-modal" });
+  modalRef.close = opened.close;
+}
+
 function mealsCard(d) {
   const meals = d.nutrition.meals_today || [];
   const next = nextMealType(meals, new Date().getHours());
@@ -193,14 +352,63 @@ function mealsCard(d) {
       el("h2", { text: t("today.meals") }),
       el("span", { class: "muted small", text: meals.length ? t("today.mealsLogged", { n: meals.length, kcal: kcal(total) }) : t("today.mealsNone") }),
     ]),
-    el("ul", { class: "meal-list" }, meals.map((m) => el("li", { class: "meal-row" }, [
-      el("span", { class: `meal-icon ${m.meal_type}`, "aria-hidden": "true" }, [icon(MEAL_ICONS[m.meal_type] || "restaurant")]),
-      el("div", { class: "meal-text" }, [
-        el("p", { class: "meal-name", text: (m.items || []).join(getLang() === "zh" ? "、" : ", ") || mealName(m.meal_type) }),
-        el("p", { class: "meal-meta", text: `${mealName(m.meal_type)} · ${clock(m.logged_at, d.timezone)}` }),
-      ]),
-      el("div", { class: "meal-kcal" }, [el("b", { text: num(m.totals && m.totals.calories_kcal) }), el("span", { text: t("unit.kcalWord") })]),
-    ]))),
+    el(
+      "ul",
+      { class: "meal-list" },
+      meals.map((m) => {
+        const titleText =
+          (m.items || [])
+            .map((x) => (typeof x === "object" && x !== null ? x.name : x))
+            .join(getLang() === "zh" ? "、" : ", ") || mealName(m.meal_type);
+        const tot = m.totals || {};
+        const macroMeta =
+          tot.protein_g !== undefined
+            ? ` · P ${num(tot.protein_g)}g · C ${num(tot.carbs_g || 0)}g · F ${num(tot.fat_g || 0)}g`
+            : "";
+        const iconSlot = el("span", { class: `meal-icon ${m.meal_type}`, "aria-hidden": "true" }, [
+          icon(MEAL_ICONS[m.meal_type] || "restaurant"),
+        ]);
+        if (m.photo_url) {
+          const thumb = el("img", { class: "meal-row-thumb", src: m.photo_url, alt: "" });
+          thumb.addEventListener("error", () => thumb.remove());
+          iconSlot.append(thumb);
+        }
+        if (m.source === "photo" || m.photo_url) {
+          iconSlot.append(el("span", { class: "meal-photo-badge" }, [icon("photo-camera")]));
+        }
+        const open = () => openMealDetailModal(m, d);
+        return el(
+          "li",
+          {
+            class: "meal-row is-interactive",
+            role: "button",
+            tabindex: "0",
+            "aria-label": t("mealDetail.viewAria", { meal: titleText }),
+            onclick: open,
+            onkeydown: (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                open();
+              }
+            },
+          },
+          [
+            iconSlot,
+            el("div", { class: "meal-text" }, [
+              el("p", { class: "meal-name", text: titleText }),
+              el("p", { class: "meal-meta", text: `${mealName(m.meal_type)} · ${clock(m.logged_at, d.timezone)}${macroMeta}` }),
+            ]),
+            el("div", { class: "meal-kcal-wrap" }, [
+              el("div", { class: "meal-kcal" }, [
+                el("b", { text: num(tot.calories_kcal) }),
+                el("span", { text: t("unit.kcalWord") }),
+              ]),
+              icon("chevron-right", { cls: "meal-chev" }),
+            ]),
+          ],
+        );
+      }),
+    ),
     el("button", { type: "button", class: "add-row", onclick: () => actions.openCoach({ photo: "camera" }) }, [icon("add-circle"), t("today.addMeal", { meal: t(`mealLower.${next}`) })]),
   ]);
 }

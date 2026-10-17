@@ -9,6 +9,7 @@ import { t, getLang, dateFull, duration } from "./i18n.js";
 import { TurnProgress } from "./progress.js";
 import { feedbackThumbs, dailyPromptAfterTurn } from "./feedback.js";
 import { track } from "./telemetry.js";
+import { openPhotoLightbox } from "./modal.js";
 
 const messagesEl = () => $("messages");
 let receivedCoachText = false;
@@ -43,8 +44,19 @@ function coachRow(children, { avatar = true, indent = false } = {}) {
 
 export function addUserMessage(text, imageUrl, hadImage) {
   const children = [];
-  if (imageUrl) children.push(el("img", { class: "attached", src: imageUrl, alt: t("coach.yourPhoto") }));
-  else if (hadImage) children.push(el("span", { class: "photo-tag" }, [icon("image"), t("coach.photo")]));
+  if (imageUrl) {
+    children.push(
+      el("img", {
+        class: "attached is-zoomable",
+        src: imageUrl,
+        alt: t("coach.yourPhoto"),
+        title: t("mealDetail.photoHint"),
+        onclick: () => openPhotoLightbox(imageUrl, text || t("coach.yourPhoto")),
+      }),
+    );
+  } else if (hadImage) {
+    children.push(el("span", { class: "photo-tag" }, [icon("image"), t("coach.photo")]));
+  }
   if (text) children.push(el("p", { text }));
   const row = el("div", { class: "row from-user" }, [el("div", { class: "bubble bubble-user" }, children)]);
   messagesEl().append(row);
@@ -326,7 +338,7 @@ export async function openSession({ fresh = false } = {}) {
   }
   const history = await getJson("/api/history");
   for (const m of history.messages) {
-    if (m.role === "user") addUserMessage(m.text, null, m.has_image);
+    if (m.role === "user") addUserMessage(m.text, m.image_url || null, m.has_image);
     else if (m.role === "coach") addCoachMessage(m.text, m.author, m.event_id || null);
     else if (m.role === "decision") addDecision(m);
     else if (m.role === "card" && m.kind === "meal_logged") addMealCard(m);

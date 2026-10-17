@@ -699,6 +699,19 @@ const en = {
   "adm.funnel.dropoff": "{n} dropped ({pct}% conv)",
   "adm.funnel.topStage": "Entry baseline (100%)",
   "adm.emptyAccess": "No matching users in this filter.",
+  "adm.refreshing": "Refreshing…",
+  "adm.refreshedToast": "Admin telemetry refreshed ({time})",
+  "adm.updatedAt": "Updated {time}",
+  "mealDetail.viewAria": "View details for {meal}",
+  "mealDetail.sourcePhoto": "Photo Log",
+  "mealDetail.sourceText": "Text Log",
+  "mealDetail.itemsTitle": "Food Breakdown ({n})",
+  "mealDetail.photoHint": "Tap to view full photo",
+  "mealDetail.photoUnavailable": "Original photo was not archived for this older entry.",
+  "mealDetail.conf.high": "High confidence",
+  "mealDetail.conf.medium": "AI estimate",
+  "mealDetail.conf.low": "Rough estimate",
+  "mealDetail.macroShare": "{pct}% kcal",
 };
 
 const zh = {
@@ -1383,6 +1396,19 @@ const zh = {
   "adm.funnel.dropoff": "流失 {n} 人 (转化 {pct}%)",
   "adm.funnel.topStage": "入口基线 (100%)",
   "adm.emptyAccess": "当前筛选条件下暂无匹配用户。",
+  "adm.refreshing": "刷新中…",
+  "adm.refreshedToast": "后台数据已刷新（{time}）",
+  "adm.updatedAt": "更新于 {time}",
+  "mealDetail.viewAria": "查看{meal}详情",
+  "mealDetail.sourcePhoto": "拍照识别",
+  "mealDetail.sourceText": "文字记录",
+  "mealDetail.itemsTitle": "食物与营养明细（{n} 项）",
+  "mealDetail.photoHint": "点击放大查看原图",
+  "mealDetail.photoUnavailable": "该早期记录未归档原始照片",
+  "mealDetail.conf.high": "高置信度",
+  "mealDetail.conf.medium": "AI 估算",
+  "mealDetail.conf.low": "粗略估算",
+  "mealDetail.macroShare": "占热量 {pct}%",
 };
 
 export const DICTS = { en, zh };

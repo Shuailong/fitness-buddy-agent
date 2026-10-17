@@ -50,3 +50,18 @@ export function openModal({ title, body, cls = "", initialFocus = null, onClose 
   (target || fallback || closeBtn).focus();
   return { dialog, close };
 }
+
+/** Opens a full-size photo preview lightbox modal. */
+export function openPhotoLightbox(src, caption = "") {
+  if (!src) return null;
+  const img = el("img", { class: "lightbox-img", src, alt: caption || "" });
+  const body = el("div", { class: "modal-body lightbox-body" }, [
+    el("div", { class: "lightbox-stage" }, [img]),
+    caption ? el("p", { class: "lightbox-caption muted small", text: caption }) : null,
+  ]);
+  return openModal({
+    title: caption || t("coach.photo"),
+    body,
+    cls: "photo-lightbox-modal",
+  });
+}

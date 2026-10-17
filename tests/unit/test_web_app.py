@@ -1374,3 +1374,134 @@ def test_admin_waitlist_approval_and_role_management(
         ).status_code
         == 403
     )
+
+
+def test_meal_details_and_photo_persistence_and_backfill(memory_repo) -> None:
+    uid = "dev-user"
+    today = user_local_date("UTC").isoformat()
+    items = [
+        MealItem(
+            name="Grilled salmon",
+            portion_grams=220,
+            calories_kcal=460,
+            protein_g=44,
+            carbs_g=0,
+            fat_g=28,
+        )
+    ]
+    photo_meal = MealEntry(
+        entry_id="photo-meal-1",
+        user_id=uid,
+        local_date=today,
+        logged_at=datetime.now(UTC),
+        meal_type="lunch",
+        source="photo",
+        items=items,
+        totals=sum_meal_items(items),
+    )
+
+    async def seed() -> None:
+        await memory_repo.save_profile(
+            FitnessProfile(
+                user_id=uid,
+                goal="fat_loss",
+                sex="male",
+                age=30,
+                height_cm=178,
+                starting_weight_kg=78,
+                training_days_per_week=3,
+                minutes_per_session=45,
+                equipment=["dumbbells"],
+                timezone="UTC",
+            )
+        )
+        await memory_repo.add_entry(uid, "meal", photo_meal)
+
+    asyncio.run(seed())
+    agent = FakeAgentClient()
+    agent.turn_events = [
+        {
+            "author": "nutrition_coach",
+            "content": {
+                "role": "user",
+                "parts": [
+                    {
+                        "function_response": {
+                            "id": "call-photo-1",
+                            "name": "log_meal_entry",
+                            "response": {
+                                "status": "logged",
+                                "entry_id": "photo-meal-1",
+                                "meal_type": "lunch",
+                                "items": [
+                                    {
+                                        "name": "Grilled salmon",
+                                        "portion_grams": 220,
+                                        "calories_kcal": 460,
+                                        "protein_g": 44,
+                                        "carbs_g": 0,
+                                        "fat_g": 28,
+                                    }
+                                ],
+                                "meal_totals": {
+                                    "calories_kcal": 460,
+                                    "protein_g": 44,
+                                    "carbs_g": 0,
+                                    "fat_g": 28,
+                                },
+                                "daily_summary": {},
+                            },
+                        }
+                    }
+                ],
+            },
+        }
+    ]
+    client, _ = _dev_client(agent)
+    client.post("/api/session")
+
+    # 1. Dashboard exposes item_details and photo_url for photo-logged meals.
+    dash = client.get("/api/dashboard").json()
+    [meal_row] = dash["nutrition"]["meals_today"]
+    assert meal_row["items"] == ["Grilled salmon"]
+    assert meal_row["item_details"][0]["portion_grams"] == 220
+    assert meal_row["photo_url"] == "/api/meals/photo-meal-1/photo"
+
+    # 2. Uploading a meal photo links it to the logged entry_id and serves it.
+    jpeg_bytes = (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
+    )
+    chat_resp = client.post(
+        "/api/chat",
+        data={"text": "Log this lunch"},
+        files={"image": ("salmon.jpg", jpeg_bytes, "image/jpeg")},
+    )
+    events = _parse_sse(chat_resp.text)
+    card_evt = next(e for e in events if e["type"] == "card")
+    assert card_evt["photo_url"] == "/api/meals/photo-meal-1/photo"
+
+    photo_resp = client.get("/api/meals/photo-meal-1/photo")
+    assert photo_resp.status_code == 200
+    assert photo_resp.headers["content-type"] == "image/jpeg"
+    assert photo_resp.content == jpeg_bytes
+
+    # 3. URL-safe base64 in ADK session history is normalized to standard data URL.
+    urlsafe_event = {
+        "author": "user",
+        "content": {
+            "role": "user",
+            "parts": [
+                {"text": "My dinner"},
+                {
+                    "inline_data": {
+                        "mime_type": "image/jpeg",
+                        "data": "_9j_4AAQSkZJRgABAQAAAQABAAD_2Q==",
+                    }
+                },
+            ],
+        },
+    }
+    hist = build_history([urlsafe_event, agent.turn_events[0]])
+    assert hist["messages"][0]["has_image"] is True
+    assert hist["messages"][0]["image_url"].startswith("data:image/jpeg;base64,/9j/")
+    assert hist["messages"][1]["photo_url"] == hist["messages"][0]["image_url"]

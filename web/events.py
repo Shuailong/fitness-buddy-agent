@@ -32,6 +32,7 @@ keys; every accessor here accepts both.
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any
 
@@ -272,6 +273,63 @@ def simplify_event(
     return out
 
 
+def extract_inline_image(part: dict[str, Any]) -> tuple[str, bytes] | None:
+    """Extracts ``(mime_type, raw_bytes)`` from an ``inlineData`` / ``inline_data`` part."""
+    blob = _get(part, "inlineData", "inline_data")
+    if not isinstance(blob, dict):
+        return None
+    mime = str(_get(blob, "mimeType", "mime_type") or "image/jpeg")
+    raw = blob.get("data")
+    if not raw:
+        return None
+    if isinstance(raw, (bytes, bytearray)):
+        return mime, bytes(raw)
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return None
+        pad = "=" * ((4 - len(s) % 4) % 4)
+        try:
+            if "-" in s or "_" in s:
+                return mime, base64.urlsafe_b64decode(s + pad)
+            return mime, base64.b64decode(s + pad)
+        except Exception:
+            return None
+    return None
+
+
+def inline_image_data_url(part: dict[str, Any]) -> str | None:
+    """Returns a browser-safe ``data:<mime>;base64,...`` URL from an inline image part."""
+    extracted = extract_inline_image(part)
+    if not extracted:
+        return None
+    mime, raw_bytes = extracted
+    return f"data:{mime};base64,{base64.b64encode(raw_bytes).decode('ascii')}"
+
+
+def extract_meal_photos_from_events(
+    events: list[dict[str, Any]],
+) -> dict[str, tuple[str, bytes]]:
+    """Maps meal ``entry_id`` to ``(mime_type, raw_bytes)`` from session events."""
+    found: dict[str, tuple[str, bytes]] = {}
+    last_image: tuple[str, bytes] | None = None
+    for event in events:
+        if _is_hidden_event(event):
+            continue
+        for part in _parts(event):
+            if img := extract_inline_image(part):
+                last_image = img
+            if resp := _function_response(part):
+                if resp.get("name") == MEAL_LOG_TOOL and last_image is not None:
+                    result = _get(resp, "response") or {}
+                    entry_id = (
+                        result.get("entry_id") if isinstance(result, dict) else None
+                    )
+                    if entry_id:
+                        found[str(entry_id)] = last_image
+    return found
+
+
 def _answered_confirmations(events: list[dict[str, Any]]) -> dict[str, bool]:
     answered: dict[str, bool] = {}
     for event in events:
@@ -301,16 +359,31 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
     cards: dict[str, dict[str, Any]] = {}
     messages: list[dict[str, Any]] = []
     pending: list[dict[str, Any]] = []
+    last_user_image_url: str | None = None
     for event in events:
         if _is_hidden_event(event):
             continue
         parts = _parts(event)
         if event.get("author") == "user":
             texts = [t for p in parts if (t := _visible_text(p))]
-            has_image = any(_get(p, "inlineData", "inline_data") for p in parts)
+            image_url = next(
+                (u for p in parts if (u := inline_image_data_url(p))), None
+            )
+            has_image = bool(image_url) or any(
+                _get(p, "inlineData", "inline_data") for p in parts
+            )
+            if image_url:
+                last_user_image_url = image_url
             text = "\n".join(texts)
             if (text and text not in _HIDDEN_GREETINGS) or has_image:
-                messages.append({"role": "user", "text": text, "has_image": has_image})
+                user_msg: dict[str, Any] = {
+                    "role": "user",
+                    "text": text,
+                    "has_image": has_image,
+                }
+                if image_url:
+                    user_msg["image_url"] = image_url
+                messages.append(user_msg)
             for p in parts:
                 resp = _function_response(p)
                 if resp and resp.get("name") == CONFIRMATION_CALL:
@@ -336,9 +409,14 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
                     pending.append(card)
             elif resp:
                 if meal_card := meal_card_from_response(resp):
-                    messages.append(
-                        {"role": "card", **meal_card, "event_id": event.get("id")}
-                    )
+                    card_msg: dict[str, Any] = {
+                        "role": "card",
+                        **meal_card,
+                        "event_id": event.get("id"),
+                    }
+                    if last_user_image_url:
+                        card_msg["photo_url"] = last_user_image_url
+                    messages.append(card_msg)
             elif not call and (text := _coach_text(event, p)):
                 messages.append(
                     {

@@ -16,11 +16,22 @@ let activeGeoTab = "country"; // "country" | "tz" | "lang"
 let activeFeatureTab = "intents"; // "intents" | "tabs" | "events"
 let hoveredDonutIdx = -1;
 let loading = false;
+let lastRefreshedAt = null;
 let gradSeq = 0;
 
 function fmtUsd(val, digits = 4) {
   const n = Number(val) || 0;
   return n.toFixed(digits);
+}
+
+function fmtClockSec(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString(getLang() === "zh" ? "zh-CN" : "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 function fmtAgo(seconds) {
@@ -1320,7 +1331,7 @@ function paintAdmin(root, data, showToast) {
     (d) => {
       if (currentDays === d) return;
       currentDays = d;
-      loadAndRenderAdmin(root, { force: true, showToast });
+      loadAndRenderAdmin(root, { force: true, showToast, notify: true });
     },
   );
 
@@ -1347,6 +1358,12 @@ function paintAdmin(root, data, showToast) {
           class: `adm-badge ${sys.status === "healthy" ? "status-approved" : "status-pending"}`,
           text: t(`adm.${sys.status || "healthy"}`),
         }),
+        lastRefreshedAt
+          ? el("span", { class: "adm-badge adm-updated-badge" }, [
+              el("i", { class: "adm-dot is-online" }),
+              el("span", { text: t("adm.updatedAt", { time: fmtClockSec(lastRefreshedAt) }) }),
+            ])
+          : null,
       ]),
       el("h1", { text: t("adm.title") }),
       el("p", { class: "muted small", text: t("adm.subtitle") }),
@@ -1357,10 +1374,10 @@ function paintAdmin(root, data, showToast) {
         "button",
         {
           type: "button",
-          class: "btn btn-secondary btn-sm",
-          onclick: () => loadAndRenderAdmin(root, { force: true, showToast }),
+          class: "btn btn-secondary btn-sm adm-refresh-btn",
+          onclick: () => loadAndRenderAdmin(root, { force: true, showToast, notify: true }),
         },
-        [icon("event-repeat"), el("span", { text: t("adm.refresh") })],
+        [icon("event-repeat"), el("span", { class: "adm-refresh-label", text: t("adm.refresh") })],
       ),
     ]),
   ]);
@@ -1402,7 +1419,7 @@ function paintAdmin(root, data, showToast) {
   );
 }
 
-export async function loadAndRenderAdmin(root, { force = false, showToast = null } = {}) {
+export async function loadAndRenderAdmin(root, { force = false, showToast = null, notify = false } = {}) {
   if (!root) return;
   if (cachedOverview && !force) {
     paintAdmin(root, cachedOverview, showToast);
@@ -1411,12 +1428,48 @@ export async function loadAndRenderAdmin(root, { force = false, showToast = null
   }
   if (loading && !force) return;
   loading = true;
+
+  const refreshBtn = root.querySelector(".adm-refresh-btn");
+  if (refreshBtn) {
+    refreshBtn.classList.add("is-loading");
+    refreshBtn.disabled = true;
+    refreshBtn.setAttribute("aria-busy", "true");
+    const lbl = refreshBtn.querySelector(".adm-refresh-label");
+    if (lbl) lbl.textContent = t("adm.refreshing");
+  }
+  if (cachedOverview && (force || notify)) {
+    root.classList.add("is-refreshing");
+  }
+
   try {
-    cachedOverview = await getJson(`/api/admin/overview?days=${currentDays}`);
+    const [fresh] = await Promise.all([
+      getJson(`/api/admin/overview?days=${currentDays}`),
+      notify ? new Promise((r) => setTimeout(r, 340)) : Promise.resolve(),
+    ]);
+    cachedOverview = fresh;
+    lastRefreshedAt = new Date();
     paintAdmin(root, cachedOverview, showToast);
+    if (notify) {
+      root.classList.remove("just-refreshed");
+      // Force reflow so rapid consecutive clicks replay the pulse animation
+      void root.offsetWidth;
+      root.classList.add("just-refreshed");
+      setTimeout(() => root.classList.remove("just-refreshed"), 750);
+      if (showToast) {
+        showToast(t("adm.refreshedToast", { time: fmtClockSec(lastRefreshedAt) }));
+      }
+    }
   } catch (err) {
-    root.replaceChildren(errorView(err.message, () => loadAndRenderAdmin(root, { force: true, showToast })));
+    if (cachedOverview) {
+      paintAdmin(root, cachedOverview, showToast);
+      if (showToast) showToast(err.message, { iconName: "warning" });
+    } else {
+      root.replaceChildren(
+        errorView(err.message, () => loadAndRenderAdmin(root, { force: true, showToast, notify: true })),
+      );
+    }
   } finally {
+    root.classList.remove("is-refreshing");
     loading = false;
   }
 }

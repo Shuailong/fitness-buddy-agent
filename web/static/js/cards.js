@@ -5,6 +5,7 @@
 import { el, icon, humanize } from "./util.js";
 import { t, getLang, num, kcal, grams, dateShort, weekdayShort } from "./i18n.js";
 import { WEEKDAYS, parseExercise, shortFocus, weekdayIndex, confirmationTitle } from "./logic.js";
+import { openPhotoLightbox } from "./modal.js";
 
 const mealName = (type) => t(`meal.${type || "meal"}`);
 const mealLower = (type) => t(`mealLower.${["breakfast", "lunch", "dinner", "snack"].includes(type) ? type : "meal"}`);
@@ -29,11 +30,36 @@ export function mealLoggedCard(card, ctx) {
   fixBtn.addEventListener("click", () => ctx.prefill(t("send.fixMeal", { meal: mealLower(mealType) })));
   undoBtn.addEventListener("click", () => ctx.send(t("send.undoMeal", { meal: mealLower(mealType) })));
 
+  let photoBanner = null;
+  if (card.photo_url) {
+    const caption = items.map((i) => i.name).join(getLang() === "zh" ? "、" : ", ") || mealName(mealType);
+    const img = el("img", { class: "meal-card-photo", src: card.photo_url, alt: caption });
+    const wrap = el(
+      "button",
+      {
+        type: "button",
+        class: "meal-card-photo-btn",
+        "aria-label": t("mealDetail.photoHint"),
+        onclick: () => openPhotoLightbox(card.photo_url, caption),
+      },
+      [
+        img,
+        el("span", { class: "meal-detail-zoom-pill" }, [
+          icon("open-in-new"),
+          el("span", { text: t("mealDetail.photoHint") }),
+        ]),
+      ],
+    );
+    img.addEventListener("error", () => wrap.remove());
+    photoBanner = wrap;
+  }
+
   return el("article", { class: "chat-card meal-card", "aria-label": t("card.mealLogged", { meal: mealName(mealType) }) }, [
     el("div", { class: "card-head" }, [
       el("span", { class: "badge badge-ok" }, [icon("check"), t("card.logged")]),
       el("h3", { class: "card-title", text: mealName(mealType) }),
     ]),
+    photoBanner,
     el("ul", { class: "item-rows" }, items.map((i) => el("li", {}, [
       el("span", { class: "item-name" }, [i.name, i.portion_grams ? el("span", { class: "muted", text: t("card.portion", { n: num(i.portion_grams) }) }) : null]),
       el("span", { class: "item-kcal", text: kcal(i.calories_kcal) }),

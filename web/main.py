@@ -41,6 +41,7 @@ from fastapi.responses import (
     FileResponse,
     HTMLResponse,
     JSONResponse,
+    Response,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
@@ -78,10 +79,17 @@ from web.config import (
     WebSettings,
     normalize_lang,
 )
-from web.dashboard import build_dashboard
+from web.dashboard import (
+    build_dashboard,
+    get_meal_photo,
+    get_pending_meal_photo,
+    save_meal_photo,
+    save_pending_meal_photo,
+)
 from web.events import (
     CONFIRMATION_CALL,
     build_history,
+    extract_meal_photos_from_events,
     has_pending_confirmation,
     session_events,
     session_last_update,
@@ -627,7 +635,13 @@ def create_app(
                 ) from exc
         if session is None:
             raise HTTPException(status_code=404, detail="Conversation not found.")
-        return {"session_id": session_id, **build_history(session_events(session))}
+        events = session_events(session)
+        repo = get_repository()
+        for entry_id, (mime, raw_bytes) in extract_meal_photos_from_events(
+            events
+        ).items():
+            await save_meal_photo(repo, user.user_id, entry_id, mime, raw_bytes)
+        return {"session_id": session_id, **build_history(events)}
 
     # ------------------------------------------------------------ streaming
     async def stream_turn(
@@ -661,6 +675,25 @@ def create_app(
                         last_activity = event["label"]
                     else:
                         last_activity = None
+                    if (
+                        event["type"] == "card"
+                        and event.get("kind") == "meal_logged"
+                        and event.get("entry_id")
+                    ):
+                        entry_id = str(event["entry_id"])
+                        repo = get_repository()
+                        pending_photo = await get_pending_meal_photo(
+                            repo, user.user_id, session_id
+                        )
+                        if pending_photo is not None:
+                            await save_meal_photo(
+                                repo,
+                                user.user_id,
+                                entry_id,
+                                pending_photo[0],
+                                pending_photo[1],
+                            )
+                            event["photo_url"] = f"/api/meals/{entry_id}/photo"
                     counts[event["type"]] = counts.get(event["type"], 0) + 1
                     yield _sse(event)
         except AgentError as exc:
@@ -773,6 +806,7 @@ def create_app(
                 detail=f"Messages are limited to {MAX_TEXT_CHARS} characters.",
             )
         parts: list[dict[str, Any]] = []
+        uploaded_photo: tuple[str, bytes] | None = None
         if text:
             parts.append({"text": text})
         if image is not None and (image.filename or image.size):
@@ -786,6 +820,7 @@ def create_app(
                 raise HTTPException(
                     status_code=415, detail="Please upload a JPEG, PNG or WebP photo."
                 )
+            uploaded_photo = (mime, data)
             parts.append(
                 {
                     "inlineData": {
@@ -808,6 +843,14 @@ def create_app(
                 scopes.append("photos_per_day")
             if limited := await rate_limited(user, scopes):
                 return limited
+        if uploaded_photo is not None:
+            await save_pending_meal_photo(
+                get_repository(),
+                user.user_id,
+                session_id,
+                uploaded_photo[0],
+                uploaded_photo[1],
+            )
         preview = redact_text(text) + (" [+photo]" if intent == "photo" else "")
         message = {"role": "user", "parts": parts}
         return _sse_response(
@@ -869,6 +912,56 @@ def create_app(
         )
 
     # ------------------------------------------------------------ dashboard
+    @app.get("/api/meals/{entry_id}/photo")
+    async def meal_photo(
+        entry_id: str,
+        request: Request,
+        user: UserDep,
+        client: AgentDep,
+    ) -> Response:
+        """Serves the uploaded photo for one of the user's logged meals."""
+        repo = get_repository()
+        found = await get_meal_photo(repo, user.user_id, entry_id)
+        if found is None:
+            # Backfill from the active session or recent sessions if logged before photo indexing.
+            session_ids: list[str] = []
+            cookie = read_session(request)
+            if cookie.get("sid") and cookie.get("sid_user") == user.user_id:
+                session_ids.append(str(cookie["sid"]))
+            try:
+                sessions = await asyncio.wait_for(
+                    client.list_sessions(user.user_id), SESSION_TIMEOUT_S
+                )
+                for meta in sorted(sessions, key=session_last_update, reverse=True)[:5]:
+                    sid = str(meta.get("id") or "")
+                    if sid and sid not in session_ids:
+                        session_ids.append(sid)
+            except Exception:
+                pass
+            for sid in session_ids:
+                try:
+                    session = await asyncio.wait_for(
+                        client.get_session(user.user_id, sid), SESSION_TIMEOUT_S
+                    )
+                except Exception:
+                    continue
+                if not session:
+                    continue
+                extracted = extract_meal_photos_from_events(session_events(session))
+                for k_id, (mime, raw_bytes) in extracted.items():
+                    await save_meal_photo(repo, user.user_id, k_id, mime, raw_bytes)
+                if entry_id in extracted:
+                    found = extracted[entry_id]
+                    break
+        if found is None:
+            raise HTTPException(status_code=404, detail="Meal photo not found.")
+        mime, raw_bytes = found
+        return Response(
+            content=raw_bytes,
+            media_type=mime,
+            headers={"Cache-Control": "private, max-age=86400"},
+        )
+
     @app.get("/api/dashboard")
     async def dashboard(
         request: Request, user: UserDep, range: int | None = None

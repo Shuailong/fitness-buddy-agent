@@ -22,10 +22,12 @@ matches what the coach says in chat.
 
 from __future__ import annotations
 
+import base64
+import time
 from datetime import date, timedelta
 from typing import Any
 
-from fitness_core.models import WEEKDAYS
+from fitness_core.models import WEEKDAYS, utc_now
 from fitness_core.nutrition import daily_nutrition_summary
 from fitness_core.progress import user_local_date, weekly_progress_snapshot
 from fitness_core.repository import FitnessRepository
@@ -36,6 +38,104 @@ RANGE_DAYS = (14, 30, 90)
 DEFAULT_RANGE_DAYS = 30
 STREAK_LOOKBACK_DAYS = 120
 WORKOUT_HISTORY_WEEKS = 4
+_PHOTO_CHUNK_CHARS = 700_000
+
+
+def _mem_photo_bucket(repo: Any) -> dict[tuple[str, str], tuple[str, bytes, float]]:
+    bucket = getattr(repo, "_meal_photos", None)
+    if bucket is None:
+        bucket = {}
+        repo._meal_photos = bucket
+    return bucket
+
+
+async def save_meal_photo(
+    repo: Any, user_id: str, entry_id: str, mime: str, data: bytes
+) -> None:
+    """Persists a meal photo in memory and Firestore ``users/{uid}/meal_photos/{entry_id}``."""
+    if not entry_id or not data:
+        return
+    _mem_photo_bucket(repo)[(user_id, entry_id)] = (mime, data, time.time())
+    db = getattr(repo, "_db", None)
+    if db is None:
+        return
+    try:
+        col = db.collection("users").document(user_id).collection("meal_photos")
+        b64 = base64.b64encode(data).decode("ascii")
+        now_iso = utc_now().isoformat()
+        if len(b64) <= _PHOTO_CHUNK_CHARS:
+            await col.document(entry_id).set(
+                {"mime": mime, "data_b64": b64, "updated_at": now_iso}
+            )
+        else:
+            chunks = [
+                b64[i : i + _PHOTO_CHUNK_CHARS]
+                for i in range(0, len(b64), _PHOTO_CHUNK_CHARS)
+            ]
+            for idx, chunk in enumerate(chunks):
+                await col.document(f"{entry_id}_part_{idx}").set({"data_b64": chunk})
+            await col.document(entry_id).set(
+                {"mime": mime, "chunk_count": len(chunks), "updated_at": now_iso}
+            )
+    except Exception:
+        pass
+
+
+async def get_meal_photo(
+    repo: Any, user_id: str, entry_id: str
+) -> tuple[str, bytes] | None:
+    """Loads a stored meal photo ``(mime, raw_bytes)`` by ``entry_id``."""
+    mem = _mem_photo_bucket(repo).get((user_id, entry_id))
+    if mem is not None:
+        return mem[0], mem[1]
+    db = getattr(repo, "_db", None)
+    if db is None:
+        return None
+    try:
+        col = db.collection("users").document(user_id).collection("meal_photos")
+        snap = await col.document(entry_id).get()
+        if not snap.exists:
+            return None
+        doc = snap.to_dict() or {}
+        mime = str(doc.get("mime") or "image/jpeg")
+        if doc.get("data_b64"):
+            raw = base64.b64decode(doc["data_b64"])
+            _mem_photo_bucket(repo)[(user_id, entry_id)] = (mime, raw, time.time())
+            return mime, raw
+        chunk_count = int(doc.get("chunk_count") or 0)
+        if chunk_count > 0:
+            parts: list[str] = []
+            for idx in range(chunk_count):
+                part_snap = await col.document(f"{entry_id}_part_{idx}").get()
+                if not part_snap.exists:
+                    return None
+                parts.append(str((part_snap.to_dict() or {}).get("data_b64") or ""))
+            raw = base64.b64decode("".join(parts))
+            _mem_photo_bucket(repo)[(user_id, entry_id)] = (mime, raw, time.time())
+            return mime, raw
+    except Exception:
+        return None
+    return None
+
+
+async def save_pending_meal_photo(
+    repo: Any, user_id: str, session_id: str, mime: str, data: bytes
+) -> None:
+    """Stores the most recent uploaded photo in a session so a subsequent meal log can claim it."""
+    await save_meal_photo(repo, user_id, f"_pending_{session_id}", mime, data)
+
+
+async def get_pending_meal_photo(
+    repo: Any, user_id: str, session_id: str, max_age_s: float = 1800.0
+) -> tuple[str, bytes] | None:
+    """Returns the pending session photo if uploaded recently."""
+    key = (user_id, f"_pending_{session_id}")
+    mem = _mem_photo_bucket(repo).get(key)
+    if mem is not None:
+        if time.time() - mem[2] <= max_age_s:
+            return mem[0], mem[1]
+        return None
+    return await get_meal_photo(repo, user_id, f"_pending_{session_id}")
 
 
 def normalize_range(range_days: int | None) -> int:
@@ -146,6 +246,24 @@ async def build_dashboard(
             }
         )
 
+    mem_photos = _mem_photo_bucket(repo)
+    meals_today_payload: list[dict[str, Any]] = []
+    for m in meals_today:
+        has_photo = m.source == "photo" or (user_id, m.entry_id) in mem_photos
+        meals_today_payload.append(
+            {
+                "entry_id": m.entry_id,
+                "meal_type": m.meal_type,
+                "logged_at": m.logged_at.isoformat(),
+                "items": [i.name for i in m.items],
+                "item_details": [i.model_dump(mode="json") for i in m.items],
+                "totals": m.totals.model_dump(mode="json"),
+                "source": m.source,
+                "is_estimate": m.is_estimate,
+                "photo_url": f"/api/meals/{m.entry_id}/photo" if has_photo else None,
+            }
+        )
+
     return {
         "has_profile": True,
         "today": today.isoformat(),
@@ -180,17 +298,7 @@ async def build_dashboard(
             "days_logged": sum(1 for d in days if d.meals_logged),
             "protein_hit_days": sum(1 for d in days if d.protein_target_hit),
             "today": days[-1].model_dump(mode="json"),
-            "meals_today": [
-                {
-                    "entry_id": m.entry_id,
-                    "meal_type": m.meal_type,
-                    "logged_at": m.logged_at.isoformat(),
-                    "items": [i.name for i in m.items],
-                    "totals": m.totals.model_dump(mode="json"),
-                    "source": m.source,
-                }
-                for m in meals_today
-            ],
+            "meals_today": meals_today_payload,
             "logging_streak_days": logging_streak({m.local_date for m in meals}, today),
         },
         "week": {
