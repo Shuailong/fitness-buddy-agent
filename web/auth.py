@@ -174,30 +174,87 @@ class AllowlistDeniedError(HTTPException):
 
 async def save_waitlist_entry(repo: Any, email: str, record: dict[str, Any]) -> None:
     """Persists a beta waitlist request to Firestore (or in-memory repo for tests)."""
+    key = email.strip().lower()
     db = getattr(repo, "_db", None)
     if db is not None:
-        await db.collection("waitlist").document(email).set(record, merge=True)
+        await db.collection("waitlist").document(key).set(record, merge=True)
         return
     waitlist: dict[str, dict[str, Any]] = getattr(repo, "waitlist", None)
     if waitlist is None:
         waitlist = {}
         repo.waitlist = waitlist
-    waitlist[email] = {**waitlist.get(email, {}), **record}
+    waitlist[key] = {**waitlist.get(key, {}), **record}
 
 
-def verify_google_credential(credential: str, settings: WebSettings) -> CurrentUser:
-    """Verifies a Google ID token and enforces the e-mail allowlist.
+async def get_waitlist_entry(repo: Any, email: str) -> dict[str, Any] | None:
+    """Fetches a single waitlist/allowlist entry by e-mail."""
+    key = email.strip().lower()
+    if not key:
+        return None
+    db = getattr(repo, "_db", None)
+    if db is not None:
+        snap = await db.collection("waitlist").document(key).get()
+        return snap.to_dict() if snap.exists else None
+    waitlist: dict[str, dict[str, Any]] = getattr(repo, "waitlist", None) or {}
+    entry = waitlist.get(key)
+    return dict(entry) if entry else None
 
-    Args:
-        credential: The ID token (JWT) returned by Google Identity Services.
-        settings: Web settings with the OAuth client ID and allowlist.
 
-    Returns:
-        The verified user.
+async def list_waitlist_entries(repo: Any) -> dict[str, dict[str, Any]]:
+    """Returns all waitlist/allowlist records keyed by lowercase e-mail."""
+    db = getattr(repo, "_db", None)
+    if db is not None:
+        out: dict[str, dict[str, Any]] = {}
+        async for doc in db.collection("waitlist").stream():
+            data = doc.to_dict() or {}
+            email = str(data.get("email") or doc.id).strip().lower()
+            if email:
+                out[email] = {"email": email, **data}
+        return out
+    waitlist: dict[str, dict[str, Any]] = getattr(repo, "waitlist", None) or {}
+    return {k.lower(): dict(v) for k, v in waitlist.items()}
 
-    Raises:
-        HTTPException: 401 for invalid tokens, 403 for accounts not allowed.
-    """
+
+async def is_email_allowed(repo: Any, email: str, settings: WebSettings) -> bool:
+    """Checks whether ``email`` is allowed to sign in (env + dynamic Firestore)."""
+    key = email.strip().lower()
+    if not key:
+        return False
+    if key in settings.admin_emails:
+        return True
+    try:
+        entry = await get_waitlist_entry(repo, key)
+    except Exception:
+        entry = None
+    if entry:
+        status = str(entry.get("status", "")).lower()
+        if status == "revoked":
+            return False
+        if status == "approved":
+            return True
+    return key in settings.allowed_emails
+
+
+async def get_user_role(repo: Any, user: CurrentUser, settings: WebSettings) -> str:
+    """Returns ``'admin'`` or ``'member'`` for the signed-in user."""
+    email = user.email.strip().lower()
+    if email in settings.admin_emails:
+        return "admin"
+    try:
+        entry = await get_waitlist_entry(repo, email)
+    except Exception:
+        entry = None
+    if (
+        entry
+        and str(entry.get("status", "approved")).lower() != "revoked"
+        and str(entry.get("role", "")).lower() == "admin"
+    ):
+        return "admin"
+    return "member"
+
+
+def verify_google_token_claims(credential: str, settings: WebSettings) -> CurrentUser:
+    """Verifies a Google ID token signature, audience, expiry and verified e-mail."""
     from google.auth.transport import requests as google_requests
     from google.oauth2 import id_token
 
@@ -218,12 +275,6 @@ def verify_google_credential(credential: str, settings: WebSettings) -> CurrentU
         )
     given_name = str(claims.get("given_name") or "")[:60]
     user_id = str(claims.get("sub") or "")
-    if email not in settings.allowed_emails:
-        raise AllowlistDeniedError(
-            email=email,
-            given_name=given_name,
-            user_id=user_id,
-        )
     picture = str(claims.get("picture") or "")
     return CurrentUser(
         user_id=user_id,
@@ -234,3 +285,18 @@ def verify_google_credential(credential: str, settings: WebSettings) -> CurrentU
         if picture.startswith("https://lh3.googleusercontent.com/")
         else "",
     )
+
+
+def verify_google_credential(credential: str, settings: WebSettings) -> CurrentUser:
+    """Verifies a Google ID token and enforces the static e-mail allowlist."""
+    user = verify_google_token_claims(credential, settings)
+    if (
+        user.email not in settings.allowed_emails
+        and user.email not in settings.admin_emails
+    ):
+        raise AllowlistDeniedError(
+            email=user.email,
+            given_name=user.given_name,
+            user_id=user.user_id,
+        )
+    return user

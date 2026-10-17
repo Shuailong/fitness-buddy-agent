@@ -48,6 +48,14 @@ from pydantic import BaseModel, Field
 
 from fitness_core.models import utc_now
 from fitness_core.repository import get_repository
+from web.admin import (
+    build_admin_overview,
+    estimate_turn_tokens_and_cost,
+    extract_client_geo,
+    record_ops_event,
+    touch_user_presence,
+    update_access_entry,
+)
 from web.agent_client import AgentClient, AgentError, build_agent_client
 from web.auth import (
     AllowlistDeniedError,
@@ -55,9 +63,11 @@ from web.auth import (
     CurrentUser,
     clear_session,
     current_user,
+    get_user_role,
+    is_email_allowed,
     read_session,
     save_waitlist_entry,
-    verify_google_credential,
+    verify_google_token_claims,
     write_session,
 )
 from web.config import (
@@ -170,7 +180,8 @@ class FeedbackRequest(BaseModel):
     comment: str = Field(default="", max_length=2000)
     event_id: str | None = Field(default=None, max_length=200)
     page: (
-        Literal["today", "coach", "progress", "plan", "onboarding", "landing"] | None
+        Literal["today", "coach", "progress", "plan", "onboarding", "landing", "admin"]
+        | None
     ) = None
     lang: str | None = None
 
@@ -196,6 +207,16 @@ class ConfirmRequest(BaseModel):
     call_id: str = Field(min_length=1, max_length=200)
     confirmed: bool
     lang: str | None = Field(default=None, description="UI language: en or zh.")
+
+
+class AdminAccessRequest(BaseModel):
+    """Create or update a waitlist/allowlist entry and user role."""
+
+    email: str = Field(min_length=3, max_length=160)
+    status: Literal["pending", "approved", "revoked"] = "approved"
+    role: Literal["member", "admin"] = "member"
+    given_name: str = Field(default="", max_length=60)
+    note: str = Field(default="", max_length=200)
 
 
 def get_agent(request: Request) -> AgentClient:
@@ -299,6 +320,13 @@ def create_app(
             scope=decision.scope,
             user=_pseudonym(user.user_id),
         )
+        await record_ops_event(
+            get_repository(),
+            "rate_limit",
+            user_id=user.user_id,
+            email=user.email,
+            scope=decision.scope,
+        )
         return JSONResponse(
             {
                 "detail": "Too many requests. Please slow down and try again shortly.",
@@ -384,19 +412,28 @@ def create_app(
 
     @app.post("/auth/google")
     async def auth_google(body: GoogleCredential, request: Request) -> JSONResponse:
+        repo = get_repository()
+        geo = extract_client_geo(request, fallback_lang=body.lang)
         try:
             user = await run_in_threadpool(
-                verify_google_credential, body.credential, settings
+                verify_google_token_claims, body.credential, settings
             )
+            if not await is_email_allowed(repo, user.email, settings):
+                raise AllowlistDeniedError(
+                    email=user.email,
+                    given_name=user.given_name,
+                    user_id=user.user_id,
+                )
         except AllowlistDeniedError as exc:
             try:
                 await save_waitlist_entry(
-                    get_repository(),
+                    repo,
                     exc.email,
                     {
                         "email": exc.email,
                         "given_name": exc.given_name,
                         "lang": normalize_lang(body.lang),
+                        "country": geo["country"],
                         "requested_at": utc_now().isoformat(),
                         "status": "pending",
                     },
@@ -407,6 +444,14 @@ def create_app(
                     severity=logging.WARNING,
                     detail=str(store_exc)[:200],
                 )
+            await record_ops_event(
+                repo,
+                "sign_in",
+                user_id=exc.user_id,
+                email=exc.email,
+                outcome="waitlisted",
+                country=geo["country"],
+            )
             log_event(
                 "sign_in",
                 severity=logging.INFO,
@@ -423,6 +468,9 @@ def create_app(
                 status_code=exc.status_code,
             )
         except HTTPException as exc:
+            await record_ops_event(
+                repo, "sign_in", outcome="denied", status=exc.status_code
+            )
             log_event(
                 "sign_in",
                 severity=logging.WARNING,
@@ -430,6 +478,17 @@ def create_app(
                 status=exc.status_code,
             )
             raise
+        await touch_user_presence(
+            repo, user, request=request, lang=normalize_lang(body.lang)
+        )
+        await record_ops_event(
+            repo,
+            "sign_in",
+            user_id=user.user_id,
+            email=user.email,
+            outcome="allowed",
+            country=geo["country"],
+        )
         log_event("sign_in", outcome="allowed", user=_pseudonym(user.user_id))
         response = JSONResponse({"email": user.email})
         write_session(
@@ -451,12 +510,17 @@ def create_app(
         return response
 
     @app.get("/api/me")
-    async def me(user: UserDep) -> dict[str, Any]:
+    async def me(request: Request, user: UserDep) -> dict[str, Any]:
+        repo = get_repository()
+        role = await get_user_role(repo, user, settings)
+        await touch_user_presence(repo, user, request=request)
         return {
             "email": user.email,
             "given_name": user.given_name,
             "picture": user.picture,
             "dev_auth_bypass": settings.dev_auth_bypass,
+            "role": role,
+            "is_admin": role == "admin",
         }
 
     # ------------------------------------------------------------- sessions
@@ -513,11 +577,20 @@ def create_app(
                     severity=logging.ERROR,
                     error=type(exc).__name__,
                 )
+                await record_ops_event(
+                    get_repository(),
+                    "system_error",
+                    user_id=user.user_id,
+                    email=user.email,
+                    source="open_session_failed",
+                    error=type(exc).__name__,
+                )
                 raise HTTPException(
                     status_code=502, detail="The coach is unavailable right now."
                 ) from exc
         session_id = str(chosen["id"])
         is_new = not session_events(chosen)
+        await touch_user_presence(get_repository(), user, request=request)
         log_event(
             "open_session",
             user=_pseudonym(user.user_id),
@@ -564,12 +637,14 @@ def create_app(
         intent: str,
         preview: str,
         lang: str = "en",
+        request: Request | None = None,
     ) -> AsyncIterator[str]:
         """Runs one agent turn and yields simplified events as SSE frames."""
         client: AgentClient = app.state.agent
         started = time.monotonic()
         counts = {"text": 0, "activity": 0, "confirmation": 0, "error": 0}
         outcome = "ok"
+        error_detail = ""
         last_activity: str | None = None
         span = start_web_span(
             "agent_turn",
@@ -590,10 +665,12 @@ def create_app(
                     yield _sse(event)
         except AgentError as exc:
             outcome = "agent_error"
+            error_detail = str(exc)[:160]
             counts["error"] += 1
             yield _sse({"type": "error", "message": str(exc)})
         except Exception as exc:  # never leak internals to the browser
             outcome = "error"
+            error_detail = type(exc).__name__
             counts["error"] += 1
             span.record_exception(exc)
             log_event(
@@ -614,6 +691,50 @@ def create_app(
             span.set_attribute("fitness_buddy.outcome", outcome)
             span.set_attribute("fitness_buddy.latency_ms", latency_ms)
             span.end()
+            repo = get_repository()
+            has_img = intent == "photo"
+            cost_meta = estimate_turn_tokens_and_cost(
+                intent=intent,
+                input_chars=len(preview),
+                has_image=has_img,
+                activity_events=counts["activity"],
+                confirmation_events=counts["confirmation"],
+                text_events=counts["text"],
+            )
+            is_err = outcome in ("agent_error", "error")
+            await touch_user_presence(
+                repo,
+                user,
+                request=request,
+                lang=lang,
+                increment_turn=True,
+                increment_photo=has_img,
+                increment_error=is_err,
+            )
+            await record_ops_event(
+                repo,
+                "chat_turn",
+                user_id=user.user_id,
+                email=user.email,
+                intent=intent,
+                outcome=outcome,
+                latency_ms=latency_ms,
+                has_image=has_img,
+                input_chars=len(preview),
+                **{f"{k}_events": v for k, v in counts.items()},
+                **cost_meta,
+            )
+            if is_err:
+                await record_ops_event(
+                    repo,
+                    "system_error",
+                    user_id=user.user_id,
+                    email=user.email,
+                    source=(
+                        "agent_turn_exception" if outcome == "error" else "agent_error"
+                    ),
+                    error=error_detail or outcome,
+                )
             log_event(
                 "chat_turn",
                 severity=logging.INFO
@@ -691,7 +812,13 @@ def create_app(
         message = {"role": "user", "parts": parts}
         return _sse_response(
             stream_turn(
-                user, session_id, message, intent, preview, normalize_lang(lang)
+                user,
+                session_id,
+                message,
+                intent,
+                preview,
+                normalize_lang(lang),
+                request=request,
             )
         )
 
@@ -731,21 +858,38 @@ def create_app(
         intent = "confirm" if body.confirmed else "reject"
         return _sse_response(
             stream_turn(
-                user, session_id, message, intent, intent, normalize_lang(body.lang)
+                user,
+                session_id,
+                message,
+                intent,
+                intent,
+                normalize_lang(body.lang),
+                request=request,
             )
         )
 
     # ------------------------------------------------------------ dashboard
     @app.get("/api/dashboard")
-    async def dashboard(user: UserDep, range: int | None = None) -> dict[str, Any]:
+    async def dashboard(
+        request: Request, user: UserDep, range: int | None = None
+    ) -> dict[str, Any]:
+        repo = get_repository()
         with web_span("dashboard"):
             try:
-                return await asyncio.wait_for(
-                    build_dashboard(get_repository(), user.user_id, range_days=range),
+                data = await asyncio.wait_for(
+                    build_dashboard(repo, user.user_id, range_days=range),
                     DASHBOARD_TIMEOUT_S,
                 )
             except TimeoutError as exc:
                 log_event("dashboard_timeout", severity=logging.ERROR)
+                await record_ops_event(
+                    repo,
+                    "system_error",
+                    user_id=user.user_id,
+                    email=user.email,
+                    source="dashboard_timeout",
+                    error="TimeoutError",
+                )
                 raise HTTPException(
                     status_code=504, detail="Loading your progress took too long."
                 ) from exc
@@ -756,9 +900,26 @@ def create_app(
                     error=type(exc).__name__,
                     detail=str(exc)[:200],
                 )
+                await record_ops_event(
+                    repo,
+                    "system_error",
+                    user_id=user.user_id,
+                    email=user.email,
+                    source="dashboard_failed",
+                    error=type(exc).__name__,
+                )
                 raise HTTPException(
                     status_code=502, detail="Could not load your progress right now."
                 ) from exc
+        tz = str((data.get("profile") or {}).get("timezone") or "")
+        await touch_user_presence(
+            repo,
+            user,
+            request=request,
+            timezone=tz or None,
+            onboarding_completed=bool(data.get("has_profile")),
+        )
+        return data
 
     # ------------------------------------------------------------ feedback & analytics
     @app.post("/api/feedback", status_code=204)
@@ -798,6 +959,14 @@ def create_app(
                 severity=logging.ERROR,
                 error=type(exc).__name__,
             )
+            await record_ops_event(
+                get_repository(),
+                "system_error",
+                user_id=user.user_id,
+                email=user.email,
+                source="feedback_store_failed",
+                error=type(exc).__name__,
+            )
         log_event(
             "user_feedback",
             kind=body.kind,
@@ -813,7 +982,9 @@ def create_app(
         return None
 
     @app.post("/api/telemetry", status_code=204)
-    async def telemetry(body: TelemetryRequest, user: UserDep) -> None:
+    async def telemetry(
+        request: Request, body: TelemetryRequest, user: UserDep
+    ) -> None:
         """Product analytics for UI interactions; unknown event names are ignored."""
         if body.name not in TELEMETRY_EVENTS:
             return None
@@ -822,8 +993,91 @@ def create_app(
             for k, v in body.props.items()
             if str(k).isidentifier()
         }
+        repo = get_repository()
+        lang_prop = str(props.get("lang") or "") if "lang" in props else None
+        await touch_user_presence(
+            repo,
+            user,
+            request=request,
+            lang=lang_prop,
+            onboarding_completed=(body.name == "onboarding_complete"),
+        )
+        await record_ops_event(
+            repo,
+            "ui_event",
+            user_id=user.user_id,
+            email=user.email,
+            name=body.name,
+            **props,
+        )
         log_event("ui_event", name=body.name, user=_pseudonym(user.user_id), **props)
         return None
+
+    # ------------------------------------------------------------ admin console (RBAC)
+    async def require_admin(user: CurrentUser) -> CurrentUser:
+        role = await get_user_role(get_repository(), user, settings)
+        if role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Admin role required to access the management console.",
+            )
+        return user
+
+    @app.get("/api/admin/overview")
+    async def admin_overview(
+        request: Request,
+        user: UserDep,
+        days: int = 14,
+    ) -> dict[str, Any]:
+        """Returns all operational metrics and waitlist/allowlist records (admin only)."""
+        admin = await require_admin(user)
+        repo = get_repository()
+        await touch_user_presence(repo, admin, request=request)
+        return await asyncio.wait_for(
+            build_admin_overview(
+                repo, settings, days=days, asset_version=ASSET_VERSION
+            ),
+            DASHBOARD_TIMEOUT_S,
+        )
+
+    @app.post("/api/admin/users")
+    async def admin_update_user(
+        body: AdminAccessRequest,
+        user: UserDep,
+    ) -> dict[str, Any]:
+        """Approves, revokes, or updates a user's allowlist status and role (admin only)."""
+        admin = await require_admin(user)
+        clean_email = body.email.strip().lower()
+        if "@" not in clean_email or "." not in clean_email.split("@", 1)[-1]:
+            raise HTTPException(
+                status_code=422, detail="Please enter a valid e-mail address."
+            )
+        status = body.status
+        role = body.role
+        if clean_email in settings.admin_emails:
+            if status == "revoked":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Primary admin accounts configured in ADMIN_EMAILS cannot be revoked.",
+                )
+            status = "approved"
+            role = "admin"
+        record = await update_access_entry(
+            get_repository(),
+            email=clean_email,
+            status=status,
+            role=role,
+            given_name=body.given_name,
+            note=body.note,
+            updated_by=admin.email,
+        )
+        log_event(
+            "admin_access_updated",
+            admin=_pseudonym(admin.user_id),
+            target_status=status,
+            target_role=role,
+        )
+        return {"ok": True, "entry": record}
 
     # ------------------------------------------------------------ account (privacy)
     @app.get("/api/account/export")

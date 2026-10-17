@@ -55,12 +55,18 @@ def _csv(name: str) -> frozenset[str]:
     return frozenset(item.strip().lower() for item in raw.split(",") if item.strip())
 
 
+DEFAULT_ADMIN_EMAILS: frozenset[str] = frozenset(
+    {"liangshuailong@gmail.com", "dev@localhost"}
+)
+
+
 @dataclass(frozen=True)
 class WebSettings:
     """Runtime configuration for the web backend."""
 
     google_client_id: str = ""
     allowed_emails: frozenset[str] = field(default_factory=frozenset)
+    admin_emails: frozenset[str] = field(default_factory=lambda: DEFAULT_ADMIN_EMAILS)
     session_secret: str = ""
     session_max_age_seconds: int = 7 * 24 * 3600
     session_idle_hours: float = 6.0
@@ -85,6 +91,7 @@ class WebSettings:
         return cls(
             google_client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID", ""),
             allowed_emails=_csv("ALLOWED_EMAILS"),
+            admin_emails=_csv("ADMIN_EMAILS") | DEFAULT_ADMIN_EMAILS,
             session_secret=os.environ.get("SESSION_SECRET", ""),
             session_max_age_seconds=int(
                 os.environ.get("SESSION_MAX_AGE_SECONDS", 7 * 24 * 3600)

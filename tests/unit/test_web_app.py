@@ -1168,3 +1168,209 @@ def test_repository_sort_key_handles_weekly_reviews() -> None:
     meal = _meal("u", "2026-10-16", 500, 30)
     assert _sort_key(review) == "2026-10-05"
     assert _sort_key(meal) == "2026-10-16"
+
+
+# ------------------------------------------------------------ admin console
+def test_admin_rbac_and_overview_metrics(
+    monkeypatch: pytest.MonkeyPatch, memory_repo
+) -> None:
+    from google.oauth2 import id_token
+
+    claims: dict[str, Any] = {
+        "sub": "member-sub-1",
+        "email": "coach.user@example.com",
+        "email_verified": True,
+        "given_name": "Member",
+    }
+    monkeypatch.setattr(
+        id_token, "verify_oauth2_token", lambda token, request, audience: dict(claims)
+    )
+    client, _ = _client()
+
+    # 1. Non-admin member signs in: is_admin is False, /api/admin/* returns 403.
+    assert (
+        client.post(
+            "/auth/google", json={"credential": "valid-token-value"}
+        ).status_code
+        == 200
+    )
+    me_member = client.get("/api/me").json()
+    assert me_member["is_admin"] is False
+    assert me_member["role"] == "member"
+    assert client.get("/api/admin/overview").status_code == 403
+    assert (
+        client.post(
+            "/api/admin/users",
+            json={"email": "new@example.com", "status": "approved", "role": "member"},
+        ).status_code
+        == 403
+    )
+
+    # Generate some member activity (profile, session, chat, feedback, telemetry).
+    client.post(
+        "/api/profile",
+        json={
+            "age": 28,
+            "height_cm": 175,
+            "weight_kg": 70,
+            "goal": "recomp",
+            "workout_days_per_week": 4,
+            "available_equipment": ["dumbbells"],
+            "limitations": [],
+        },
+        headers={"X-Appengine-Country": "SG", "X-User-Timezone": "Asia/Singapore"},
+    )
+    client.post("/api/session")
+    client.post("/api/chat", data={"text": "Log 2 eggs for breakfast"})
+    client.post(
+        "/api/feedback",
+        json={"kind": "message", "rating": "up", "comment": "Super helpful!"},
+    )
+    client.post("/api/telemetry", json={"name": "tab_view", "props": {"tab": "today"}})
+    client.post("/auth/logout")
+
+    # 2. Primary admin signs in: is_admin is True, /api/admin/overview returns all panels.
+    claims.update(
+        sub="admin-sub-1",
+        email="liangshuailong@gmail.com",
+        given_name="Shuai",
+    )
+    assert (
+        client.post(
+            "/auth/google",
+            json={"credential": "valid-token-value"},
+            headers={"X-Appengine-Country": "US", "X-Appengine-City": "Mountain View"},
+        ).status_code
+        == 200
+    )
+    me_admin = client.get("/api/me").json()
+    assert me_admin["is_admin"] is True
+    assert me_admin["role"] == "admin"
+
+    overview_resp = client.get("/api/admin/overview")
+    assert overview_resp.status_code == 200
+    ov = overview_resp.json()
+    for section in (
+        "summary",
+        "growth_series",
+        "online_users",
+        "geography",
+        "feature_usage",
+        "funnel",
+        "feedback",
+        "model_stability_and_cost",
+        "system_stability",
+        "access_control",
+    ):
+        assert section in ov
+    assert ov["summary"]["total_users"] >= 2
+    assert ov["summary"]["online_now_5m"] >= 1
+    assert len(ov["growth_series"]) == 14
+    assert ov["model_stability_and_cost"]["total_turns"] >= 1
+    assert ov["model_stability_and_cost"]["cost_mtd_usd"] > 0
+    assert ov["feedback"]["up_count"] >= 1
+    assert ov["system_stability"]["uptime_pct"] > 0
+
+
+def test_admin_waitlist_approval_and_role_management(
+    monkeypatch: pytest.MonkeyPatch, memory_repo
+) -> None:
+    from google.oauth2 import id_token
+
+    claims: dict[str, Any] = {
+        "sub": "waitlist-sub-1",
+        "email": "candidate@example.com",
+        "email_verified": True,
+        "given_name": "Candidate",
+    }
+    monkeypatch.setattr(
+        id_token, "verify_oauth2_token", lambda token, request, audience: dict(claims)
+    )
+    client, _ = _client()
+
+    # 1. Candidate is not on allowlist -> gets 403 waitlisted.
+    r1 = client.post("/auth/google", json={"credential": "valid-token-value"})
+    assert r1.status_code == 403 and r1.json()["code"] == "waitlisted"
+
+    # 2. Admin logs in and approves candidate@example.com.
+    claims.update(
+        sub="admin-sub-1", email="liangshuailong@gmail.com", given_name="Admin"
+    )
+    assert (
+        client.post(
+            "/auth/google", json={"credential": "valid-token-value"}
+        ).status_code
+        == 200
+    )
+    approve_resp = client.post(
+        "/api/admin/users",
+        json={"email": "candidate@example.com", "status": "approved", "role": "member"},
+    )
+    assert approve_resp.status_code == 200
+    assert approve_resp.json()["entry"]["status"] == "approved"
+    assert approve_resp.json()["entry"]["role"] == "member"
+
+    # Primary env admin cannot be revoked.
+    assert (
+        client.post(
+            "/api/admin/users",
+            json={
+                "email": "liangshuailong@gmail.com",
+                "status": "revoked",
+                "role": "member",
+            },
+        ).status_code
+        == 400
+    )
+    client.post("/auth/logout")
+
+    # 3. Candidate can now sign in immediately as a member.
+    claims.update(
+        sub="waitlist-sub-1", email="candidate@example.com", given_name="Candidate"
+    )
+    assert (
+        client.post(
+            "/auth/google", json={"credential": "valid-token-value"}
+        ).status_code
+        == 200
+    )
+    me_cand = client.get("/api/me").json()
+    assert me_cand["is_admin"] is False
+    assert client.get("/api/admin/overview").status_code == 403
+    client.post("/auth/logout")
+
+    # 4. Admin promotes candidate@example.com to admin role.
+    claims.update(sub="admin-sub-1", email="liangshuailong@gmail.com")
+    client.post("/auth/google", json={"credential": "valid-token-value"})
+    promote_resp = client.post(
+        "/api/admin/users",
+        json={"email": "candidate@example.com", "status": "approved", "role": "admin"},
+    )
+    assert promote_resp.status_code == 200
+    assert promote_resp.json()["entry"]["role"] == "admin"
+    client.post("/auth/logout")
+
+    # 5. Candidate signs in and now has admin access.
+    claims.update(sub="waitlist-sub-1", email="candidate@example.com")
+    client.post("/auth/google", json={"credential": "valid-token-value"})
+    assert client.get("/api/me").json()["is_admin"] is True
+    assert client.get("/api/admin/overview").status_code == 200
+    client.post("/auth/logout")
+
+    # 6. Admin revokes candidate@example.com -> candidate can no longer sign in.
+    claims.update(sub="admin-sub-1", email="liangshuailong@gmail.com")
+    client.post("/auth/google", json={"credential": "valid-token-value"})
+    revoke_resp = client.post(
+        "/api/admin/users",
+        json={"email": "candidate@example.com", "status": "revoked", "role": "member"},
+    )
+    assert revoke_resp.status_code == 200
+    client.post("/auth/logout")
+
+    claims.update(sub="waitlist-sub-1", email="candidate@example.com")
+    assert (
+        client.post(
+            "/auth/google", json={"credential": "valid-token-value"}
+        ).status_code
+        == 403
+    )

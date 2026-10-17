@@ -58,10 +58,13 @@ export function langSwitch() {
 }
 
 /** Content of the account/settings menu. */
-export function settingsMenu({ email = "", showSignOut = true, onSignOut, onFeedback = null, onExport = null, onDelete = null } = {}) {
+export function settingsMenu({ email = "", isAdmin = false, onAdmin = null, showSignOut = true, onSignOut, onFeedback = null, onExport = null, onDelete = null } = {}) {
   const item = (iconName, label, onclick, cls = "") => el("button", { type: "button", class: `menu-item ${cls}`.trim(), onclick }, [icon(iconName), el("span", { text: label })]);
   return [
     email ? el("p", { class: "menu-email", text: email }) : null,
+    isAdmin && onAdmin ? el("div", { class: "menu-group menu-group-top" }, [
+      item("shield", t("menu.admin"), onAdmin, "admin-item"),
+    ]) : null,
     el("p", { class: "menu-label", text: t("menu.theme") }),
     themeSwitch(),
     el("p", { class: "menu-label", text: t("menu.language") }),

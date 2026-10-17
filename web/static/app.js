@@ -14,8 +14,9 @@ import { initLanding, localizeLandingImages } from "./js/landing.js";
 import { track, enableTelemetry } from "./js/telemetry.js";
 import { openFeedbackDialog } from "./js/feedback.js";
 import { exportData, openDeleteDialog } from "./js/account.js";
+import { loadAndRenderAdmin } from "./js/admin.js";
 
-const ROUTES = ["today", "coach", "progress", "plan"];
+const ROUTES = ["today", "coach", "progress", "plan", "admin"];
 const desktop = window.matchMedia("(min-width: 1024px)");
 const MENUS = [["avatar-btn", "user-menu"], ["rail-avatar-btn", "rail-menu"]];
 let lastTab = null;
@@ -29,6 +30,7 @@ function greetingText() {
 // ------------------------------------------------------------- routing
 function currentRoute() {
   const r = location.hash.replace(/^#/, "");
+  if (r === "admin" && !(state.me && state.me.is_admin)) return "today";
   return ROUTES.includes(r) ? r : "today";
 }
 
@@ -89,6 +91,10 @@ async function loadDashboard(range = state.range) {
 function renderView(view) {
   const root = $(`view-${view}`);
   if (!root) return;
+  if (view === "admin") {
+    loadAndRenderAdmin(root, { showToast });
+    return;
+  }
   const d = state.dashboard;
   if (!d) {
     root.replaceChildren(state.dashboardError ? errorView(state.dashboardError, () => refreshDashboard(true)) : loadingView());
@@ -206,8 +212,11 @@ function renderLandingLang() {
 
 // ------------------------------------------------------------- menus
 function renderMenus() {
+  const isAdmin = Boolean(state.me && state.me.is_admin);
   const options = {
     email: (state.me && state.me.email) || "",
+    isAdmin,
+    onAdmin: () => { closeMenus(); navigate("admin"); },
     showSignOut: !(state.config && state.config.dev_auth_bypass),
     onSignOut: signOut,
     onFeedback: () => { closeMenus(); openFeedbackDialog({ page: currentPage() }); },
@@ -403,6 +412,8 @@ function renderAvatar() {
       ? el("img", { src: me.picture, alt: "", referrerpolicy: "no-referrer" })
       : el("span", { text: initials(me) }));
   }
+  const railAdmin = $("rail-admin-link");
+  if (railAdmin) railAdmin.hidden = !Boolean(me.is_admin);
   renderMenus();
 }
 
@@ -426,7 +437,7 @@ async function startApp() {
   try { dashboard = await loadDashboard(); } catch (_) { /* rendered as an error card */ }
   renderSuggestions(dashboard);
 
-  if (dashboard && dashboard.has_profile === false) {
+  if (dashboard && dashboard.has_profile === false && currentRoute() !== "admin") {
     showOnboarding();
     return;
   }
@@ -434,7 +445,7 @@ async function startApp() {
   applyRoute();
   const session = await state.sessionReady;
   // Hidden greeting so the coach runs its check-ins (FR-8), in the UI language.
-  if (session && session.is_new && state.pendingGreeting && !state.onboarding) {
+  if (session && session.is_new && state.pendingGreeting && !state.onboarding && currentRoute() !== "admin") {
     await sendChat(greetingText(), null, { hidden: true });
   }
 }
