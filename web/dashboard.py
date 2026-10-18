@@ -22,6 +22,7 @@ matches what the coach says in chat.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from datetime import date, timedelta
@@ -188,17 +189,19 @@ async def build_dashboard(
     range_start = today - timedelta(days=range_days - 1)
     history_start = today - timedelta(days=7 * WORKOUT_HISTORY_WEEKS - 1)
 
-    plan = await repo.get_current_plan(user_id)
-    measurements = await repo.list_measurements(user_id)
-    meals = await repo.list_meals(
-        user_id,
-        start=(today - timedelta(days=STREAK_LOOKBACK_DAYS)).isoformat(),
-        end=today.isoformat(),
+    plan, measurements, meals, workouts, review = await asyncio.gather(
+        repo.get_current_plan(user_id),
+        repo.list_measurements(user_id),
+        repo.list_meals(
+            user_id,
+            start=(today - timedelta(days=STREAK_LOOKBACK_DAYS)).isoformat(),
+            end=today.isoformat(),
+        ),
+        repo.list_workouts(
+            user_id, start=history_start.isoformat(), end=today.isoformat()
+        ),
+        repo.latest_weekly_review(user_id),
     )
-    workouts = await repo.list_workouts(
-        user_id, start=history_start.isoformat(), end=today.isoformat()
-    )
-    review = await repo.latest_weekly_review(user_id)
 
     trend = weight_trend(measurements, starting_weight_kg=profile.starting_weight_kg)
     days = [

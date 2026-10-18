@@ -1671,5 +1671,17 @@ def test_coach_personas_and_live_form_check() -> None:
         assert voice_msg["frame_index"] == 7
         assert voice_msg["audio_b64"]
 
+    # 8. Mobile fast-boot: GZip compression, boot splash, modulepreload, and single-RTT session history
+    home = client.get("/", headers={"Accept-Encoding": "gzip"})
+    assert home.status_code == 200
+    assert 'id="app-boot-splash"' in home.text
+    assert 'rel="modulepreload"' in home.text
+    css_resp = client.get("/static/styles.css", headers={"Accept-Encoding": "gzip"})
+    assert css_resp.headers.get("content-encoding") == "gzip"
 
-
+    reused_with_hist = client.post(
+        "/api/session", json={"new": False, "include_history": True}
+    ).json()
+    assert reused_with_hist["is_new"] is False
+    assert "history" in reused_with_hist
+    assert isinstance(reused_with_hist["history"]["messages"], list)

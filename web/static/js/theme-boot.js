@@ -24,4 +24,21 @@
   window.fbSyncThemeColor = syncThemeColor;
   syncThemeColor();
   if (mq && mq.addEventListener) mq.addEventListener("change", syncThemeColor);
+
+  // Kick off early parallel API fetches in <head> while CSS & ES modules download.
+  try {
+    if (typeof window.fetch === "function") {
+      window.__fbBootPrefetch = {
+        config: window.fetch("/api/config", { credentials: "same-origin" }).then(function (r) {
+          return r && r.ok ? r.json() : null;
+        }).catch(function () { return null; }),
+        me: window.fetch("/api/me", { credentials: "same-origin" }).then(function (r) {
+          return r && r.ok ? r.json() : null;
+        }).catch(function () { return null; }),
+        dashboard: window.fetch("/api/dashboard?range=30", { credentials: "same-origin" }).then(function (r) {
+          return r && r.ok ? r.json() : null;
+        }).catch(function () { return null; }),
+      };
+    }
+  } catch (e) {}
 })();

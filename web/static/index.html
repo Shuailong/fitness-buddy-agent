@@ -18,12 +18,80 @@
   <link rel="preload" href="/static/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
   <script src="/static/js/theme-boot.js?v=__ASSET_VERSION__"></script>
+  <style>
+    html,body{margin:0;padding:0;background:#0F1215;color:#F3F5F7;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+    html[data-theme="light"],html[data-theme="light"] body{background:#F8FAFC;color:#0F172A}
+    .boot-splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at 50% 28%,rgba(163,230,53,.13),transparent 58%),#0F1215;color:#F3F5F7;transition:opacity .24s cubic-bezier(.22,1,.36,1),transform .24s cubic-bezier(.22,1,.36,1)}
+    html[data-theme="light"] .boot-splash{background:radial-gradient(circle at 50% 28%,rgba(101,163,13,.12),transparent 58%),#F8FAFC;color:#0F172A}
+    .boot-splash.is-leaving{opacity:0;transform:scale(.985);pointer-events:none}
+    .boot-splash[hidden]{display:none!important}
+    .boot-core{position:relative;width:76px;height:76px;display:grid;place-items:center;margin-bottom:18px}
+    .boot-ring{position:absolute;inset:0;width:76px;height:76px;animation:bootSpin 1.35s linear infinite}
+    .boot-pulse{position:absolute;inset:8px;border-radius:999px;background:rgba(163,230,53,.14);animation:bootPulse 1.8s ease-in-out infinite}
+    .boot-emblem{position:relative;width:48px;height:48px;border-radius:16px;background:linear-gradient(135deg,#A3E635,#65A30D);color:#0B0F07;display:grid;place-items:center;box-shadow:0 10px 28px rgba(163,230,53,.32)}
+    .boot-emblem svg{width:26px;height:26px;fill:currentColor}
+    .boot-badge{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#A3E635;background:rgba(163,230,53,.12);border:1px solid rgba(163,230,53,.28);padding:4px 10px;border-radius:999px;margin-bottom:8px}
+    html[data-theme="light"] .boot-badge{color:#4D7C0F;background:rgba(101,163,13,.1);border-color:rgba(101,163,13,.28)}
+    .boot-title{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px}
+    .boot-status{font-size:13.5px;color:#9BA3AE;margin:0 0 18px;text-align:center}
+    html[data-theme="light"] .boot-status{color:#64748B}
+    html[lang^="zh"] .boot-en{display:none}
+    html:not([lang^="zh"]) .boot-zh{display:none}
+    .boot-bar{width:min(220px,68vw);height:4px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;position:relative;margin-bottom:24px}
+    html[data-theme="light"] .boot-bar{background:rgba(15,23,42,.08)}
+    .boot-bar::after{content:"";position:absolute;inset:0;width:45%;border-radius:999px;background:linear-gradient(90deg,transparent,#A3E635,transparent);animation:bootSweep 1.15s ease-in-out infinite}
+    .boot-preview{width:min(350px,88vw);display:grid;gap:10px;opacity:.62}
+    .boot-sk-card{height:58px;border-radius:14px;background:linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.09) 50%,rgba(255,255,255,.04) 75%);background-size:200% 100%;animation:bootShimmer 1.5s linear infinite;border:1px solid rgba(255,255,255,.06)}
+    html[data-theme="light"] .boot-sk-card{background:linear-gradient(90deg,rgba(15,23,42,.04) 25%,rgba(15,23,42,.08) 50%,rgba(15,23,42,.04) 75%);background-size:200% 100%;border-color:rgba(15,23,42,.06)}
+    @keyframes bootSpin{to{transform:rotate(360deg)}}
+    @keyframes bootPulse{0%,100%{transform:scale(.94);opacity:.55}50%{transform:scale(1.1);opacity:.95}}
+    @keyframes bootSweep{0%{transform:translateX(-110%)}100%{transform:translateX(230%)}}
+    @keyframes bootShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  </style>
   <link rel="stylesheet" href="/static/styles.css?v=__ASSET_VERSION__">
+  <link rel="modulepreload" href="/static/app.js?v=__ASSET_VERSION__">
+  <link rel="modulepreload" href="/static/js/util.js">
+  <link rel="modulepreload" href="/static/js/api.js">
+  <link rel="modulepreload" href="/static/js/state.js">
+  <link rel="modulepreload" href="/static/js/i18n.js">
+  <link rel="modulepreload" href="/static/js/logic.js">
+  <link rel="modulepreload" href="/static/js/views.js">
+  <link rel="modulepreload" href="/static/js/chat.js">
+  <link rel="modulepreload" href="/static/js/charts.js">
+  <link rel="modulepreload" href="/static/js/personas.js">
+  <link rel="modulepreload" href="/static/js/tips.js">
+  <link rel="modulepreload" href="/static/js/exercises.js">
+  <link rel="modulepreload" href="/static/js/modal.js">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script type="module" src="/static/app.js?v=__ASSET_VERSION__"></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content" data-i18n="skip">Skip to content</a>
+
+  <!-- Instant animated boot splash (renders on first HTML packet, dismissed on first view ready) -->
+  <div id="app-boot-splash" class="boot-splash" role="status" aria-live="polite">
+    <div class="boot-core" aria-hidden="true">
+      <div class="boot-pulse"></div>
+      <svg class="boot-ring" viewBox="0 0 76 76" fill="none">
+        <circle cx="38" cy="38" r="34" stroke="currentColor" stroke-opacity="0.12" stroke-width="3"/>
+        <path d="M38 4a34 34 0 0 1 31.4 21" stroke="#A3E635" stroke-width="3.2" stroke-linecap="round"/>
+      </svg>
+      <div class="boot-emblem">
+        <svg viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66l.1-.16L13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15L11 21Z"/></svg>
+      </div>
+    </div>
+    <span class="boot-badge">AI Coach · Gemini</span>
+    <p class="boot-title">Fitness Buddy</p>
+    <p class="boot-status">
+      <span class="boot-zh">正在唤醒 AI 教练与今日训练看板…</span>
+      <span class="boot-en">Waking up your AI coach &amp; today's dashboard…</span>
+    </p>
+    <div class="boot-bar" aria-hidden="true"></div>
+    <div class="boot-preview" aria-hidden="true">
+      <div class="boot-sk-card"></div>
+      <div class="boot-sk-card"></div>
+    </div>
+  </div>
 
   <!-- Landing / sign-in (marketing page; images swapped per language by js/landing.js) -->
   <div id="landing-view" class="lp" hidden>

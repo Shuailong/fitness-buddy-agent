@@ -47,6 +47,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -179,6 +180,10 @@ class SessionRequest(BaseModel):
     """Optional body for ``POST /api/session``."""
 
     new: bool = Field(default=False, description="Start a fresh conversation.")
+    include_history: bool = Field(
+        default=False,
+        description="When reusing a session, include rendered history in the same response.",
+    )
 
 
 TELEMETRY_EVENTS = frozenset(
@@ -323,6 +328,7 @@ def create_app(
     app.state.signer = CookieSigner(secret, settings.session_max_age_seconds)
     app.state.agent = agent_client or build_agent_client(settings)
     app.state.limiter = rate_limiter or build_rate_limiter()
+    app.add_middleware(GZipMiddleware, minimum_size=500)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -548,8 +554,10 @@ def create_app(
     @app.get("/api/me")
     async def me(request: Request, user: UserDep) -> dict[str, Any]:
         repo = get_repository()
-        role = await get_user_role(repo, user, settings)
-        await touch_user_presence(repo, user, request=request)
+        role, _ = await asyncio.gather(
+            get_user_role(repo, user, settings),
+            touch_user_presence(repo, user, request=request),
+        )
         return {
             "email": user.email,
             "given_name": user.given_name,
@@ -625,15 +633,24 @@ def create_app(
                     status_code=502, detail="The coach is unavailable right now."
                 ) from exc
         session_id = str(chosen["id"])
-        is_new = not session_events(chosen)
-        await touch_user_presence(get_repository(), user, request=request)
+        events = session_events(chosen)
+        is_new = not events
+        repo = get_repository()
+        await touch_user_presence(repo, user, request=request)
         log_event(
             "open_session",
             user=_pseudonym(user.user_id),
             session_id=session_id,
             is_new=is_new,
         )
-        response = JSONResponse({"session_id": session_id, "is_new": is_new})
+        payload: dict[str, Any] = {"session_id": session_id, "is_new": is_new}
+        if body and body.include_history and not is_new:
+            for entry_id, (mime, raw_bytes) in extract_meal_photos_from_events(
+                events
+            ).items():
+                await save_meal_photo(repo, user.user_id, entry_id, mime, raw_bytes)
+            payload["history"] = build_history(events)
+        response = JSONResponse(payload)
         write_session(
             request,
             response,

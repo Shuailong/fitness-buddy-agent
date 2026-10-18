@@ -349,25 +349,51 @@ export async function sendChat(text, photoBlob = null, { hidden = false } = {}) 
   return true;
 }
 
+function sessionLoadingSkeleton() {
+  const isZh = getLang() === "zh";
+  return el("div", { class: "chat-boot-skeleton", role: "status", "aria-live": "polite" }, [
+    el("div", { class: "loading-banner" }, [
+      el("span", { class: "spinner", "aria-hidden": "true" }),
+      el("span", { text: isZh ? "正在连接 AI 教练并同步近期对话…" : "Connecting to your AI coach…" }),
+    ]),
+    el("div", { class: "row from-coach", "aria-hidden": "true" }, [
+      el("span", { class: "bot-avatar" }, [icon("smart-toy", { fill: true })]),
+      el("div", { class: "row-body" }, [
+        el("div", { class: "bubble bubble-coach chat-sk-bubble" }, [
+          el("div", { class: "sk dsk-line-lg" }),
+          el("div", { class: "sk dsk-line-md" }),
+        ]),
+      ]),
+    ]),
+  ]);
+}
+
 /** Opens (or resumes) the conversation and renders its history. Returns the session info. */
 export async function openSession({ fresh = false } = {}) {
-  messagesEl().replaceChildren();
-  const session = await (await postJson("/api/session", { new: fresh })).json();
-  if (session.is_new) {
-    renderIntro();
+  const bootSk = sessionLoadingSkeleton();
+  messagesEl().replaceChildren(bootSk);
+  try {
+    const session = await (await postJson("/api/session", { new: fresh, include_history: true })).json();
+    bootSk.remove();
+    if (session.is_new) {
+      renderIntro();
+      return session;
+    }
+    const history = session.history || await getJson("/api/history");
+    for (const m of history.messages) {
+      if (m.role === "user") addUserMessage(m.text, m.image_url || null, m.has_image);
+      else if (m.role === "coach") addCoachMessage(m.text, m.author, m.event_id || null);
+      else if (m.role === "decision") addDecision(m);
+      else if (m.role === "card" && m.kind === "meal_logged") addMealCard(m);
+    }
+    for (const card of history.pending_confirmations) addConfirmationCard(card);
+    if (!history.messages.length && !history.pending_confirmations.length) renderIntro();
+    scrollToBottom();
     return session;
+  } catch (err) {
+    bootSk.remove();
+    throw err;
   }
-  const history = await getJson("/api/history");
-  for (const m of history.messages) {
-    if (m.role === "user") addUserMessage(m.text, m.image_url || null, m.has_image);
-    else if (m.role === "coach") addCoachMessage(m.text, m.author, m.event_id || null);
-    else if (m.role === "decision") addDecision(m);
-    else if (m.role === "card" && m.kind === "meal_logged") addMealCard(m);
-  }
-  for (const card of history.pending_confirmations) addConfirmationCard(card);
-  if (!history.messages.length && !history.pending_confirmations.length) renderIntro();
-  scrollToBottom();
-  return session;
 }
 
 function renderIntro() {

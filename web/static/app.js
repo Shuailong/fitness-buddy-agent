@@ -14,12 +14,52 @@ import { initLanding, localizeLandingImages } from "./js/landing.js";
 import { track, enableTelemetry } from "./js/telemetry.js";
 import { openFeedbackDialog } from "./js/feedback.js";
 import { exportData, openDeleteDialog } from "./js/account.js";
-import { loadAndRenderAdmin } from "./js/admin.js";
 
 const ROUTES = ["today", "coach", "progress", "plan", "admin"];
 const desktop = window.matchMedia("(min-width: 1024px)");
 const MENUS = [["avatar-btn", "user-menu"], ["rail-avatar-btn", "rail-menu"]];
+const BOOT_CACHE_KEY = "fb.boot_cache_v1";
+const BOOT_CACHE_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 let lastTab = null;
+
+function hideBootSplash() {
+  const splash = $("app-boot-splash");
+  if (!splash || splash.hidden || splash.classList.contains("is-leaving")) return;
+  splash.classList.add("is-leaving");
+  setTimeout(() => {
+    splash.hidden = true;
+    splash.remove();
+  }, 240);
+}
+
+function readBootCache() {
+  try {
+    const raw = window.localStorage.getItem(BOOT_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.me || !parsed.ts) return null;
+    if (Date.now() - Number(parsed.ts) > BOOT_CACHE_MAX_AGE_MS) return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeBootCache() {
+  try {
+    if (!state.me || !state.me.email) return;
+    window.localStorage.setItem(BOOT_CACHE_KEY, JSON.stringify({
+      ts: Date.now(),
+      config: state.config || {},
+      me: state.me,
+      dashboard: state.dashboard || null,
+    }));
+  } catch (_) { /* quota or private mode */ }
+}
+
+function clearBootCache() {
+  try { window.localStorage.removeItem(BOOT_CACHE_KEY); } catch (_) {}
+}
 
 /** The hidden "opened the app" message in the current language. */
 function greetingText() {
@@ -75,12 +115,15 @@ function applyRoute() {
 // ------------------------------------------------------------- dashboard
 let refreshTimer = null;
 
-async function loadDashboard(range = state.range) {
+async function loadDashboard(range = state.range, prefetchedPromise = null) {
   try {
-    const d = await getJson(`/api/dashboard?range=${range}`);
+    const d = prefetchedPromise
+      ? (await prefetchedPromise) || await getJson(`/api/dashboard?range=${range}`)
+      : await getJson(`/api/dashboard?range=${range}`);
     state.dashboard = d;
     state.dashboardError = null;
     if (d.range_days) state.range = d.range_days;
+    writeBootCache();
     return d;
   } catch (err) {
     state.dashboardError = err.message;
@@ -92,7 +135,10 @@ function renderView(view) {
   const root = $(`view-${view}`);
   if (!root) return;
   if (view === "admin") {
-    loadAndRenderAdmin(root, { showToast });
+    if (!root.hasChildNodes()) root.replaceChildren(loadingView());
+    import("./js/admin.js")
+      .then(({ loadAndRenderAdmin }) => loadAndRenderAdmin(root, { showToast }))
+      .catch((err) => root.replaceChildren(errorView(err.message, () => renderView("admin"))));
     return;
   }
   const d = state.dashboard;
@@ -260,6 +306,7 @@ function showOnboarding() {
   $("app-view").hidden = true;
   $("landing-view").hidden = true;
   $("onboarding-view").hidden = false;
+  hideBootSplash();
   window.scrollTo(0, 0);
   startOnboarding({
     onFinish: async (answers) => {
@@ -283,6 +330,7 @@ function leaveOnboarding() {
   $("onboarding-view").hidden = true;
   $("onboarding-view").replaceChildren();
   $("app-view").hidden = false;
+  hideBootSplash();
 }
 
 // ------------------------------------------------------------- auth
@@ -326,6 +374,7 @@ function showSignIn() {
   $("app-view").hidden = true;
   $("onboarding-view").hidden = true;
   $("landing-view").hidden = false;
+  hideBootSplash();
   closeMenus();
   renderLandingLang();
   initLanding();
@@ -378,6 +427,9 @@ async function onGoogleCredential(response) {
 }
 
 async function signOut() {
+  clearBootCache();
+  state.me = null;
+  state.dashboard = null;
   await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
   if (window.google && window.google.accounts) window.google.accounts.id.disableAutoSelect();
   closeMenus();
@@ -396,6 +448,7 @@ async function runExport() {
 
 /** The server deleted the data and cleared the session: back to the landing page. */
 function afterAccountDeleted() {
+  clearBootCache();
   if (window.google && window.google.accounts) window.google.accounts.id.disableAutoSelect();
   state.me = null;
   state.dashboard = null;
@@ -417,16 +470,29 @@ function renderAvatar() {
   renderMenus();
 }
 
-async function startApp() {
+async function startApp(meData = null, prefetchedDashboardPromise = null) {
   $("landing-view").hidden = true;
   document.querySelector(".skip-link").setAttribute("href", "#main-content");
-  try {
-    const me = await fetch("/api/me", { credentials: "same-origin" });
-    state.me = me.ok ? await me.json() : null;
-  } catch (_) { state.me = null; }
+  if (meData) {
+    state.me = meData;
+  } else {
+    try {
+      const me = await fetch("/api/me", { credentials: "same-origin" });
+      state.me = me.ok ? await me.json() : null;
+    } catch (_) { state.me = null; }
+  }
   enableTelemetry(true);
   track("app_open");
   renderAvatar();
+  writeBootCache();
+
+  // Unhide the app shell immediately so the user sees either cached data or
+  // the animated Today dashboard shimmer skeleton right away.
+  if (!state.dashboard || state.dashboard.has_profile !== false || currentRoute() === "admin") {
+    $("app-view").hidden = false;
+    applyRoute();
+    hideBootSplash();
+  }
 
   // Open the conversation and load the dashboard in parallel.
   state.sessionReady = openSession().then((session) => {
@@ -434,8 +500,10 @@ async function startApp() {
     return session;
   }).catch((err) => { addError(err.message); return null; });
   let dashboard = null;
-  try { dashboard = await loadDashboard(); } catch (_) { /* rendered as an error card */ }
-  renderSuggestions(dashboard);
+  try {
+    dashboard = await loadDashboard(state.range, prefetchedDashboardPromise);
+  } catch (_) { /* rendered as an error card if no cached dashboard */ }
+  renderSuggestions(dashboard || state.dashboard);
 
   if (dashboard && dashboard.has_profile === false && currentRoute() !== "admin") {
     showOnboarding();
@@ -443,6 +511,7 @@ async function startApp() {
   }
   $("app-view").hidden = false;
   applyRoute();
+  hideBootSplash();
   const session = await state.sessionReady;
   // Hidden greeting so the coach runs its check-ins (FR-8), in the UI language.
   if (session && session.is_new && state.pendingGreeting && !state.onboarding && currentRoute() !== "admin") {
@@ -464,7 +533,6 @@ async function boot() {
   actions.setBusy = setBusy;
   actions.onConfirmation = onConfirmation;
 
-  state.config = await (await fetch("/api/config")).json();
   initChat();
   bindMenus();
 
@@ -483,13 +551,49 @@ async function boot() {
     if (session && session.is_new) await sendChat(greetingText(), null, { hidden: true });
   });
 
-  const me = await fetch("/api/me", { credentials: "same-origin" });
-  if (me.ok) await startApp();
-  else showSignIn();
+  // Optimistic instant render from localStorage cache for returning mobile users.
+  const cached = readBootCache();
+  if (cached && cached.me) {
+    state.config = cached.config || state.config;
+    state.me = cached.me;
+    if (cached.dashboard && cached.dashboard.has_profile) {
+      state.dashboard = cached.dashboard;
+      $("landing-view").hidden = true;
+      $("app-view").hidden = false;
+      renderAvatar();
+      renderSuggestions(state.dashboard);
+      applyRoute();
+      hideBootSplash();
+    }
+  }
+
+  // Consume parallel prefetch started in <head> (theme-boot.js) or fetch in parallel.
+  const pre = window.__fbBootPrefetch || {};
+  delete window.__fbBootPrefetch;
+  const [cfg, meData] = await Promise.all([
+    pre.config || fetch("/api/config").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    pre.me !== undefined
+      ? pre.me
+      : fetch("/api/me", { credentials: "same-origin" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  ]);
+  if (cfg) state.config = cfg;
+
+  if (meData) {
+    if (cached && cached.me && cached.me.email !== meData.email) {
+      state.dashboard = null;
+    }
+    await startApp(meData, pre.dashboard || null);
+  } else {
+    clearBootCache();
+    state.me = null;
+    state.dashboard = null;
+    showSignIn();
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   boot().catch((err) => {
+    hideBootSplash();
     document.body.append(el("p", { class: "msg-error boot-error", role: "alert", text: t("error.boot", { message: err.message }) }));
   });
 });

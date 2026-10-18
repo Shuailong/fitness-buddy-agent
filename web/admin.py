@@ -236,16 +236,19 @@ async def touch_user_presence(
     geo = extract_client_geo(request, fallback_tz=timezone, fallback_lang=lang)
 
     db = getattr(repo, "_db", None)
+    mem_store = _ops_users_mem(repo)
+    cached = mem_store.get(user.user_id)
+    last_synced_ts = float((cached or {}).get("_synced_ts") or 0.0)
     existing: dict[str, Any] = {}
-    if db is not None:
+    if cached is not None:
+        existing = {k: v for k, v in cached.items() if k != "_synced_ts"}
+    elif db is not None:
         try:
             snap = await db.collection("ops_users").document(user.user_id).get()
             if snap.exists:
                 existing = snap.to_dict() or {}
         except Exception:
             existing = {}
-    else:
-        existing = dict(_ops_users_mem(repo).get(user.user_id, {}))
 
     active_dates = list(existing.get("active_dates") or [])
     if today_str not in active_dates:
@@ -282,7 +285,21 @@ async def touch_user_presence(
         ),
     }
 
-    if db is not None:
+    has_state_change = bool(
+        increment_turn
+        or increment_photo
+        or increment_error
+        or (onboarding_completed and not existing.get("onboarding_completed"))
+        or (timezone and timezone != existing.get("timezone"))
+        or (lang and normalize_lang(lang) != existing.get("lang"))
+    )
+    should_sync_db = has_state_change or (now_ts - last_synced_ts >= 45.0)
+    mem_store[user.user_id] = {
+        **updated,
+        "_synced_ts": now_ts if should_sync_db else last_synced_ts,
+    }
+
+    if db is not None and should_sync_db:
         try:
             await (
                 db.collection("ops_users")
@@ -291,8 +308,6 @@ async def touch_user_presence(
             )
         except Exception:
             pass
-    else:
-        _ops_users_mem(repo)[user.user_id] = updated
 
 
 async def record_ops_event(

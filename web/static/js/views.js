@@ -48,7 +48,45 @@ function secondaryBtn(label, iconName, onclick, extra = "") {
 }
 
 export function loadingView() {
-  return el("div", { class: "loading", role: "status" }, [el("span", { class: "spinner", "aria-hidden": "true" }), t("loading")]);
+  const isZh = getLang() === "zh";
+  return el("div", { class: "loading dash-loading-wrap", role: "status", "aria-busy": "true" }, [
+    el("div", { class: "loading-banner" }, [
+      el("span", { class: "spinner", "aria-hidden": "true" }),
+      el("span", { text: isZh ? "正在同步你的今日热量、课表与科学锦囊…" : t("loading") }),
+    ]),
+    el("div", { class: "dash-skeleton", "aria-hidden": "true" }, [
+      el("div", { class: "dsk-head" }, [
+        el("div", { class: "dsk-title-group" }, [
+          el("div", { class: "sk dsk-eyebrow" }),
+          el("div", { class: "sk dsk-title" }),
+        ]),
+        el("div", { class: "sk dsk-pill" }),
+      ]),
+      el("div", { class: "card dsk-card dsk-tip" }, [
+        el("div", { class: "sk dsk-line-sm" }),
+        el("div", { class: "sk dsk-line-lg" }),
+        el("div", { class: "sk dsk-line-md" }),
+      ]),
+      el("div", { class: "card dsk-card dsk-hero" }, [
+        el("div", { class: "sk dsk-ring" }),
+        el("div", { class: "dsk-macros" }, [
+          el("div", { class: "sk dsk-bar" }),
+          el("div", { class: "sk dsk-bar" }),
+          el("div", { class: "sk dsk-bar" }),
+        ]),
+      ]),
+      el("div", { class: "dsk-quicks" }, [
+        el("div", { class: "sk dsk-quick" }),
+        el("div", { class: "sk dsk-quick" }),
+        el("div", { class: "sk dsk-quick" }),
+      ]),
+      el("div", { class: "card dsk-card" }, [
+        el("div", { class: "sk dsk-line-md" }),
+        el("div", { class: "sk dsk-line-lg" }),
+        el("div", { class: "sk dsk-line-sm" }),
+      ]),
+    ]),
+  ]);
 }
 
 export function errorView(message, retry) {
