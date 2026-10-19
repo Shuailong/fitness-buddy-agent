@@ -1685,3 +1685,39 @@ def test_coach_personas_and_live_form_check() -> None:
     assert reused_with_hist["is_new"] is False
     assert "history" in reused_with_hist
     assert isinstance(reused_with_hist["history"]["messages"], list)
+
+    # 9. PDPA privacy & usage data sharing consent controls (opt-out purges telemetry & blocks tracking)
+    priv_init = client.get("/api/account/privacy").json()
+    assert priv_init["ok"] is True
+    assert priv_init["privacy"]["share_usage_data"] is True
+
+    # Record a telemetry event while sharing is enabled
+    client.post("/api/telemetry", json={"event": "tab_view", "props": {"tab": "today"}})
+
+    # Withdraw consent under PDPA -> purges historical ops_users and ops_events
+    priv_off = client.post(
+        "/api/account/privacy", json={"share_usage_data": False}
+    ).json()
+    assert priv_off["ok"] is True
+    assert priv_off["privacy"]["share_usage_data"] is False
+    assert priv_off["privacy"]["purged_telemetry"] is True
+    assert priv_off["privacy"]["purged_records"] >= 1
+
+    # /api/me reflects the updated PDPA preference
+    me_after_optout = client.get("/api/me").json()
+    assert me_after_optout["privacy"]["share_usage_data"] is False
+
+    # Subsequent telemetry or presence touches while opted out do not re-add ops records
+    client.post("/api/telemetry", json={"event": "tab_view", "props": {"tab": "plan"}})
+    priv_off_again = client.post(
+        "/api/account/privacy", json={"share_usage_data": False}
+    ).json()
+    assert priv_off_again["privacy"]["purged_records"] == 0
+
+    # Re-enabling consent restores share_usage_data = True
+    priv_on = client.post(
+        "/api/account/privacy", json={"share_usage_data": True}
+    ).json()
+    assert priv_on["ok"] is True
+    assert priv_on["privacy"]["share_usage_data"] is True
+

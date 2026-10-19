@@ -64,7 +64,10 @@ from web.admin import (
     build_admin_overview,
     estimate_turn_tokens_and_cost,
     extract_client_geo,
+    get_user_privacy_pref,
+    purge_user_telemetry,
     record_ops_event,
+    set_user_privacy_pref,
     touch_user_presence,
     update_access_entry,
 )
@@ -240,6 +243,12 @@ class DeleteAccountRequest(BaseModel):
     """Explicit confirmation for account deletion."""
 
     confirm: Literal["DELETE"]
+
+
+class PrivacySettingsRequest(BaseModel):
+    """PDPA user consent toggle for optional usage & diagnostics data sharing."""
+
+    share_usage_data: bool
 
 
 class ConfirmRequest(BaseModel):
@@ -554,8 +563,9 @@ def create_app(
     @app.get("/api/me")
     async def me(request: Request, user: UserDep) -> dict[str, Any]:
         repo = get_repository()
-        role, _ = await asyncio.gather(
+        role, privacy_pref, _ = await asyncio.gather(
             get_user_role(repo, user, settings),
+            get_user_privacy_pref(repo, user.user_id),
             touch_user_presence(repo, user, request=request),
         )
         return {
@@ -565,6 +575,7 @@ def create_app(
             "dev_auth_bypass": settings.dev_auth_bypass,
             "role": role,
             "is_admin": role == "admin",
+            "privacy": privacy_pref,
         }
 
     # ------------------------------------------------------------- sessions
@@ -813,13 +824,19 @@ def create_app(
                     ),
                     error=error_detail or outcome,
                 )
+            u_pref = await get_user_privacy_pref(repo, user.user_id)
+            log_preview = (
+                preview
+                if u_pref.get("share_usage_data", True)
+                else f"[redacted_by_pdpa_privacy_pref len={len(preview)}]"
+            )
             log_event(
                 "chat_turn",
                 severity=logging.INFO
                 if outcome in ("ok", "awaiting_confirmation")
                 else logging.WARNING,
                 intent=intent,
-                request=preview,
+                request=log_preview,
                 outcome=outcome,
                 latency_ms=latency_ms,
                 user=_pseudonym(user.user_id),
@@ -1446,10 +1463,35 @@ def create_app(
         return {"ok": True, "entry": record}
 
     # ------------------------------------------------------------ account (privacy)
+    @app.get("/api/account/privacy")
+    async def get_privacy_settings(user: UserDep) -> dict[str, Any]:
+        """Returns the user's PDPA privacy and usage-data sharing preferences."""
+        pref = await get_user_privacy_pref(get_repository(), user.user_id)
+        return {"ok": True, "privacy": pref}
+
+    @app.post("/api/account/privacy")
+    async def update_privacy_settings(
+        body: PrivacySettingsRequest, user: UserDep
+    ) -> dict[str, Any]:
+        """Updates the user's PDPA usage-data sharing consent and purges historical telemetry on withdrawal."""
+        result = await set_user_privacy_pref(
+            get_repository(),
+            user,
+            share_usage_data=bool(body.share_usage_data),
+        )
+        log_event(
+            "account_privacy_updated",
+            user=_pseudonym(user.user_id),
+            share_usage_data=bool(body.share_usage_data),
+        )
+        return {"ok": True, "privacy": result}
+
     @app.get("/api/account/export")
     async def export_account(user: UserDep, client: AgentDep) -> JSONResponse:
         """Self-service data export: stored data, conversations and coach memories."""
-        data = await get_repository().export_user_data(user.user_id)
+        repo = get_repository()
+        data = await repo.export_user_data(user.user_id)
+        privacy_pref = await get_user_privacy_pref(repo, user.user_id)
         conversations: list[dict[str, Any]] = []
         memories: list[dict[str, Any]] = []
         try:
@@ -1479,6 +1521,7 @@ def create_app(
         payload = {
             "exported_at": utc_now().isoformat(),
             "account": {"email": user.email},
+            "privacy_preferences": privacy_pref,
             "data": data,
             "conversations": conversations,
             "coach_memories": memories,
@@ -1494,8 +1537,10 @@ def create_app(
         request: Request, body: DeleteAccountRequest, user: UserDep, client: AgentDep
     ) -> JSONResponse:
         """Deletes the user's stored data, conversations and coach memories."""
+        repo = get_repository()
         result: dict[str, Any] = {"deleted": True}
-        result["documents"] = await get_repository().delete_user_data(user.user_id)
+        result["documents"] = await repo.delete_user_data(user.user_id)
+        result["telemetry_purged"] = await purge_user_telemetry(repo, user.user_id)
         errors: list[str] = []
         try:
             sessions = await asyncio.wait_for(

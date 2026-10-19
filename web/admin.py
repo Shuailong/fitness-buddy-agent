@@ -216,6 +216,113 @@ def _ops_events_mem(repo: Any) -> list[dict[str, Any]]:
     return events
 
 
+def _privacy_prefs_mem(repo: Any) -> dict[str, dict[str, Any]]:
+    prefs = getattr(repo, "privacy_prefs", None)
+    if prefs is None:
+        prefs = {}
+        repo.privacy_prefs = prefs
+    return prefs
+
+
+async def get_user_privacy_pref(repo: Any, user_id: str) -> dict[str, Any]:
+    """Returns the user's PDPA privacy & usage-sharing consent preference."""
+    default_pref = {
+        "share_usage_data": True,
+        "chat_private_from_admins": True,
+        "updated_at": None,
+    }
+    if not user_id:
+        return default_pref
+    mem_prefs = _privacy_prefs_mem(repo)
+    if user_id in mem_prefs:
+        return {**default_pref, **mem_prefs[user_id]}
+    db = getattr(repo, "_db", None)
+    if db is not None:
+        try:
+            snap = await db.collection("privacy_prefs").document(user_id).get()
+            if snap.exists:
+                data = snap.to_dict() or {}
+                record = {
+                    "share_usage_data": bool(data.get("share_usage_data", True)),
+                    "chat_private_from_admins": True,
+                    "updated_at": data.get("updated_at"),
+                }
+                mem_prefs[user_id] = record
+                return record
+        except Exception:
+            pass
+    mem_prefs[user_id] = dict(default_pref)
+    return dict(default_pref)
+
+
+async def purge_user_telemetry(repo: Any, user_id: str) -> int:
+    """Purges stored ``ops_users`` and ``ops_events`` for ``user_id`` upon PDPA consent withdrawal."""
+    if not user_id:
+        return 0
+    purged = 0
+    mem_users = _ops_users_mem(repo)
+    if mem_users.pop(user_id, None) is not None:
+        purged += 1
+    mem_events = _ops_events_mem(repo)
+    before_len = len(mem_events)
+    mem_events[:] = [e for e in mem_events if e.get("user_id") != user_id]
+    purged += before_len - len(mem_events)
+
+    db = getattr(repo, "_db", None)
+    if db is not None:
+        try:
+            await db.collection("ops_users").document(user_id).delete()
+            purged += 1
+        except Exception:
+            pass
+        try:
+            query = db.collection("ops_events").where("user_id", "==", user_id).limit(500)
+            async for doc in query.stream():
+                await doc.reference.delete()
+                purged += 1
+        except Exception:
+            pass
+    return purged
+
+
+async def set_user_privacy_pref(
+    repo: Any,
+    user: CurrentUser,
+    *,
+    share_usage_data: bool,
+) -> dict[str, Any]:
+    """Saves the user's PDPA usage-data consent and purges telemetry if withdrawn."""
+    now_iso = utc_now().isoformat()
+    record = {
+        "user_id": user.user_id,
+        "share_usage_data": bool(share_usage_data),
+        "chat_private_from_admins": True,
+        "updated_at": now_iso,
+    }
+    _privacy_prefs_mem(repo)[user.user_id] = dict(record)
+    db = getattr(repo, "_db", None)
+    if db is not None:
+        try:
+            await (
+                db.collection("privacy_prefs")
+                .document(user.user_id)
+                .set(record, merge=True)
+            )
+        except Exception:
+            pass
+    purged = 0
+    if not share_usage_data:
+        purged = await purge_user_telemetry(repo, user.user_id)
+    return {
+        "ok": True,
+        "share_usage_data": bool(share_usage_data),
+        "chat_private_from_admins": True,
+        "purged_telemetry": not share_usage_data,
+        "purged_records": purged,
+        "updated_at": now_iso,
+    }
+
+
 async def touch_user_presence(
     repo: Any,
     user: CurrentUser,
@@ -229,6 +336,9 @@ async def touch_user_presence(
     onboarding_completed: bool = False,
 ) -> None:
     """Updates real-time user presence and metadata in ``ops_users``."""
+    pref = await get_user_privacy_pref(repo, user.user_id)
+    if not pref.get("share_usage_data", True):
+        return
     now = utc_now()
     now_ts = now.timestamp()
     now_iso = now.isoformat()
@@ -319,6 +429,10 @@ async def record_ops_event(
     **fields: Any,
 ) -> None:
     """Appends an operational telemetry event to ``ops_events``."""
+    if user_id and kind in ("ui_event", "telemetry", "chat_turn"):
+        pref = await get_user_privacy_pref(repo, user_id)
+        if not pref.get("share_usage_data", True):
+            return
     now = utc_now()
     event_id = f"{int(now.timestamp() * 1000)}_{uuid.uuid4().hex[:8]}"
     record: dict[str, Any] = {
@@ -724,6 +838,10 @@ async def build_admin_overview(
             len(ad) >= 2 and ad[0] <= date_7d_ago and ad[-1] >= date_7d_ago
         ):
             d7_retained += 1
+
+        u_pref = await get_user_privacy_pref(repo, u["user_id"])
+        if not u_pref.get("share_usage_data", True):
+            continue
 
         online_user_rows.append(
             {

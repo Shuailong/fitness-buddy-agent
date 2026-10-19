@@ -3141,5 +3141,294 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
   padding: 14px 16px;
 }
 
+/* ============================================================================
+   16. PDPA Privacy & Data Controls Modal + Coach Privacy Pill
+   ============================================================================ */
+.coach-persona-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.coach-privacy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--r-full);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.32);
+  color: #10B981;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+.coach-privacy-pill:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.55);
+  transform: translateY(-1px);
+}
+.coach-privacy-pill .icon {
+  width: 13px;
+  height: 13px;
+}
+@media (max-width: 420px) {
+  .coach-privacy-pill span {
+    display: none;
+  }
+  .coach-privacy-pill {
+    padding: 5px;
+  }
+}
+
+.menu-privacy-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.menu-pdpa-dot {
+  margin-left: auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--r-full);
+  letter-spacing: 0.02em;
+}
+.menu-pdpa-dot.is-on {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10B981;
+}
+.menu-pdpa-dot.is-off {
+  background: var(--elevated);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.modal-card.pdpa-modal {
+  max-width: 680px;
+}
+.pdpa-modal-body {
+  display: grid;
+  gap: 16px;
+}
+.pdpa-hero-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(145deg, rgba(16, 185, 129, 0.1), rgba(56, 189, 248, 0.06));
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+.pdpa-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 3px 10px;
+  border-radius: var(--r-full);
+  background: rgba(16, 185, 129, 0.16);
+  color: #10B981;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+.pdpa-hero-badge .icon {
+  width: 14px;
+  height: 14px;
+}
+.pdpa-hero-title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.pdpa-hero-lead {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+.pdpa-boundary-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+@media (min-width: 600px) {
+  .pdpa-boundary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.pdpa-boundary-col {
+  padding: 12px 14px;
+  border-radius: var(--r);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.pdpa-boundary-col.is-private {
+  border-color: rgba(16, 185, 129, 0.3);
+}
+.pdpa-boundary-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-strong);
+}
+.pdpa-boundary-col.is-private .pdpa-boundary-head .icon {
+  color: #10B981;
+}
+.pdpa-boundary-col.is-ops .pdpa-boundary-head .icon {
+  color: #38BDF8;
+}
+.pdpa-boundary-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 5px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.pdpa-toggle-card {
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: var(--inset);
+  border: 1.5px solid var(--line);
+  display: grid;
+  gap: 10px;
+}
+.pdpa-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.pdpa-toggle-copy {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+}
+.pdpa-toggle-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pdpa-toggle-label {
+  font-weight: 700;
+  font-size: 0.94rem;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+.pdpa-status-pill {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+}
+.pdpa-status-pill.is-on {
+  background: rgba(16, 185, 129, 0.16);
+  color: #10B981;
+}
+.pdpa-status-pill.is-off {
+  background: var(--elevated);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+.pdpa-toggle-desc {
+  margin: 0;
+  font-size: 0.81rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.pdpa-switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 28px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  cursor: pointer;
+}
+.pdpa-switch-input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.pdpa-switch-slider {
+  position: absolute;
+  inset: 0;
+  background-color: var(--elevated);
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.pdpa-switch-slider::before {
+  content: "";
+  position: absolute;
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  background-color: var(--text-strong);
+  border-radius: 50%;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s ease;
+}
+.pdpa-switch-input:checked + .pdpa-switch-slider {
+  background-color: rgba(16, 185, 129, 0.25);
+  border-color: #10B981;
+}
+.pdpa-switch-input:checked + .pdpa-switch-slider::before {
+  transform: translate(20px, -50%);
+  background-color: #10B981;
+}
+.pdpa-switch-input:focus-visible + .pdpa-switch-slider {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.pdpa-feedback-note {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.pdpa-feedback-note.is-ok {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.pdpa-feedback-note.is-err {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--danger);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.pdpa-rights-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-soft);
+}
+.pdpa-rights-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pdpa-del-btn {
+  color: var(--danger);
+}
+
 
 

@@ -3,7 +3,7 @@
 import { $, el, icon } from "./js/util.js";
 import { api, getJson } from "./js/api.js";
 import { state, actions } from "./js/state.js";
-import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions } from "./js/chat.js";
+import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions, syncCoachPersonaHeader } from "./js/chat.js";
 import { renderToday, renderProgress, renderPlan, loadingView, errorView, setupProfileView } from "./js/views.js";
 import { startOnboarding, rerenderOnboarding } from "./js/onboarding.js";
 import { buildOnboardingMessage, initials } from "./js/logic.js";
@@ -13,7 +13,7 @@ import { THEME_EVENT } from "./js/theme.js";
 import { initLanding, localizeLandingImages } from "./js/landing.js";
 import { track, enableTelemetry } from "./js/telemetry.js";
 import { openFeedbackDialog } from "./js/feedback.js";
-import { exportData, openDeleteDialog } from "./js/account.js";
+import { exportData, openDeleteDialog, openPrivacySettingsModal } from "./js/account.js";
 
 const ROUTES = ["today", "coach", "progress", "plan", "admin"];
 const desktop = window.matchMedia("(min-width: 1024px)");
@@ -244,6 +244,7 @@ function setLanguage(lang) {
   applyStatic();
   renderMenus();
   refreshThemeToggles();
+  syncCoachPersonaHeader();
   renderLandingLang();
   renderSuggestions(state.dashboard);
   if (state.onboarding) rerenderOnboarding();
@@ -256,9 +257,23 @@ function renderLandingLang() {
   $("landing-lang").replaceChildren(langSwitch());
 }
 
+function openPrivacy() {
+  closeMenus();
+  openPrivacySettingsModal({
+    onExport: runExport,
+    onDelete: () => openDeleteDialog({ onExport: runExport, onDeleted: afterAccountDeleted }),
+    onUpdated: () => {
+      writeBootCache();
+      renderMenus();
+    },
+    showToast,
+  });
+}
+
 // ------------------------------------------------------------- menus
 function renderMenus() {
   const isAdmin = Boolean(state.me && state.me.is_admin);
+  const shareUsageData = !(state.me && state.me.privacy && state.me.privacy.share_usage_data === false);
   const options = {
     email: (state.me && state.me.email) || "",
     isAdmin,
@@ -266,6 +281,8 @@ function renderMenus() {
     showSignOut: !(state.config && state.config.dev_auth_bypass),
     onSignOut: signOut,
     onFeedback: () => { closeMenus(); openFeedbackDialog({ page: currentPage() }); },
+    onPrivacy: openPrivacy,
+    shareUsageData,
     onExport: () => { closeMenus(); runExport(); },
     onDelete: () => { closeMenus(); openDeleteDialog({ onExport: runExport, onDeleted: afterAccountDeleted }); },
   };
@@ -481,7 +498,8 @@ async function startApp(meData = null, prefetchedDashboardPromise = null) {
       state.me = me.ok ? await me.json() : null;
     } catch (_) { state.me = null; }
   }
-  enableTelemetry(true);
+  const shareUsageData = !(state.me && state.me.privacy && state.me.privacy.share_usage_data === false);
+  enableTelemetry(shareUsageData);
   track("app_open");
   renderAvatar();
   writeBootCache();
@@ -524,6 +542,7 @@ async function boot() {
   setLang(detectLang(), { persist: false });
   applyStatic();
   actions.openCoach = openCoach;
+  actions.openPrivacy = openPrivacy;
   actions.navigate = navigate;
   actions.refreshDashboard = refreshDashboard;
   actions.showSignIn = showSignIn;

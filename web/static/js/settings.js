@@ -59,7 +59,18 @@ export function langSwitch() {
 }
 
 /** Content of the account/settings menu. */
-export function settingsMenu({ email = "", isAdmin = false, onAdmin = null, showSignOut = true, onSignOut, onFeedback = null, onExport = null, onDelete = null } = {}) {
+export function settingsMenu({
+  email = "",
+  isAdmin = false,
+  onAdmin = null,
+  showSignOut = true,
+  onSignOut,
+  onFeedback = null,
+  onPrivacy = null,
+  shareUsageData = true,
+  onExport = null,
+  onDelete = null,
+} = {}) {
   const item = (iconName, label, onclick, cls = "") => el("button", { type: "button", class: `menu-item ${cls}`.trim(), onclick }, [icon(iconName), el("span", { text: label })]);
   const isZh = getLang() === "zh";
   const currentPersona = getPersona(getPersonaId(), getLang());
@@ -77,6 +88,19 @@ export function settingsMenu({ email = "", isAdmin = false, onAdmin = null, show
     langSwitch(),
     el("div", { class: "menu-group" }, [
       onFeedback ? item("rate-review", t("fb.menu"), onFeedback) : null,
+      onPrivacy
+        ? el("button", { type: "button", class: "menu-item menu-privacy-btn", onclick: onPrivacy }, [
+            icon("shield"),
+            el("span", { text: isZh ? "隐私与数据共享 (PDPA)" : "Privacy & Data Controls" }),
+            el("span", {
+              class: `menu-pdpa-dot ${shareUsageData ? "is-on" : "is-off"}`,
+              title: shareUsageData
+                ? (isZh ? "已开启诊断共享" : "Usage sharing on")
+                : (isZh ? "已关闭诊断共享（严格隐私模式）" : "Opted out of usage sharing"),
+              text: shareUsageData ? (isZh ? "共享中" : "Shared") : (isZh ? "已关闭" : "Private"),
+            }),
+          ])
+        : null,
       el("a", { class: "menu-item", href: "/privacy", target: "_blank", rel: "noopener" }, [
         icon("privacy-tip"), el("span", { text: t("menu.privacy") }), icon("open-in-new", { cls: "menu-ext" }),
       ]),

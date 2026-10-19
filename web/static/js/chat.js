@@ -487,6 +487,7 @@ export function pickPhoto(kind = "camera") {
 export function syncCoachPersonaHeader() {
   const head = document.querySelector(".coach-head");
   if (!head) return;
+  const isZh = getLang() === "zh";
   const p = getPersona(getPersonaId(), getLang());
   const titleEl = $("coach-title");
   if (titleEl) {
@@ -505,7 +506,24 @@ export function syncCoachPersonaHeader() {
     if (newChatBtn) head.insertBefore(slot, newChatBtn);
     else head.append(slot);
   }
-  slot.replaceChildren(personaSwitchPill({ compact: true }));
+  const privacyBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "coach-privacy-pill",
+      title: isZh
+        ? "PDPA 隐私保护：聊天内容仅你本人可见，点击管理数据共享权限"
+        : "PDPA Protected: Coach chat is strictly private. Click for privacy controls.",
+      onclick: () => {
+        if (actions.openPrivacy) actions.openPrivacy();
+      },
+    },
+    [
+      icon("shield"),
+      el("span", { text: isZh ? "私密对话" : "Private" }),
+    ]
+  );
+  slot.replaceChildren(privacyBtn, personaSwitchPill({ compact: true }));
 }
 
 export function initChat() {
