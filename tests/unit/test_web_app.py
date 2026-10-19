@@ -1721,3 +1721,33 @@ def test_coach_personas_and_live_form_check() -> None:
     assert priv_on["ok"] is True
     assert priv_on["privacy"]["share_usage_data"] is True
 
+    # 10. Long Coach message TTS (>320 chars), dedicated #settings view, and illustrated Coach avatars
+    long_reply = "今天你的深蹲节奏非常稳，核心控制也比上周进步很多！" * 22
+    assert len(long_reply) > 450
+    long_tts_resp = client.post(
+        "/api/tts",
+        json={"text": long_reply, "persona_id": "iron_leo", "lang": "zh"},
+    )
+    assert long_tts_resp.status_code == 200
+    assert "ok" in long_tts_resp.json()
+
+    assert (
+        client.post(
+            "/api/feedback",
+            json={
+                "kind": "general",
+                "rating": "up",
+                "comment": "Great settings page",
+                "page": "settings",
+            },
+        ).status_code
+        == 204
+    )
+    assert 'id="view-settings"' in home.text
+    personas_js = client.get("/static/js/personas.js")
+    assert personas_js.status_code == 200
+    assert "export function coachAvatar" in personas_js.text
+    settings_js = client.get("/static/js/settings.js")
+    assert settings_js.status_code == 200
+    assert "export function renderSettingsView" in settings_js.text
+

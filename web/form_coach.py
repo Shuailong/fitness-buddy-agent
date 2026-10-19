@@ -633,7 +633,7 @@ def _clean_tts_text(text: str) -> str:
         cleaned = re.sub(r"[，,]{2,}", "，", cleaned)
 
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" ，,")
-    return cleaned[:260]
+    return cleaned[:900]
 
 
 def _gemini_project_candidates() -> list[str]:
@@ -997,7 +997,7 @@ async def synthesize_coach_speech(
     try:
         res = await asyncio.wait_for(
             _call_edge_neural_tts(clean_text, norm_persona, norm_lang),
-            timeout=3.8,
+            timeout=6.0,
         )
         if res and res.get("audio_b64"):
             _TTS_CACHE[cache_key] = res
@@ -1013,7 +1013,7 @@ async def synthesize_coach_speech(
             asyncio.to_thread(
                 _call_neural_http_tts_sync, clean_text, norm_lang, norm_persona
             ),
-            timeout=3.5,
+            timeout=6.0,
         )
         if res and res.get("audio_b64"):
             _TTS_CACHE[cache_key] = res

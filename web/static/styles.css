@@ -350,7 +350,7 @@ a.menu-item { color: var(--text); text-decoration: none; }
 .dot-sep { color: var(--muted); padding: 0 2px; }
 
 .dash-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
-.today-grid { grid-template-areas: "hero" "quick" "tip" "science" "workout" "meals"; }
+.today-grid { grid-template-areas: "hero" "quick" "tip" "workout" "meals" "science"; }
 .area-tip { grid-area: tip; } .area-science { grid-area: science; } .area-hero { grid-area: hero; } .area-quick { grid-area: quick; }
 .area-weight { grid-area: weight; display: none; } .area-workout { grid-area: workout; } .area-meals { grid-area: meals; }
 
@@ -988,7 +988,7 @@ textarea.text-input { resize: vertical; min-height: 52px; }
   .desktop-only { display: block; }
   .today-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px;
-    grid-template-areas: "tip tip" "science science" "hero weight" "workout meals";
+    grid-template-areas: "tip tip" "hero weight" "workout meals" "science science";
   }
   .area-quick { display: none; }
   .area-weight { display: block; }
@@ -1206,18 +1206,8 @@ html.theme-anim, html.theme-anim *, html.theme-anim *::before, html.theme-anim *
 .del-export { justify-self: start; }
 .del-export:hover .icon { transform: none; }
 
-/* Desktop floating feedback pill (bottom-left of the dashboard) */
-.feedback-fab { display: none; }
-@media (min-width: 1024px) {
-  .feedback-fab {
-    position: fixed; left: calc(var(--rail-w) + 20px); bottom: 20px; z-index: 25; display: inline-flex; align-items: center; gap: 8px;
-    min-height: 44px; padding: 0 16px 0 14px; border-radius: var(--r-full); border: 1px solid var(--line); background: var(--card);
-    color: var(--text); font-weight: 600; font-size: 0.875rem; box-shadow: var(--shadow-sm);
-  }
-  .feedback-fab .icon { width: 20px; height: 20px; color: var(--primary-text); }
-  .feedback-fab:hover { border-color: var(--primary-border); color: var(--text-strong); }
-  .view { padding-bottom: 88px; }
-}
+/* Desktop floating feedback pill hidden: consolidated into Settings & Account menu */
+.feedback-fab { display: none !important; }
 
 /* ---------------------------------------------------------- privacy page */
 .priv { min-height: 100vh; background: var(--bg); }
@@ -3172,14 +3162,6 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
   width: 13px;
   height: 13px;
 }
-@media (max-width: 420px) {
-  .coach-privacy-pill span {
-    display: none;
-  }
-  .coach-privacy-pill {
-    padding: 5px;
-  }
-}
 
 .menu-privacy-btn {
   display: flex;
@@ -3430,5 +3412,300 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
   color: var(--danger);
 }
 
+/* ============================================================================
+   14. Illustrated Coach SVG Avatars, Coach Header Layout & Message TTS
+   ============================================================================ */
+.coach-svg-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  flex: none;
+  overflow: visible;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+.coach-svg-avatar-inner {
+  display: inline-flex;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1.5px solid var(--line);
+}
+.coach-svg-avatar.persona-leo .coach-svg-avatar-inner {
+  border-color: rgba(249, 115, 22, 0.55);
+}
+.coach-svg-avatar.persona-maya .coach-svg-avatar-inner {
+  border-color: rgba(16, 185, 129, 0.55);
+}
+.coach-svg-avatar.persona-chen .coach-svg-avatar-inner {
+  border-color: rgba(56, 189, 248, 0.55);
+}
+.coach-svg-avatar .coach-portrait-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.coach-svg-avatar.sm {
+  width: 26px;
+  height: 26px;
+  box-shadow: none;
+}
+.coach-svg-avatar.lg {
+  width: 42px;
+  height: 42px;
+}
+.coach-svg-avatar.xl {
+  width: 54px;
+  height: 54px;
+}
+.tip-coach-avatar {
+  margin-top: 2px;
+}
 
+/* Balanced Coach Header (.coach-head) that never squeezes .coach-titles vertically */
+.coach-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  padding-top: max(12px, env(safe-area-inset-top));
+}
+.coach-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.coach-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+.coach-title-row h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+.coach-subtitle-line {
+  font-size: 0.76rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+.coach-switch-chip,
+.coach-privacy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.coach-switch-chip {
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+.coach-switch-chip:hover {
+  border-color: var(--primary-border);
+  color: var(--primary-text);
+}
+.coach-switch-chip .icon,
+.coach-privacy-pill .icon {
+  width: 12px;
+  height: 12px;
+}
+#new-chat-btn {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 0.8rem;
+}
 
+/* Coach Message Voice Playback Pill (.msg-tts-btn) */
+.coach-msg-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  margin-top: 2px;
+}
+.msg-tts-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--r-full);
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.msg-tts-btn:hover {
+  color: var(--primary-text);
+  border-color: var(--primary-border);
+  background: var(--primary-soft);
+}
+.msg-tts-btn .icon {
+  width: 14px;
+  height: 14px;
+}
+.msg-tts-btn.is-loading {
+  color: var(--primary-text);
+  border-color: var(--primary-border);
+  opacity: 0.85;
+}
+.msg-tts-btn.is-playing {
+  color: var(--on-primary);
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 12px var(--primary-glow);
+}
+
+/* ============================================================================
+   15. Dedicated Settings & Coach Studio View (#settings)
+   ============================================================================ */
+.settings-header {
+  padding-bottom: 20px;
+}
+.settings-sub {
+  margin-top: 6px;
+  font-size: 0.92rem;
+}
+.settings-stack {
+  display: grid;
+  gap: 20px;
+}
+.settings-card {
+  display: grid;
+  gap: 18px;
+}
+.settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.settings-card-title-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.settings-card-title-group h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0 0 3px;
+}
+.settings-card-title-group p {
+  margin: 0;
+}
+.persona-grid-inline {
+  margin-top: 2px;
+}
+@media (min-width: 768px) {
+  .persona-grid-inline {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.settings-pref-grid {
+  display: grid;
+  gap: 12px;
+}
+.settings-pref-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: var(--r-lg);
+  background: var(--inset);
+  border: 1px solid var(--line-soft);
+}
+.settings-pref-copy {
+  display: grid;
+  gap: 3px;
+}
+.settings-pref-copy strong {
+  font-size: 0.94rem;
+  color: var(--text-strong);
+}
+.settings-pref-item .menu-seg {
+  margin: 0;
+  min-width: 210px;
+}
+.settings-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: var(--r-lg);
+  background: var(--inset);
+  border: 1px solid var(--line-soft);
+}
+.settings-user-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.settings-user-avatar {
+  width: 44px;
+  height: 44px;
+  font-size: 1rem;
+}
+.settings-user-meta {
+  display: grid;
+  gap: 3px;
+}
+.settings-user-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settings-account-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settings-primary-item {
+  font-weight: 600;
+  color: var(--primary-text);
+}
+
+/* Mobile 5-tab bottom bar polish */
+@media (max-width: 1023px) {
+  .tabbar {
+    gap: 2px;
+    padding-inline: 6px;
+  }
+  .tab {
+    padding: 6px 4px;
+    font-size: 0.68rem;
+  }
+}

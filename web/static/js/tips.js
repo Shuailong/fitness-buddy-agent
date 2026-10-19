@@ -4,7 +4,7 @@
 import { el, icon } from "./util.js";
 import { getLang } from "./i18n.js";
 import { showToast } from "./modal.js";
-import { getPersona, getPersonaId, speakCoachText, stopCoachSpeech, unlockCoachAudio, personaSwitchPill } from "./personas.js";
+import { coachAvatar, getPersona, getPersonaId, speakCoachText, stopCoachSpeech, unlockCoachAudio } from "./personas.js";
 import { track } from "./telemetry.js";
 
 const LEARNED_KEY = "fb_tips_learned_v1";
@@ -398,7 +398,7 @@ export function dailyScienceCard(d, actions) {
         ]),
         personaNote ? el("div", { class: `science-persona-bar ${persona.accentClass}` }, [
           el("div", { class: "science-persona-note" }, [
-            el("span", { class: "persona-avatar-mini", text: persona.avatarText }),
+            coachAvatar(personaId, { size: "sm" }),
             el("p", { class: "small" }, [
               el("strong", { text: `${persona.copy.tipPrefix} ` }),
               el("span", { text: personaNote }),
@@ -412,6 +412,7 @@ export function dailyScienceCard(d, actions) {
                 class: "icon-btn science-tts-btn",
                 title: isZh ? "语音朗读本条微课堂" : "Listen to this tip",
                 onclick: async () => {
+                  unlockCoachAudio();
                   if (tipPlaying) {
                     tipPlaying = false;
                     ttsBtn.classList.remove("is-playing");
@@ -433,7 +434,6 @@ export function dailyScienceCard(d, actions) {
               }, [icon("volume-up")]);
               return ttsBtn;
             })(),
-            personaSwitchPill({ compact: true, onSwitched: () => paint() }),
           ]),
         ]) : null,
       ]),

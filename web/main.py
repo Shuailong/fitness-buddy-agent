@@ -167,7 +167,7 @@ _CSP = "; ".join(
 class TtsRequest(BaseModel):
     """Request payload for synthesizing natural neural coach speech."""
 
-    text: str = Field(min_length=1, max_length=320)
+    text: str = Field(min_length=1, max_length=2500)
     persona: str = Field(default="iron_leo", max_length=40)
     lang: str | None = Field(default="zh", max_length=12)
 
@@ -224,7 +224,16 @@ class FeedbackRequest(BaseModel):
     comment: str = Field(default="", max_length=2000)
     event_id: str | None = Field(default=None, max_length=200)
     page: (
-        Literal["today", "coach", "progress", "plan", "onboarding", "landing", "admin"]
+        Literal[
+            "today",
+            "coach",
+            "progress",
+            "plan",
+            "settings",
+            "onboarding",
+            "landing",
+            "admin",
+        ]
         | None
     ) = None
     lang: str | None = None

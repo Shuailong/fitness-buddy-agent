@@ -361,11 +361,123 @@ function pickBestSpeechVoice(voices, persona, lang) {
   return bestVoice;
 }
 
-function speakWithWebSpeechFallback(text, { personaId, lang, token, onStart, onEnd } = {}) {
+// Illustrated SVG portraits for each of the 3 Coach Personas
+const COACH_AVATAR_SVGS = {
+  iron_leo: `<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <linearGradient id="bg-leo" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#FF7A45"/>
+        <stop offset="100%" stop-color="#B8320A"/>
+      </linearGradient>
+    </defs>
+    <circle cx="32" cy="32" r="31" fill="url(#bg-leo)"/>
+    <path d="M12 58c3-11 11-16 20-16s17 5 20 16" fill="#1F242D"/>
+    <path d="M23 43h18l-3 15H26l-3-15z" fill="#FF6B35" opacity="0.85"/>
+    <rect x="27" y="36" width="10" height="9" rx="4" fill="#F4B393"/>
+    <path d="M20 24c0-7 5-12 12-12s12 5 12 12v5c0 7-5 12-12 12s-12-5-12-12v-5z" fill="#FAD1B8"/>
+    <path d="M18 22c1-8 6-13 14-13 6 0 11 3 13 9l-3 4H20l-2 0z" fill="#231F20"/>
+    <rect x="19" y="19" width="26" height="4.5" rx="2.2" fill="#CCFF00"/>
+    <circle cx="27" cy="27" r="2" fill="#1E2024"/>
+    <circle cx="37" cy="27" r="2" fill="#1E2024"/>
+    <path d="M24 23.5l5 1M40 23.5l-5 1" stroke="#231F20" stroke-width="2" stroke-linecap="round"/>
+    <path d="M27.5 33.5c2.5 2 6.5 2 9 0" stroke="#231F20" stroke-width="2.2" stroke-linecap="round"/>
+  </svg>`,
+  warm_maya: `<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <linearGradient id="bg-maya" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#F472B6"/>
+        <stop offset="100%" stop-color="#9D174D"/>
+      </linearGradient>
+    </defs>
+    <circle cx="32" cy="32" r="31" fill="url(#bg-maya)"/>
+    <circle cx="46" cy="18" r="7" fill="#3B1D2E"/>
+    <path d="M13 58c3-10 10-15 19-15s16 5 19 15" fill="#2A1B2E"/>
+    <path d="M23 43c3 4 15 4 18 0l2 15H21l2-15z" fill="#F9A8D4"/>
+    <rect x="28" y="36" width="8" height="9" rx="4" fill="#F7C6B5"/>
+    <path d="M21 25c0-6.5 5-11.5 11-11.5S43 18.5 43 25v4.5C43 36 38 40.5 32 40.5S21 36 21 29.5V25z" fill="#FFE0D2"/>
+    <path d="M19 25c0-9 6-14 13-14s13 5 13 14c-3-4-7-6-13-6s-10 2-13 6z" fill="#3B1D2E"/>
+    <path d="M20 20.5c4-2.5 20-2.5 24 0" stroke="#FDE047" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="27.5" cy="27.5" r="1.9" fill="#2A1B2E"/>
+    <circle cx="36.5" cy="27.5" r="1.9" fill="#2A1B2E"/>
+    <circle cx="24.5" cy="31" r="2.2" fill="#FB7185" opacity="0.45"/>
+    <circle cx="39.5" cy="31" r="2.2" fill="#FB7185" opacity="0.45"/>
+    <path d="M27.5 33c2.5 2.6 6.5 2.6 9 0" stroke="#2A1B2E" stroke-width="2" stroke-linecap="round"/>
+  </svg>`,
+  science_dr_chen: `<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <linearGradient id="bg-chen" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#38BDF8"/>
+        <stop offset="100%" stop-color="#0369A1"/>
+      </linearGradient>
+    </defs>
+    <circle cx="32" cy="32" r="31" fill="url(#bg-chen)"/>
+    <path d="M13 58c3-10 10-15 19-15s16 5 19 15" fill="#0F172A"/>
+    <path d="M24 43l8 9 8-9 3 15H21l3-15z" fill="#E0F2FE"/>
+    <rect x="27.5" y="36" width="9" height="9" rx="4" fill="#F1C6B3"/>
+    <path d="M20.5 24.5c0-6.8 5.2-12 11.5-12s11.5 5.2 11.5 12v5c0 6.8-5.2 11.5-11.5 11.5s-11.5-4.7-11.5-11.5v-5z" fill="#FAD9C8"/>
+    <path d="M19.5 23c.5-8 5.5-12.5 12.5-12.5S44 15 44.5 23c-2.5-3.5-6.5-5-12.5-5s-10 1.5-12.5 5z" fill="#1E293B"/>
+    <rect x="22.5" y="24.5" width="8" height="5.5" rx="1.5" stroke="#0F172A" stroke-width="1.8" fill="#E0F2FE" fill-opacity="0.35"/>
+    <rect x="33.5" y="24.5" width="8" height="5.5" rx="1.5" stroke="#0F172A" stroke-width="1.8" fill="#E0F2FE" fill-opacity="0.35"/>
+    <path d="M30.5 27h3" stroke="#0F172A" stroke-width="1.8"/>
+    <circle cx="26.5" cy="27.2" r="1.5" fill="#0F172A"/>
+    <circle cx="37.5" cy="27.2" r="1.5" fill="#0F172A"/>
+    <path d="M28 34c2.2 1.6 5.8 1.6 8 0" stroke="#0F172A" stroke-width="1.9" stroke-linecap="round"/>
+  </svg>`,
+};
+
+/**
+ * Renders an illustrated SVG portrait avatar for the given Coach Persona.
+ */
+export function coachAvatar(personaId = getPersonaId(), { size = "md", online = false, cls = "" } = {}) {
+  const p = getPersona(personaId, getLang());
+  const svgHtml = COACH_AVATAR_SVGS[p.id] || COACH_AVATAR_SVGS.iron_leo;
+  const wrap = el("span", {
+    class: `bot-avatar coach-svg-avatar ${p.accentClass}${size === "lg" ? " lg" : ""}${size === "xl" ? " xl" : ""}${cls ? ` ${cls}` : ""}`,
+    "aria-hidden": "true",
+    html: svgHtml,
+  });
+  if (online) {
+    wrap.append(el("i", { class: "online" }));
+  }
+  return wrap;
+}
+
+/**
+ * Splits a normalized speech string into natural sentence chunks (<= maxLen chars)
+ * so long Coach chat replies start speaking within <1s and never exceed TTS limits.
+ */
+export function splitSpeechSentences(text, maxLen = 140) {
+  const s = String(text || "").trim();
+  if (!s) return [];
+  if (s.length <= maxLen) return [s];
+  const rawParts = s.split(/(?<=[。！？.!?\n；;])/);
+  const chunks = [];
+  let buf = "";
+  for (const part of rawParts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    if (buf && (buf.length + trimmed.length + 1) > maxLen) {
+      chunks.push(buf.trim());
+      buf = trimmed;
+    } else if (trimmed.length > maxLen) {
+      if (buf) {
+        chunks.push(buf.trim());
+        buf = "";
+      }
+      for (let i = 0; i < trimmed.length; i += maxLen) {
+        chunks.push(trimmed.slice(i, i + maxLen));
+      }
+    } else {
+      buf = buf ? `${buf} ${trimmed}` : trimmed;
+    }
+  }
+  if (buf.trim()) chunks.push(buf.trim());
+  return chunks.slice(0, 8);
+}
+
+function speakSingleWebSpeechUtterance(spokenText, { persona, lang, token, onStart } = {}) {
   return new Promise((resolve) => {
-    const spokenText = normalizeSpeechText(text, lang);
     if (typeof window === "undefined" || !("speechSynthesis" in window) || !spokenText || token !== currentPlayToken) {
-      if (onEnd) onEnd();
       resolve(false);
       return;
     }
@@ -373,71 +485,68 @@ function speakWithWebSpeechFallback(text, { personaId, lang, token, onStart, onE
     const finish = (ok) => {
       if (settled) return;
       settled = true;
-      if (onEnd) onEnd();
       resolve(ok);
     };
     try {
       const synth = window.speechSynthesis;
       if (synth.paused) synth.resume();
-      if (synth.speaking || synth.pending) {
-        synth.cancel();
-      }
-      const p = getPersona(personaId, lang);
+      const utter = new SpeechSynthesisUtterance(spokenText);
+      window.__activeCoachUtterance = utter;
 
-      const startSpeaking = () => {
-        if (token !== currentPlayToken) {
-          finish(false);
-          return;
-        }
-        const utter = new SpeechSynthesisUtterance(spokenText);
-        // Retain global reference so Chrome/Safari GC never collects active utterance
-        window.__activeCoachUtterance = utter;
-
-        const voices = synth.getVoices ? synth.getVoices() : [];
-        const picked = pickBestSpeechVoice(voices, p, lang);
-        if (picked) {
-          utter.voice = picked;
-          utter.lang = picked.lang || (lang === "zh" ? "zh-CN" : "en-US");
-        } else {
-          utter.lang = lang === "zh" ? "zh-CN" : "en-US";
-        }
-        utter.pitch = p.voice.pitch || 1.0;
-        utter.rate = p.voice.rate || 1.0;
-
-        utter.onstart = () => {
-          if (onStart) onStart();
-        };
-        utter.onend = () => finish(true);
-        utter.onerror = () => finish(false);
-
-        const maxWaitMs = Math.min(14000, Math.max(3500, spokenText.length * 320));
-        setTimeout(() => finish(true), maxWaitMs);
-
-        try {
-          synth.speak(utter);
-        } catch {
-          finish(false);
-        }
-      };
-
-      const initialVoices = synth.getVoices ? synth.getVoices() : [];
-      if (!initialVoices.length) {
-        // Wait briefly for Chrome's async voiceschanged event so Google 普通话 is available
-        let started = false;
-        const go = () => {
-          if (started) return;
-          started = true;
-          startSpeaking();
-        };
-        synth.addEventListener("voiceschanged", go, { once: true });
-        setTimeout(go, 150);
+      const voices = synth.getVoices ? synth.getVoices() : [];
+      const picked = pickBestSpeechVoice(voices, persona, lang);
+      if (picked) {
+        utter.voice = picked;
+        utter.lang = picked.lang || (lang === "zh" ? "zh-CN" : "en-US");
       } else {
-        setTimeout(startSpeaking, 45);
+        utter.lang = lang === "zh" ? "zh-CN" : "en-US";
       }
+      utter.pitch = (persona && persona.voice && persona.voice.pitch) || 1.0;
+      utter.rate = (persona && persona.voice && persona.voice.rate) || 1.0;
+
+      utter.onstart = () => {
+        if (onStart) onStart();
+      };
+      utter.onend = () => finish(true);
+      utter.onerror = () => finish(false);
+
+      const maxWaitMs = Math.min(12000, Math.max(3500, spokenText.length * 300));
+      setTimeout(() => finish(true), maxWaitMs);
+      synth.speak(utter);
     } catch {
       finish(false);
     }
   });
+}
+
+async function speakWithWebSpeechFallback(text, { personaId, lang, token, onStart, onEnd } = {}) {
+  const spokenText = normalizeSpeechText(text, lang);
+  if (typeof window === "undefined" || !("speechSynthesis" in window) || !spokenText || token !== currentPlayToken) {
+    if (onEnd) onEnd();
+    return false;
+  }
+  try {
+    const synth = window.speechSynthesis;
+    if (synth.speaking || synth.pending) synth.cancel();
+  } catch { /* ignore */ }
+
+  const p = getPersona(personaId, lang);
+  const chunks = splitSpeechSentences(spokenText, 120);
+  let started = false;
+  let anyOk = false;
+  for (const chunk of chunks) {
+    if (token !== currentPlayToken) break;
+    const ok = await speakSingleWebSpeechUtterance(chunk, {
+      persona: p,
+      lang,
+      token,
+      onStart: !started ? () => { started = true; if (onStart) onStart(); } : null,
+    });
+    if (ok) anyOk = true;
+    else break;
+  }
+  if (onEnd) onEnd();
+  return anyOk;
 }
 
 async function fetchNeuralTts(clean, personaId, lang) {
@@ -450,7 +559,7 @@ async function fetchNeuralTts(clean, personaId, lang) {
   }
   const job = (async () => {
     const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), 3200) : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 6500) : null;
     try {
       const resp = await fetch("/api/tts", {
         method: "POST",
@@ -545,8 +654,8 @@ export async function playStaticPersonaSample(personaId = getPersonaId(), lang =
 }
 
 /**
- * Speaks coaching text using Backend Neural TTS (Scheme B) with automatic fallback to
- * enhanced Web Speech API. Returns a Promise<boolean> that resolves when playback finishes.
+ * Speaks coaching text using Backend Neural TTS (Scheme B) with sentence chunking
+ * so long Coach chat messages start speaking quickly and play reliably.
  */
 export async function speakCoachText(
   text,
@@ -579,14 +688,14 @@ export async function speakCoachText(
 
   const token = ++currentPlayToken;
   const p = getPersona(personaId, lang);
-  const cacheKey = `${p.id}:${lang}:${clean}`;
+  const fullCacheKey = `${p.id}:${lang}:${clean}`;
 
   try {
     // 1. Play pre-bundled neural audio (e.g. returned directly by /api/form-check or WebSocket)
     if (audioB64) {
       const mime = audioMime || "audio/mpeg";
       const uri = `data:${mime};base64,${audioB64}`;
-      ttsAudioCache.set(cacheKey, { uri, mime, source: "bundled" });
+      ttsAudioCache.set(fullCacheKey, { uri, mime, source: "bundled" });
       const played = await playAudioDataUri(uri, { rate: 1.0, token, onStart, onEnd: doneEnd });
       if (played || token !== currentPlayToken) {
         doneEnd();
@@ -594,31 +703,48 @@ export async function speakCoachText(
       }
     }
 
-    // 2. Check client-side neural TTS cache (instant 0ms playback)
-    if (ttsAudioCache.has(cacheKey)) {
-      const cached = ttsAudioCache.get(cacheKey);
-      const played = await playAudioDataUri(cached.uri, { rate: 1.0, token, onStart, onEnd: doneEnd });
-      if (played || token !== currentPlayToken) {
+    // 2. Split long messages into sentence chunks (<= 150 chars) so first chunk plays fast
+    const chunks = splitSpeechSentences(clean, 150);
+    if (chunks.length > 0) {
+      // Prefetch first two chunks in parallel for zero gap between sentences
+      const pending = chunks.map((chunk, idx) => (idx <= 1 ? fetchNeuralTts(chunk, p.id, lang) : null));
+      let started = false;
+      let allNeuralOk = true;
+      for (let i = 0; i < chunks.length; i++) {
+        if (token !== currentPlayToken) {
+          doneEnd();
+          return false;
+        }
+        if (!pending[i]) pending[i] = fetchNeuralTts(chunks[i], p.id, lang);
+        if (i + 1 < chunks.length && !pending[i + 1]) {
+          pending[i + 1] = fetchNeuralTts(chunks[i + 1], p.id, lang);
+        }
+        const entry = await pending[i];
+        if (token !== currentPlayToken) {
+          doneEnd();
+          return false;
+        }
+        if (!entry || !entry.uri) {
+          allNeuralOk = false;
+          break;
+        }
+        const played = await playAudioDataUri(entry.uri, {
+          rate: 1.0,
+          token,
+          onStart: !started ? () => { started = true; if (onStart) onStart(); } : null,
+        });
+        if (!played) {
+          allNeuralOk = false;
+          break;
+        }
+      }
+      if (allNeuralOk || token !== currentPlayToken) {
         doneEnd();
-        return played;
+        return allNeuralOk;
       }
     }
 
-    // 3. Request Neural TTS from /api/tts (with 3.2s timeout protection)
-    const entry = await fetchNeuralTts(clean, p.id, lang);
-    if (token !== currentPlayToken) {
-      doneEnd();
-      return false;
-    }
-    if (entry && entry.uri) {
-      const played = await playAudioDataUri(entry.uri, { rate: 1.0, token, onStart, onEnd: doneEnd });
-      if (played || token !== currentPlayToken) {
-        doneEnd();
-        return played;
-      }
-    }
-
-    // 4. Fallback to browser Web Speech API
+    // 3. Fallback to browser Web Speech API (sentence-chunked)
     const fallbackPlayed = await speakWithWebSpeechFallback(clean, {
       personaId: p.id,
       lang,
@@ -674,19 +800,20 @@ export function personaSwitchPill({ onSwitched, compact = false } = {}) {
 }
 
 /**
- * Opens the modal allowing the user to compare, preview voice, and select one
- * of the 3 Coach Personas.
+ * Renders the 3-card Coach Persona selector grid (used in both the Settings page
+ * and the quick-switch modal).
  */
-export function openPersonaSelectorModal({ onSwitched } = {}) {
+export function renderPersonaSelectorGrid({ onSwitched } = {}) {
   const lang = getLang();
   const isZh = lang === "zh";
   let currentId = getPersonaId();
   let playingPersonaId = null;
 
-  // Pre-warm static neural audio assets for all 3 personas
   prefetchPersonaSamples(lang);
+  const container = el("div", { class: "persona-grid" });
 
-  const renderCards = (container) => {
+  const renderCards = () => {
+    currentId = getPersonaId();
     container.replaceChildren(...PERSONAS.map((raw) => {
       const p = getPersona(raw.id, lang);
       const active = p.id === currentId;
@@ -700,22 +827,22 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
           if (playingPersonaId === p.id) {
             playingPersonaId = null;
             stopCoachSpeech();
-            renderCards(container);
+            renderCards();
             return;
           }
           playingPersonaId = p.id;
-          renderCards(container);
+          renderCards();
           await playStaticPersonaSample(p.id, lang, {
             onEnd: () => {
               if (playingPersonaId === p.id) {
                 playingPersonaId = null;
-                renderCards(container);
+                renderCards();
               }
             },
           });
         },
       }, [
-        icon("volume-up"),
+        icon(isPlaying ? "pause" : "volume-up"),
         isPlaying
           ? (isZh ? "正在播报语音… (点击停止)" : "Playing Voice… (Tap to Stop)")
           : (isZh ? "试听教练语音" : "Preview Voice"),
@@ -724,7 +851,7 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
       const selectCard = () => {
         unlockCoachAudio();
         currentId = setPersonaId(p.id);
-        renderCards(container);
+        renderCards();
         showToast(isZh ? `已切换为「${p.copy.name}」` : `Switched to ${p.copy.name}`);
         if (onSwitched) onSwitched(currentId);
       };
@@ -745,10 +872,7 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
         },
       }, [
         el("div", { class: "persona-card-head" }, [
-          el("div", { class: "persona-avatar-badge" }, [
-            icon(p.icon),
-            el("span", { text: p.avatarText }),
-          ]),
+          coachAvatar(p.id, { size: "lg", online: active }),
           el("div", { class: "persona-head-text" }, [
             el("div", { class: "persona-title-row" }, [
               el("h4", { text: p.copy.name }),
@@ -770,8 +894,18 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
     }));
   };
 
-  const listWrap = el("div", { class: "persona-grid" });
-  renderCards(listWrap);
+  renderCards();
+  return container;
+}
+
+/**
+ * Opens the modal allowing the user to compare, preview voice, and select one
+ * of the 3 Coach Personas.
+ */
+export function openPersonaSelectorModal({ onSwitched } = {}) {
+  const lang = getLang();
+  const isZh = lang === "zh";
+  const listWrap = renderPersonaSelectorGrid({ onSwitched });
 
   const dialog = el("div", {
     class: "modal-card persona-modal",

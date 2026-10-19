@@ -10,7 +10,7 @@ import { TurnProgress } from "./progress.js";
 import { feedbackThumbs, dailyPromptAfterTurn } from "./feedback.js";
 import { track } from "./telemetry.js";
 import { openPhotoLightbox } from "./modal.js";
-import { getPersona, getPersonaId, onPersonaChange, personaSwitchPill, speakCoachText, unlockCoachAudio } from "./personas.js";
+import { coachAvatar, getPersona, getPersonaId, onPersonaChange, openPersonaSelectorModal, speakCoachText, stopCoachSpeech, unlockCoachAudio } from "./personas.js";
 
 const messagesEl = () => $("messages");
 let receivedCoachText = false;
@@ -18,6 +18,7 @@ let receivedCoachText = false;
 let turn = null;
 // event_id of the latest coach reply (for the daily feedback prompt).
 let lastCoachEventId = null;
+let activeMsgTtsBtn = null;
 // Rate limits (HTTP 429): epoch ms until which sending / photos are blocked.
 const limits = { send: 0, sendScope: null, photo: 0 };
 let limitTimer = null;
@@ -40,7 +41,7 @@ function coachRow(children, { avatar = true, indent = false } = {}) {
   const p = getPersona(getPersonaId(), getLang());
   return el("div", { class: `row from-coach${avatar ? "" : " no-avatar"}${indent ? " indent" : ""}` }, [
     avatar
-      ? el("span", { class: `bot-avatar ${p.accentClass}`, "aria-hidden": "true" }, [icon(p.icon || "smart-toy", { fill: true })])
+      ? coachAvatar(p.id)
       : el("span", { class: "bot-avatar spacer", "aria-hidden": "true" }),
     el("div", { class: "row-body" }, children),
   ]);
@@ -68,8 +69,16 @@ export function addUserMessage(text, imageUrl, hadImage) {
   return row;
 }
 
+function resetTtsBtn(btn) {
+  if (!btn) return;
+  const isZh = getLang() === "zh";
+  btn.classList.remove("is-loading", "is-playing");
+  btn.replaceChildren(icon("volume-up"), el("span", { text: isZh ? "朗读" : "Listen" }));
+}
+
 function addCoachMessage(text, author, eventId = null) {
   const body = [];
+  const isZh = getLang() === "zh";
   const p = getPersona(getPersonaId(), getLang());
   const personaLabel = p.copy.shortName;
   if (author && !["fitness_coach", "coach"].includes(author)) {
@@ -80,17 +89,54 @@ function addCoachMessage(text, author, eventId = null) {
     body.push(el("span", { class: "author", text: personaLabel }));
   }
   body.push(el("div", { class: "bubble bubble-coach md", html: renderMarkdown(text) }));
+
+  const ttsBtn = el("button", {
+    type: "button",
+    class: "msg-tts-btn",
+    title: isZh ? "语音播报此回复" : "Read aloud",
+    onclick: async () => {
+      const zhNow = getLang() === "zh";
+      if (activeMsgTtsBtn === ttsBtn) {
+        activeMsgTtsBtn = null;
+        stopCoachSpeech();
+        resetTtsBtn(ttsBtn);
+        return;
+      }
+      if (activeMsgTtsBtn) {
+        resetTtsBtn(activeMsgTtsBtn);
+      }
+      activeMsgTtsBtn = ttsBtn;
+      ttsBtn.classList.add("is-loading");
+      ttsBtn.replaceChildren(
+        el("span", { class: "pc-spinner", "aria-hidden": "true" }),
+        el("span", { text: zhNow ? "合成中…" : "Loading…" }),
+      );
+      unlockCoachAudio();
+      await speakCoachText(text, {
+        personaId: getPersonaId(),
+        lang: getLang(),
+        onStart: () => {
+          if (activeMsgTtsBtn !== ttsBtn) return;
+          ttsBtn.classList.remove("is-loading");
+          ttsBtn.classList.add("is-playing");
+          ttsBtn.replaceChildren(
+            icon("pause"),
+            el("span", { text: getLang() === "zh" ? "停止播报" : "Stop" }),
+          );
+        },
+        onEnd: () => {
+          if (activeMsgTtsBtn === ttsBtn) {
+            activeMsgTtsBtn = null;
+          }
+          resetTtsBtn(ttsBtn);
+        },
+      });
+    },
+  }, [icon("volume-up"), el("span", { text: isZh ? "朗读" : "Listen" })]);
+
   const footRow = el("div", { class: "coach-msg-foot" }, [
     feedbackThumbs({ eventId }),
-    el("button", {
-      type: "button",
-      class: "icon-btn msg-tts-btn",
-      title: getLang() === "zh" ? "语音播报此回复" : "Read aloud",
-      onclick: () => {
-        unlockCoachAudio();
-        speakCoachText(text, { personaId: getPersonaId(), lang: getLang() });
-      },
-    }, [icon("volume-up")]),
+    ttsBtn,
   ]);
   body.push(footRow);
   appendMessage(coachRow(body));
@@ -357,7 +403,7 @@ function sessionLoadingSkeleton() {
       el("span", { text: isZh ? "正在连接 AI 教练并同步近期对话…" : "Connecting to your AI coach…" }),
     ]),
     el("div", { class: "row from-coach", "aria-hidden": "true" }, [
-      el("span", { class: "bot-avatar" }, [icon("smart-toy", { fill: true })]),
+      coachAvatar(getPersonaId()),
       el("div", { class: "row-body" }, [
         el("div", { class: "bubble bubble-coach chat-sk-bubble" }, [
           el("div", { class: "sk dsk-line-lg" }),
@@ -489,41 +535,67 @@ export function syncCoachPersonaHeader() {
   if (!head) return;
   const isZh = getLang() === "zh";
   const p = getPersona(getPersonaId(), getLang());
-  const titleEl = $("coach-title");
-  if (titleEl) {
-    titleEl.removeAttribute("data-i18n");
-    titleEl.textContent = p.copy.shortName;
-  }
-  const subEl = head.querySelector(".coach-titles p");
-  if (subEl) {
-    subEl.removeAttribute("data-i18n");
-    subEl.textContent = p.copy.genderTag;
-  }
-  let slot = head.querySelector(".coach-persona-slot");
-  if (!slot) {
-    slot = el("span", { class: "coach-persona-slot" });
-    const newChatBtn = $("new-chat-btn");
-    if (newChatBtn) head.insertBefore(slot, newChatBtn);
-    else head.append(slot);
-  }
-  const privacyBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "coach-privacy-pill",
-      title: isZh
-        ? "PDPA 隐私保护：聊天内容仅你本人可见，点击管理数据共享权限"
-        : "PDPA Protected: Coach chat is strictly private. Click for privacy controls.",
-      onclick: () => {
-        if (actions.openPrivacy) actions.openPrivacy();
+
+  // Replace the header avatar with the illustrated SVG portrait
+  const oldAvatar = head.querySelector(".bot-avatar, .coach-svg-avatar");
+  const newAvatar = coachAvatar(p.id, { size: "lg", online: true });
+  if (oldAvatar) oldAvatar.replaceWith(newAvatar);
+  else head.prepend(newAvatar);
+
+  // Remove any legacy .coach-persona-slot that caused horizontal squeezing
+  const oldSlot = head.querySelector(".coach-persona-slot");
+  if (oldSlot) oldSlot.remove();
+
+  // Build a clean, non-wrapping title + compact pills row inside .coach-titles
+  const titlesWrap = head.querySelector(".coach-titles");
+  if (titlesWrap) {
+    const switchBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "coach-switch-chip",
+        title: isZh ? "切换 AI 教练人设或试听语音" : "Switch AI coach persona or preview voice",
+        onclick: () => openPersonaSelectorModal({ onSwitched: () => syncCoachPersonaHeader() }),
       },
-    },
-    [
-      icon("shield"),
-      el("span", { text: isZh ? "私密对话" : "Private" }),
-    ]
-  );
-  slot.replaceChildren(privacyBtn, personaSwitchPill({ compact: true }));
+      [
+        icon("swap-horiz"),
+        el("span", { text: isZh ? "切换" : "Switch" }),
+      ]
+    );
+    const privacyBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "coach-privacy-pill",
+        title: isZh
+          ? "PDPA 隐私保护：聊天内容仅你本人可见，点击管理数据共享权限"
+          : "PDPA Protected: Coach chat is strictly private. Click for privacy controls.",
+        onclick: () => {
+          if (actions.openPrivacy) actions.openPrivacy();
+        },
+      },
+      [
+        icon("shield"),
+        el("span", { text: isZh ? "私密" : "Private" }),
+      ]
+    );
+    titlesWrap.replaceChildren(
+      el("div", { class: "coach-title-row" }, [
+        el("h2", { id: "coach-title", text: p.copy.shortName }),
+        switchBtn,
+        privacyBtn,
+      ]),
+      el("p", { class: "coach-subtitle-line", text: p.copy.genderTag })
+    );
+  }
+
+  // Also keep existing coach message rows in sync when switching persona
+  for (const row of document.querySelectorAll("#messages .row.from-coach")) {
+    const av = row.querySelector(".coach-svg-avatar, .bot-avatar");
+    if (av) av.replaceWith(coachAvatar(p.id));
+    const author = row.querySelector(".author");
+    if (author) author.textContent = p.copy.shortName;
+  }
 }
 
 export function initChat() {

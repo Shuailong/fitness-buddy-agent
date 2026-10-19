@@ -12,7 +12,7 @@ import { track } from "./telemetry.js";
 import { openModal, openPhotoLightbox } from "./modal.js";
 import { dailyScienceCard } from "./tips.js";
 import { openExerciseDetailModal, openLiveFormCoachModal, getExerciseGuide } from "./exercises.js";
-import { personaSwitchPill } from "./personas.js";
+import { coachAvatar, getPersona, getPersonaId } from "./personas.js";
 
 const goalLabel = (g) => t(`goal.${g}`);
 const mealName = (type) => t(`meal.${type || "meal"}`);
@@ -169,10 +169,11 @@ function quickActions() {
 
 function tipCard(d) {
   const tip = coachTip(d, new Date(), getLang());
+  const p = getPersona(getPersonaId(), getLang());
   return card("tip", [
-    el("span", { class: "tip-icon", "aria-hidden": "true" }, [icon("smart-toy", { fill: true })]),
+    coachAvatar(p.id, { cls: "tip-coach-avatar" }),
     el("div", { class: "tip-body" }, [
-      el("p", { class: "eyebrow accent", text: t("today.tip") }),
+      el("p", { class: "eyebrow accent", text: `${p.copy.shortName} · ${t("today.tip")}` }),
       el("p", { class: "tip-text" }, richText(tip.parts)),
       el("button", { type: "button", class: "link-btn", onclick: () => actions.openCoach({ send: tip.question }) }, [t("today.askWhy"), icon("arrow-forward")]),
     ]),
@@ -588,17 +589,16 @@ export function renderToday(root, d) {
       el("div", { class: "chips" }, [
         el("span", { class: "chip" }, [icon("target", { cls: "accent", fill: true }), t("today.goalChip"), el("strong", { text: goalLabel(d.goal) })]),
         streak > 0 ? el("span", { class: "chip" }, [icon("local-fire-department", { cls: "streak", fill: true }), t("today.streak", { n: streak })]) : null,
-        personaSwitchPill({ onSwitched: () => renderToday(root, d) }),
       ]),
     ]),
     el("div", { class: "dash-grid today-grid" }, [
       el("div", { class: "area-tip" }, [tipCard(d)]),
       el("div", { class: "area-hero" }, [heroCard(d)]),
       el("div", { class: "area-quick" }, [quickActions()]),
-      el("div", { class: "area-science" }, [dailyScienceCard(d, actions)]),
       el("div", { class: "area-weight" }, [weightMiniCard(d)]),
       el("div", { class: "area-workout" }, [workoutCard(d)]),
       el("div", { class: "area-meals" }, [mealsCard(d)]),
+      el("div", { class: "area-science" }, [dailyScienceCard(d, actions)]),
     ]),
   );
 }

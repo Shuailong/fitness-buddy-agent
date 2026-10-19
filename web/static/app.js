@@ -8,14 +8,15 @@ import { renderToday, renderProgress, renderPlan, loadingView, errorView, setupP
 import { startOnboarding, rerenderOnboarding } from "./js/onboarding.js";
 import { buildOnboardingMessage, initials } from "./js/logic.js";
 import { t, getLang, setLang, detectLang, applyStatic } from "./js/i18n.js";
-import { settingsMenu, langSwitch, themeToggle, refreshThemeToggles } from "./js/settings.js";
+import { settingsMenu, renderSettingsView, langSwitch, themeToggle, refreshThemeToggles } from "./js/settings.js";
 import { THEME_EVENT } from "./js/theme.js";
 import { initLanding, localizeLandingImages } from "./js/landing.js";
 import { track, enableTelemetry } from "./js/telemetry.js";
 import { openFeedbackDialog } from "./js/feedback.js";
 import { exportData, openDeleteDialog, openPrivacySettingsModal } from "./js/account.js";
+import { onPersonaChange } from "./js/personas.js";
 
-const ROUTES = ["today", "coach", "progress", "plan", "admin"];
+const ROUTES = ["today", "coach", "progress", "plan", "settings", "admin"];
 const desktop = window.matchMedia("(min-width: 1024px)");
 const MENUS = [["avatar-btn", "user-menu"], ["rail-avatar-btn", "rail-menu"]];
 const BOOT_CACHE_KEY = "fb.boot_cache_v1";
@@ -139,6 +140,22 @@ function renderView(view) {
     import("./js/admin.js")
       .then(({ loadAndRenderAdmin }) => loadAndRenderAdmin(root, { showToast }))
       .catch((err) => root.replaceChildren(errorView(err.message, () => renderView("admin"))));
+    return;
+  }
+  if (view === "settings") {
+    renderSettingsView(root, {
+      onExport: runExport,
+      onDelete: () => openDeleteDialog({ onExport: runExport, onDeleted: afterAccountDeleted }),
+      onSignOut: signOut,
+      showSignOut: !(state.config && state.config.dev_auth_bypass),
+      onAdmin: () => navigate("admin"),
+      onFeedback: () => openFeedbackDialog({ page: "settings" }),
+      onPrivacyUpdated: () => {
+        writeBootCache();
+        renderMenus();
+      },
+      showToast,
+    });
     return;
   }
   const d = state.dashboard;
@@ -278,6 +295,7 @@ function renderMenus() {
     email: (state.me && state.me.email) || "",
     isAdmin,
     onAdmin: () => { closeMenus(); navigate("admin"); },
+    onSettings: () => { closeMenus(); navigate("settings"); },
     showSignOut: !(state.config && state.config.dev_auth_bypass),
     onSignOut: signOut,
     onFeedback: () => { closeMenus(); openFeedbackDialog({ page: currentPage() }); },
@@ -560,6 +578,12 @@ async function boot() {
   document.addEventListener(THEME_EVENT, () => {
     renderMenus();
     if (!$("landing-view").hidden) renderGisButton();
+  });
+  onPersonaChange(() => {
+    renderMenus();
+    if (!$("app-view").hidden && (currentView() === "today" || currentView() === "settings")) {
+      renderView(currentView());
+    }
   });
   desktop.addEventListener("change", applyRoute);
   $("feedback-fab").addEventListener("click", () => openFeedbackDialog({ page: currentPage() }));
