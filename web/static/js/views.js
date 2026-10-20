@@ -190,28 +190,37 @@ function workoutCard(d) {
   }
   const s = d.today_session;
   const sessions = sortedSessions(plan);
+  const adjustedNote = d.today_adjusted
+    ? el("p", { class: "adjusted-note" }, [
+        el("span", { class: "pill pill-adjusted" }, [icon("edit-square"), t("today.adjusted")]),
+        d.today_adjustment_reason ? el("span", { class: "muted small", text: d.today_adjustment_reason }) : null,
+      ])
+    : null;
   if (!s) {
     const todayIdx = weekdayIndex(d.weekday);
     const next = sessions.find((x) => weekdayIndex(x.day_of_week) > todayIdx) || sessions[0];
     return card("workout rest", [
       cardHeader("hotel", t("today.restTitle")),
-      el("p", { class: "muted", text: t("today.restText") }),
+      adjustedNote,
+      el("p", { class: "muted", text: d.today_adjusted ? t("today.adjustedRest") : t("today.restText") }),
       next ? el("p", { class: "next-up" }, [el("span", { class: "muted", text: t("today.nextSession") }), el("strong", { text: `${dayLong(next.day_of_week)} · ${next.focus}` })]) : null,
       secondaryBtn(t("today.viewPlan"), "event-note", () => actions.navigate("plan"), "btn-block"),
     ]);
   }
   const position = sessions.findIndex((x) => x.day_of_week === s.day_of_week) + 1;
+  const eyebrow = position ? t("today.sessionPos", { n: position, total: sessions.length }) : t("plan.status.today");
   const preview = s.exercises.slice(0, 4);
   const more = s.exercises.length - preview.length;
   const isZh = getLang() === "zh";
   return card("workout", [
     el("div", { class: "card-header" }, [
       el("div", {}, [
-        el("p", { class: "eyebrow accent", text: t("today.sessionPos", { n: position, total: sessions.length }) }),
+        el("p", { class: "eyebrow accent", text: eyebrow }),
         el("h2", { class: "workout-title", text: s.focus }),
       ]),
       d.today_session_done ? el("span", { class: "pill pill-primary" }, [icon("check"), t("today.done")]) : el("span", { class: "round-icon", "aria-hidden": "true" }, [icon("calendar-today")]),
     ]),
+    adjustedNote,
     el("div", { class: "meta-row" }, [
       el("span", {}, [icon("schedule", { cls: "accent" }), mins(s.estimated_minutes)]),
       el("span", { class: "sep", "aria-hidden": "true", text: "•" }),
@@ -754,7 +763,7 @@ export function renderProgress(root, d, onRange) {
 }
 
 // =================================================================== PLAN
-function weekStrip(d, sessionsByDay, onPick) {
+function weekStrip(d, sessionsByDay, onPick, adjustedDays = new Set()) {
   const today = parseDate(d.today);
   const monday = addDays(today, -((today.getDay() + 6) % 7));
   const done = new Set((d.week && d.week.workout_dates) || []);
@@ -764,7 +773,7 @@ function weekStrip(d, sessionsByDay, onPick) {
     const isToday = iso === d.today;
     const isDone = done.has(iso);
     const session = sessionsByDay.get(day);
-    const cls = ["day-pill", session ? "train" : "rest", isToday ? "today" : "", isDone ? "done" : ""].filter(Boolean).join(" ");
+    const cls = ["day-pill", session ? "train" : "rest", isToday ? "today" : "", isDone ? "done" : "", adjustedDays.has(day) ? "adjusted" : ""].filter(Boolean).join(" ");
     const label = t("plan.dayAria", {
       day: weekdayLong(i), date: dateShort(date), today: isToday ? t("plan.dayAriaToday") : "",
       what: session ? session.focus : t("plan.dayAriaRest"), done: isDone ? t("plan.dayAriaDone") : "",
@@ -782,10 +791,19 @@ function weekStrip(d, sessionsByDay, onPick) {
   }));
 }
 
+function adjustedLine(day, { reason, replaces }) {
+  return el("div", { class: "adjusted-note" }, [
+    el("span", { class: "pill pill-adjusted" }, [icon("edit-square"), t("plan.adjustedTag")]),
+    reason ? el("span", { class: "muted small", text: reason }) : null,
+    replaces ? el("span", { class: "muted small", text: t("plan.adjustedFrom", { focus: replaces }) }) : null,
+    el("button", { type: "button", class: "link-btn", onclick: () => actions.openCoach({ send: t("send.revertDay", { day: dayLong(day) }) }) }, [icon("undo"), t("plan.revert")]),
+  ]);
+}
+
 function sessionCard(s, { isToday, isDone, open }) {
   const status = t(isDone ? "plan.status.done" : isToday ? "plan.status.today" : "plan.status.scheduled");
   const isZh = getLang() === "zh";
-  return el("details", { class: `card session-card${isToday ? " is-today" : ""}`, open, id: `session-${s.day_of_week}` }, [
+  return el("details", { class: `card session-card${isToday ? " is-today" : ""}${s._adjusted ? " is-adjusted" : ""}`, open, id: `session-${s.day_of_week}` }, [
     el("summary", {}, [
       el("span", { class: `status-icon${isDone ? " done" : ""}`, "aria-hidden": "true" }, [icon(isDone ? "check-circle" : isToday ? "fitness-center" : "calendar-today")]),
       el("span", { class: "session-text" }, [
@@ -794,11 +812,12 @@ function sessionCard(s, { isToday, isDone, open }) {
           el("span", { class: "dot-sep", "aria-hidden": "true", text: "·" }),
           el("span", {}, [icon("schedule"), mins(s.estimated_minutes)]),
         ]),
-        el("span", { class: "session-title", text: s.focus }),
+        el("span", { class: "session-title" }, [s.focus, s._adjusted ? el("span", { class: "pill pill-adjusted sm", text: t("plan.adjustedTag") }) : null]),
         el("span", { class: "muted small", text: t("today.exercises", { n: s.exercises.length }) }),
       ]),
       icon("expand-more", { cls: "chev" }),
     ]),
+    s._adjusted ? adjustedLine(s.day_of_week, { reason: s._reason, replaces: s._replaces }) : null,
     el("ol", { class: "plan-exercises" }, s.exercises.map((ex, i) => {
       const guide = getExerciseGuide(ex, getLang());
       return el("li", {
@@ -857,16 +876,31 @@ export function renderPlan(root, d) {
     );
     return;
   }
-  const sessions = sortedSessions(plan);
+  // This week's real schedule: the weekly plan plus one-off day adjustments.
+  const week = Array.isArray(d.plan_week) ? d.plan_week : null;
+  const sessions = week
+    ? week.filter((x) => x.session).map((x) => ({ ...x.session, day_of_week: x.day_of_week, _adjusted: x.adjusted, _reason: x.reason, _replaces: x.replaces_focus }))
+    : sortedSessions(plan);
+  const restAdjusted = week ? week.filter((x) => !x.session && x.adjusted) : [];
+  const adjustedDays = new Set(week ? week.filter((x) => x.adjusted).map((x) => x.day_of_week) : []);
   const byDay = new Map(sessions.map((s) => [s.day_of_week, s]));
   const monday = addDays(parseDate(d.today), -((parseDate(d.today).getDay() + 6) % 7));
   const done = new Set((d.week && d.week.workout_dates) || []);
   const todayIdx = weekdayIndex(d.weekday);
-  const openDay = byDay.has(d.weekday) ? d.weekday : (sessions.find((s) => weekdayIndex(s.day_of_week) > todayIdx) || sessions[0]).day_of_week;
-  const cards = sessions.map((s) => {
-    const iso = isoDate(addDays(monday, weekdayIndex(s.day_of_week)));
-    return sessionCard(s, { isToday: s.day_of_week === d.weekday, isDone: done.has(iso), open: s.day_of_week === openDay });
-  });
+  const upcoming = sessions.find((s) => weekdayIndex(s.day_of_week) > todayIdx) || sessions[0];
+  const openDay = byDay.has(d.weekday) ? d.weekday : upcoming ? upcoming.day_of_week : null;
+  const restCard = (x) => card("session-card rest-adjusted", [
+    el("p", { class: "session-title", text: t("plan.restAdjusted", { day: dayLong(x.day_of_week) }) }),
+    adjustedLine(x.day_of_week, { reason: x.reason, replaces: x.replaces_focus }),
+  ], { id: `session-${x.day_of_week}` });
+  // Monday..Sunday: training days plus days turned into rest by an adjustment.
+  const cards = [...sessions, ...restAdjusted]
+    .sort((a, b) => weekdayIndex(a.day_of_week) - weekdayIndex(b.day_of_week))
+    .map((s) => {
+      if (!s.exercises) return restCard(s);
+      const iso = isoDate(addDays(monday, weekdayIndex(s.day_of_week)));
+      return sessionCard(s, { isToday: s.day_of_week === d.weekday, isDone: done.has(iso), open: s.day_of_week === openDay });
+    });
   const pick = (day) => {
     const target = document.getElementById(`session-${day}`);
     if (!target) return;
@@ -877,9 +911,9 @@ export function renderPlan(root, d) {
   root.replaceChildren(
     el("header", { class: "page-head" }, [
       el("h1", { text: t("plan.title") }),
-      el("p", { class: "muted" }, [plan.title, el("span", { class: "dot-sep", "aria-hidden": "true", text: " · " }), el("span", { class: "accent", text: t("plan.perWeek", { n: sessions.length }) })]),
+      el("p", { class: "muted" }, [plan.title, el("span", { class: "dot-sep", "aria-hidden": "true", text: " · " }), el("span", { class: "accent", text: t("plan.perWeek", { n: sortedSessions(plan).length }) })]),
     ]),
-    weekStrip(d, byDay, pick),
+    weekStrip(d, byDay, pick, adjustedDays),
     el("div", { class: "dash-grid plan-grid" }, [
       el("div", { class: "session-list" }, cards),
       el("div", { class: "plan-side" }, [

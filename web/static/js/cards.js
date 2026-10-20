@@ -254,7 +254,7 @@ function genericCard(card, onDecide) {
  * once the decision is accepted.
  */
 export function confirmationCard(card, onDecide) {
-  if (card.kind === "replace_training_plan") return planCard(card, onDecide);
+  if (card.kind === "replace_training_plan" || card.kind === "update_plan_day") return planCard(card, onDecide);
   if (card.kind === "update_calorie_target") return calorieCard(card, onDecide);
   if (/^delete_(meal|workout|measurement)$/.test(card.kind || "")) return deleteCard(card, onDecide);
   return genericCard(card, onDecide);

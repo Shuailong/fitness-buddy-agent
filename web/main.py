@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import json
 import logging
@@ -224,6 +225,32 @@ TELEMETRY_EVENTS = frozenset(
 )
 DASHBOARD_TIMEOUT_S = 15.0
 SESSION_TIMEOUT_S = 30.0
+# How long a new message waits for a reply still running in the background.
+INFLIGHT_WAIT_S = 180.0
+# A conversation paused on a Confirm / Reject card survives the daily rollover
+# only for this long; older cards are stale.
+PENDING_CONFIRMATION_KEEP_S = 6 * 3600
+
+_TURN_LABELS = {
+    "busy": {
+        "en": "Finishing your previous message first…",
+        "zh": "上一条消息还在处理中，马上就好…",  # noqa: RUF001
+    },
+    "declined": {
+        "en": "Cancelled an unanswered change request",
+        "zh": "已取消之前未确认的变更",
+    },
+    "no_reply": {
+        "en": "Your coach didn't reply this time. Please send it again.",
+        "zh": "教练这次没有回复，请再发一次。",  # noqa: RUF001
+    },
+}
+
+
+def _label(key: str, lang: str) -> str:
+    """Localized status text for the chat stream."""
+    labels = _TURN_LABELS[key]
+    return labels.get(lang, labels["en"])
 
 
 class FeedbackRequest(BaseModel):
@@ -663,7 +690,10 @@ def create_app(
         """
         if not session:
             return False
-        if has_pending_confirmation(session):
+        if (
+            has_pending_confirmation(session)
+            and time.time() - session_last_update(session) < PENDING_CONFIRMATION_KEEP_S
+        ):
             return True
         if settings.day_rollover_hour >= 0:
             hour = settings.day_rollover_hour
@@ -850,6 +880,70 @@ def create_app(
         return {"session_id": session_id, **build_history(events)}
 
     # ------------------------------------------------------------ streaming
+    # One agent run per conversation at a time. Runs are pumped by a background
+    # task, so they finish (and we know when) even if the browser disconnects;
+    # Cloud Run session affinity keeps a browser on the same instance.
+    _inflight: dict[str, asyncio.Task[None]] = {}
+
+    async def _run_events(
+        client: AgentClient, user_id: str, session_id: str, message: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+
+        async def pump() -> None:
+            try:
+                async for raw in client.stream_query(user_id, session_id, message):
+                    await queue.put(("event", raw))
+            except Exception as exc:  # re-raised in the consumer
+                await queue.put(("error", exc))
+            finally:
+                await queue.put(("end", None))
+
+        task = asyncio.create_task(pump())
+        _inflight[session_id] = task
+        task.add_done_callback(
+            lambda t: (
+                _inflight.pop(session_id, None)
+                if _inflight.get(session_id) is t
+                else None
+            )
+        )
+        while True:
+            kind, item = await queue.get()
+            if kind == "end":
+                return
+            if kind == "error":
+                raise item
+            yield item
+
+    async def _decline_stale_confirmations(
+        client: AgentClient, user_id: str, session_id: str
+    ) -> int:
+        """Answers every unanswered confirmation in the session with 'reject'."""
+        session = await client.get_session(user_id, session_id)
+        pending = (
+            build_history(session_events(session))["pending_confirmations"]
+            if session
+            else []
+        )
+        for card in pending:
+            decline = {
+                "role": "user",
+                "parts": [
+                    {
+                        "functionResponse": {
+                            "id": card["call_id"],
+                            "name": CONFIRMATION_CALL,
+                            "response": {"confirmed": False},
+                        }
+                    }
+                ],
+            }
+            with contextlib.suppress(Exception):
+                async for _ in _run_events(client, user_id, session_id, decline):
+                    pass
+        return len(pending)
+
     async def stream_turn(
         user: CurrentUser,
         session_id: str,
@@ -872,8 +966,11 @@ def create_app(
             intent=intent,
             session_id=session_id,
         )
-        try:
-            async for raw in client.stream_query(user.user_id, session_id, message):
+        replies = 0
+
+        async def frames(msg: dict[str, Any]) -> AsyncIterator[str]:
+            nonlocal last_activity, replies
+            async for raw in _run_events(client, user.user_id, session_id, msg):
                 for event in simplify_event(raw, lang):
                     if event["type"] == "activity":
                         if event["label"] == last_activity:
@@ -881,6 +978,7 @@ def create_app(
                         last_activity = event["label"]
                     else:
                         last_activity = None
+                        replies += 1
                     if (
                         event["type"] == "card"
                         and event.get("kind") == "meal_logged"
@@ -902,6 +1000,39 @@ def create_app(
                             event["photo_url"] = f"/api/meals/{entry_id}/photo"
                     counts[event["type"]] = counts.get(event["type"], 0) + 1
                     yield _sse(event)
+
+        try:
+            previous = _inflight.get(session_id)
+            if previous is not None and not previous.done():
+                # The browser lost the stream (phone locked, app switched) but
+                # the reply is still being produced: wait for it instead of
+                # interleaving a second run into the same conversation.
+                yield _sse({"type": "activity", "label": _label("busy", lang)})
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(asyncio.shield(previous), INFLIGHT_WAIT_S)
+            async for frame in frames(message):
+                yield frame
+            is_text_turn = not any("functionResponse" in p for p in message["parts"])
+            if replies == 0 and is_text_turn:
+                # A message sent while the run was paused on an unanswered
+                # Confirm / Reject card resumes that run and gets no reply.
+                # Decline the stale card(s), then deliver the message again.
+                cleared = await _decline_stale_confirmations(
+                    client, user.user_id, session_id
+                )
+                if cleared:
+                    log_event(
+                        "stale_confirmations_declined",
+                        user=_pseudonym(user.user_id),
+                        session_id=session_id,
+                        count=cleared,
+                    )
+                    yield _sse({"type": "activity", "label": _label("declined", lang)})
+                    async for frame in frames(message):
+                        yield frame
+            if replies == 0 and is_text_turn and intent != "greeting":
+                counts["error"] += 1
+                yield _sse({"type": "error", "message": _label("no_reply", lang)})
         except AgentError as exc:
             outcome = "agent_error"
             error_detail = str(exc)[:160]

@@ -361,13 +361,14 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
         have ``role`` ``user`` / ``coach`` / ``decision``.
     """
     answered = _answered_confirmations(events)
+    swallowed = _swallowed_user_events(events)
     cards: dict[str, dict[str, Any]] = {}
     messages: list[dict[str, Any]] = []
     pending: list[dict[str, Any]] = []
     last_user_image_url: str | None = None
     # The coach persona each reply was written as (from the user turn's directive).
     current_persona: str | None = None
-    for event in events:
+    for index, event in enumerate(events):
         if _is_hidden_event(event):
             continue
         parts = _parts(event)
@@ -398,6 +399,8 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
                     user_msg["voice"] = True
                 if image_url:
                     user_msg["image_url"] = image_url
+                if index in swallowed:
+                    user_msg["_swallowed"] = True
                 messages.append(user_msg)
             for p in parts:
                 resp = _function_response(p)
@@ -442,7 +445,45 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
                         **({"persona": current_persona} if current_persona else {}),
                     }
                 )
-    return {"messages": messages, "pending_confirmations": pending}
+    return {"messages": _drop_resent(messages), "pending_confirmations": pending}
+
+
+def _swallowed_user_events(events: list[dict[str, Any]]) -> set[int]:
+    """Indexes of user text messages that got no reply at all.
+
+    Happens when a message arrives while the run is paused on an unanswered
+    confirmation: ADK resumes the paused run, which ends without output. The
+    web backend then clears the stale confirmation and re-sends the message.
+    """
+    swallowed: set[int] = set()
+    for i, event in enumerate(events):
+        if event.get("author") != "user" or not any(
+            _visible_text(p) for p in _parts(event)
+        ):
+            continue
+        replied = False
+        for later in events[i + 1 :]:
+            if later.get("author") == "user":
+                break
+            if _parts(later):
+                replied = True
+                break
+        if not replied and i + 1 < len(events):
+            swallowed.add(i)
+    return swallowed
+
+
+def _drop_resent(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Hides an unanswered user message when the same text was sent again later."""
+    out: list[dict[str, Any]] = []
+    for i, msg in enumerate(messages):
+        if msg.pop("_swallowed", False) and any(
+            m.get("role") == "user" and m.get("text") == msg.get("text")
+            for m in messages[i + 1 :]
+        ):
+            continue
+        out.append(msg)
+    return out
 
 
 def session_events(session: dict[str, Any] | None) -> list[dict[str, Any]]:

@@ -20,14 +20,17 @@ import functools
 import json
 import math
 from collections.abc import Iterable
+from datetime import date, timedelta
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from fitness_core.models import (
+    WEEKDAYS,
     Equipment,
     FitnessProfile,
     InjuryArea,
+    PlanAdjustment,
     PlannedExercise,
     PlannedSession,
     TrainingPlan,
@@ -243,3 +246,66 @@ def validate_training_plan(
         violations=violations,
         estimated_minutes_by_day=minutes_by_day,
     )
+
+
+def week_dates(today: date) -> list[date]:
+    """Monday..Sunday of the week that contains ``today``."""
+    monday = today - timedelta(days=today.weekday())
+    return [monday + timedelta(days=i) for i in range(7)]
+
+
+def effective_session(
+    plan: TrainingPlan | None,
+    adjustments: Iterable[PlanAdjustment],
+    on: date,
+) -> tuple[PlannedSession | None, PlanAdjustment | None]:
+    """The session planned for a calendar date, after one-off adjustments.
+
+    Args:
+        plan: The weekly plan (the template), if any.
+        adjustments: One-off adjustments (any dates).
+        on: The calendar date.
+
+    Returns:
+        ``(session, adjustment)``: the session to do on that date (None = rest)
+        and the adjustment that changed it (None = weekly plan as-is).
+    """
+    iso = on.isoformat()
+    adjustment = next((a for a in adjustments if a.local_date == iso), None)
+    if adjustment is not None:
+        return adjustment.session, adjustment
+    weekday = WEEKDAYS[on.weekday()]
+    template = (
+        next((s for s in plan.sessions if s.day_of_week == weekday), None)
+        if plan
+        else None
+    )
+    return template, None
+
+
+def effective_week(
+    plan: TrainingPlan | None,
+    adjustments: Iterable[PlanAdjustment],
+    today: date,
+) -> list[dict]:
+    """This week's schedule (Monday..Sunday) with one-off adjustments applied.
+
+    Returns:
+        Seven JSON-ready dicts: ``date``, ``day_of_week``, ``session`` (or
+        None for rest), ``adjusted``, ``reason`` and ``replaces_focus``.
+    """
+    adjustments = list(adjustments)
+    days = []
+    for d in week_dates(today):
+        session, adjustment = effective_session(plan, adjustments, d)
+        days.append(
+            {
+                "date": d.isoformat(),
+                "day_of_week": WEEKDAYS[d.weekday()],
+                "session": session.model_dump(mode="json") if session else None,
+                "adjusted": adjustment is not None,
+                "reason": adjustment.reason if adjustment else "",
+                "replaces_focus": adjustment.replaces_focus if adjustment else None,
+            }
+        )
+    return days

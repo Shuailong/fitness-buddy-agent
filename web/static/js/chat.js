@@ -253,7 +253,7 @@ function addConfirmationCard(card) {
     }, { onRateLimited: () => { limited = true; unlock(); } });
     if (!confirmed && !limited) $("message-input").focus();
   });
-  addCard(node, card.kind === "replace_training_plan" ? [cardThumbs(card.event_id, "plan_card")] : []);
+  addCard(node, card.kind === "replace_training_plan" || card.kind === "update_plan_day" ? [cardThumbs(card.event_id, "plan_card")] : []);
   return node;
 }
 
@@ -349,6 +349,39 @@ function handleEvent(ev) {
   }
 }
 
+/**
+ * The stream broke (phone locked, app switched, flaky network) but the server
+ * keeps producing the reply. When the page is visible again, poll the history
+ * until the reply is there, then re-render the conversation.
+ */
+let recoverTimer = null;
+function recoverInterruptedTurn() {
+  let attempts = 0;
+  const poll = async () => {
+    recoverTimer = null;
+    if (state.streaming) return;
+    attempts += 1;
+    try {
+      const history = await getJson("/api/history");
+      const last = history.messages[history.messages.length - 1];
+      if ((last && last.role !== "user") || history.pending_confirmations.length || attempts >= 8) {
+        await openSession();
+        actions.refreshDashboard();
+        return;
+      }
+    } catch (_) { /* offline: try again */ }
+    recoverTimer = setTimeout(poll, 5000);
+  };
+  const start = () => {
+    document.removeEventListener("visibilitychange", onVisible);
+    clearTimeout(recoverTimer);
+    recoverTimer = setTimeout(poll, 2000);
+  };
+  const onVisible = () => { if (!document.hidden) start(); };
+  if (document.hidden) document.addEventListener("visibilitychange", onVisible);
+  else start();
+}
+
 async function streamRequest(path, options, { photo = false, onRateLimited = null } = {}) {
   setStreaming(true);
   receivedCoachText = false;
@@ -356,18 +389,24 @@ async function streamRequest(path, options, { photo = false, onRateLimited = nul
   startTurn({ photo });
   let failed = false;
   let limited = null;
+  let finished = false;
+  let interrupted = false;
   try {
     const res = await api(path, options);
     await readEventStream(res, (ev) => {
       if (ev.type === "error") failed = true;
+      if (ev.type === "done") finished = true;
       handleEvent(ev);
     });
+    if (!finished) throw new Error(t("error.interrupted"));
   } catch (err) {
     // 429s arrive before any SSE, so nothing was rendered for this turn yet.
     if (isRateLimited(err)) limited = err;
     else {
       failed = true;
-      addError(err.message || t("error.connection"));
+      // No HTTP status = the connection dropped mid-turn; the reply may still come.
+      interrupted = !err.status;
+      addError(interrupted ? t("error.interrupted") : err.message || t("error.connection"));
     }
   } finally {
     if (limited) discardTurn();
@@ -382,6 +421,7 @@ async function streamRequest(path, options, { photo = false, onRateLimited = nul
       if (prompt) { messagesEl().append(prompt); scrollToBottom(); }
     }
     actions.refreshDashboard();
+    if (interrupted) recoverInterruptedTurn();
   }
 }
 

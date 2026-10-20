@@ -241,6 +241,26 @@ class TrainingPlan(StrictModel):
     created_at: datetime | None = None
 
 
+class PlanAdjustment(StrictModel):
+    """A one-off change to the weekly plan on a single calendar date.
+
+    The weekly plan stays the template; an adjustment replaces the planned
+    session on one date only (e.g. "only 20 minutes at home today"), or turns
+    that date into a rest / recovery day when ``session`` is None.
+    """
+
+    local_date: str = Field(description="ISO date YYYY-MM-DD in the user's time zone.")
+    day_of_week: Weekday
+    session: PlannedSession | None = Field(
+        default=None, description="The session for that date; None = rest day."
+    )
+    reason: str = Field(default="", max_length=200)
+    replaces_focus: str | None = Field(
+        default=None, description="Focus of the weekly-plan session it replaces."
+    )
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class WeeklyReviewRecord(StrictModel):
     """A stored weekly review produced by the weekly reviewer."""
 

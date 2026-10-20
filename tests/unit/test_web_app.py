@@ -38,6 +38,7 @@ from fitness_core.models import (
     FitnessProfile,
     MealEntry,
     MealItem,
+    PlanAdjustment,
     PlannedExercise,
     PlannedSession,
     TrainingPlan,
@@ -1782,3 +1783,152 @@ def test_coach_personas_and_live_form_check() -> None:
     settings_js = client.get("/static/js/settings.js")
     assert settings_js.status_code == 200
     assert "export function renderSettingsView" in settings_js.text
+
+
+# ------------------------------------------------- stale confirmations / plan days
+class PausedOnCardAgent(FakeAgentClient):
+    """Mimics ADK resumability: while a Confirm / Reject card is unanswered, a
+    new text message resumes the paused run and produces no reply at all."""
+
+    async def stream_query(  # type: ignore[override]
+        self, user_id: str, session_id: str, message: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        session = self.sessions[user_id][session_id]
+        self.messages.append(message)
+        hist = build_history(session["events"])
+        session["events"].append({"author": "user", "content": message})
+        is_answer = any("functionResponse" in p for p in message["parts"])
+        if hist["pending_confirmations"] and not is_answer:
+            event = {"author": "workout_planner", "actions": {"endOfAgent": True}}
+        elif is_answer:
+            event = {
+                "author": "fitness_coach",
+                "content": {"role": "model", "parts": [{"text": "OK, nothing saved."}]},
+            }
+        else:
+            event = {
+                "author": "fitness_coach",
+                "content": {"role": "model", "parts": [{"text": "Logged your wings."}]},
+            }
+        await asyncio.sleep(0)
+        session["events"].append(event)
+        yield event
+        session["lastUpdateTime"] = time.time()
+
+
+def test_message_during_stale_confirmation_is_recovered() -> None:
+    agent = PausedOnCardAgent()
+    client, _ = _dev_client(agent)
+    sid = client.post("/api/session").json()["session_id"]
+    agent.sessions["dev-user"][sid]["events"] = [
+        {"author": "user", "content": {"role": "user", "parts": [{"text": "plan"}]}},
+        _confirmation_event(),
+    ]
+    events = _parse_sse(
+        client.post("/api/chat", data={"text": "Beer and chicken wings"}).text
+    )
+    types = [e["type"] for e in events]
+    assert "error" not in types
+    assert any(e["type"] == "text" and "wings" in e["text"] for e in events)
+    assert any(e["type"] == "activity" for e in events)  # "cancelled ..." notice
+    # text (swallowed) -> decline the stale card -> the text again
+    kinds = [
+        "answer" if any("functionResponse" in p for p in m["parts"]) else "text"
+        for m in agent.messages
+    ]
+    assert kinds == ["text", "answer", "text"]
+    decline = agent.messages[1]["parts"][0]["functionResponse"]
+    assert decline["id"] == CONFIRM_ID and decline["response"] == {"confirmed": False}
+    history = client.get("/api/history").json()
+    users = [m["text"] for m in history["messages"] if m["role"] == "user"]
+    assert users.count("Beer and chicken wings") == 1  # swallowed copy hidden
+    assert history["pending_confirmations"] == []
+
+
+def test_stale_confirmation_does_not_pin_the_session_forever() -> None:
+    agent = PausedOnCardAgent()
+    client, _ = _dev_client(agent)
+    sid = client.post("/api/session").json()["session_id"]
+    agent.sessions["dev-user"][sid]["events"] = [_confirmation_event()]
+    agent.sessions["dev-user"][sid]["lastUpdateTime"] = time.time() - 30 * 3600
+    again = client.post("/api/session").json()
+    assert again["is_new"] is True and again["session_id"] != sid
+
+
+def test_dashboard_shows_todays_adjustment(memory_repo) -> None:
+    uid = "dev-user"
+    today = user_local_date("UTC")
+    weekday = WEEKDAYS[today.weekday()]
+
+    async def seed() -> None:
+        await memory_repo.save_profile(
+            FitnessProfile(
+                user_id=uid,
+                goal="recomposition",
+                sex="male",
+                age=35,
+                height_cm=175,
+                starting_weight_kg=72,
+                training_days_per_week=7,
+                minutes_per_session=45,
+                equipment=["dumbbells"],
+                timezone="UTC",
+            )
+        )
+        await memory_repo.save_current_plan(
+            uid,
+            TrainingPlan(
+                title="Daily",
+                goal="recomposition",
+                sessions=[
+                    PlannedSession(
+                        day_of_week=d,
+                        focus="Strength",
+                        estimated_minutes=40,
+                        exercises=[
+                            PlannedExercise(
+                                exercise_id="goblet_squat",
+                                name="Goblet",
+                                sets=3,
+                                reps=10,
+                            )
+                        ],
+                    )
+                    for d in WEEKDAYS
+                ],
+            ),
+        )
+        await memory_repo.save_plan_adjustment(
+            uid,
+            PlanAdjustment(
+                local_date=today.isoformat(),
+                day_of_week=weekday,
+                session=PlannedSession(
+                    day_of_week=weekday,
+                    focus="Recovery mobility",
+                    estimated_minutes=15,
+                    exercises=[
+                        PlannedExercise(
+                            exercise_id="cat_cow", name="Cat-Cow", sets=2, reps=10
+                        )
+                    ],
+                ),
+                reason="Tired today",
+                replaces_focus="Strength",
+            ),
+        )
+
+    asyncio.run(seed())
+    client, _ = _dev_client()
+    data = client.get("/api/dashboard").json()
+    assert data["today_session"]["focus"] == "Recovery mobility"
+    assert data["today_adjusted"] is True
+    assert data["today_adjustment_reason"] == "Tired today"
+    week = {d["day_of_week"]: d for d in data["plan_week"]}
+    assert week[weekday]["adjusted"] and week[weekday]["replaces_focus"] == "Strength"
+    others = [d for d in data["plan_week"] if d["day_of_week"] != weekday]
+    assert all(
+        d["session"]["focus"] == "Strength" and not d["adjusted"] for d in others
+    )
+    # The weekly template itself is unchanged.
+    assert {s["focus"] for s in data["plan"]["sessions"]} == {"Strength"}

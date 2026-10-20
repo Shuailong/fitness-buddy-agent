@@ -31,13 +31,13 @@ from app.tools._common import (
     validation_error,
 )
 from fitness_core.models import (
-    WEEKDAYS,
     BodyMeasurement,
     PerceivedEffort,
     WorkoutSession,
     WorkoutSet,
     utc_now,
 )
+from fitness_core.plans import effective_session
 from fitness_core.repository import EntryKind, new_entry_id
 from fitness_core.trends import weight_trend
 from fitness_core.units import LengthUnit, WeightUnit, to_centimeters, to_kilograms
@@ -132,12 +132,12 @@ async def log_workout_session(
         await repo.add_entry(storage_user_id(tool_context), "workout", session)
 
     plan = await repo.get_current_plan(storage_user_id(tool_context))
-    weekday = WEEKDAYS[date.fromisoformat(day).weekday()]
-    planned = (
-        next((s for s in plan.sessions if s.day_of_week == weekday), None)
-        if plan
-        else None
+    # One-off adjustments (e.g. "only 20 minutes at home today") win over the
+    # weekly plan for that date.
+    adjustments = await repo.list_plan_adjustments(
+        storage_user_id(tool_context), start=day, end=day
     )
+    planned, _ = effective_session(plan, adjustments, date.fromisoformat(day))
     return {
         "status": "logged",
         "entry_id": session.entry_id,

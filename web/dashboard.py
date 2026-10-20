@@ -30,6 +30,7 @@ from typing import Any
 
 from fitness_core.models import WEEKDAYS, utc_now
 from fitness_core.nutrition import daily_nutrition_summary
+from fitness_core.plans import effective_session, effective_week, week_dates
 from fitness_core.progress import user_local_date, weekly_progress_snapshot
 from fitness_core.repository import FitnessRepository
 from fitness_core.trends import weight_trend
@@ -189,8 +190,12 @@ async def build_dashboard(
     range_start = today - timedelta(days=range_days - 1)
     history_start = today - timedelta(days=7 * WORKOUT_HISTORY_WEEKS - 1)
 
-    plan, measurements, meals, workouts, review = await asyncio.gather(
+    this_week = week_dates(today)
+    plan, adjustments, measurements, meals, workouts, review = await asyncio.gather(
         repo.get_current_plan(user_id),
+        repo.list_plan_adjustments(
+            user_id, start=this_week[0].isoformat(), end=this_week[-1].isoformat()
+        ),
         repo.list_measurements(user_id),
         repo.list_meals(
             user_id,
@@ -220,13 +225,11 @@ async def build_dashboard(
         measurements=measurements,
         week_end=today,
     )
-    week_dates = {w.local_date for w in week_workouts}
+    workout_dates = {w.local_date for w in week_workouts}
     weekday = WEEKDAYS[today.weekday()]
-    today_session = (
-        next((s for s in plan.sessions if s.day_of_week == weekday), None)
-        if plan
-        else None
-    )
+    # One-off adjustments (e.g. "only 20 minutes at home today") win over the
+    # weekly plan for their date.
+    today_session, today_adjustment = effective_session(plan, adjustments, today)
     meals_today = sorted(
         (m for m in meals if m.local_date == today.isoformat()),
         key=lambda m: m.logged_at,
@@ -306,13 +309,16 @@ async def build_dashboard(
         },
         "week": {
             **snapshot.model_dump(mode="json"),
-            "workout_dates": sorted(week_dates),
+            "workout_dates": sorted(workout_dates),
             "history": workout_history,
         },
         "plan": plan.model_dump(mode="json") if plan else None,
+        "plan_week": effective_week(plan, adjustments, today) if plan else None,
         "today_session": today_session.model_dump(mode="json")
         if today_session
         else None,
-        "today_session_done": today.isoformat() in week_dates,
+        "today_adjusted": today_adjustment is not None,
+        "today_adjustment_reason": today_adjustment.reason if today_adjustment else "",
+        "today_session_done": today.isoformat() in workout_dates,
         "latest_review": review.model_dump(mode="json") if review else None,
     }

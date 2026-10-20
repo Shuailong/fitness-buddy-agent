@@ -20,6 +20,7 @@ the Google account ``sub`` from web sign-in and the ADK ``user_id``)::
     users/{user_id}                          FitnessProfile
     users/{user_id}/training_plans/current   active TrainingPlan
     users/{user_id}/training_plans/{id}      archived TrainingPlans
+    users/{user_id}/plan_adjustments/{date}  PlanAdjustment (one-off day changes)
     users/{user_id}/workout_logs/{id}        WorkoutSession
     users/{user_id}/meal_logs/{id}           MealEntry
     users/{user_id}/body_measurements/{id}   BodyMeasurement
@@ -44,6 +45,7 @@ from fitness_core.models import (
     CheckInState,
     FitnessProfile,
     MealEntry,
+    PlanAdjustment,
     TrainingPlan,
     UserMemory,
     WeeklyReviewRecord,
@@ -62,6 +64,7 @@ _MODEL_BY_COLLECTION: dict[str, type[BaseModel]] = {
     "meal_logs": MealEntry,
     "body_measurements": BodyMeasurement,
     "weekly_reviews": WeeklyReviewRecord,
+    "plan_adjustments": PlanAdjustment,
 }
 M = TypeVar("M", bound=BaseModel)
 
@@ -80,6 +83,13 @@ class FitnessRepository(Protocol):
     async def save_current_plan(
         self, user_id: str, plan: TrainingPlan
     ) -> TrainingPlan: ...
+    async def list_plan_adjustments(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[PlanAdjustment]: ...
+    async def save_plan_adjustment(
+        self, user_id: str, adjustment: PlanAdjustment
+    ) -> None: ...
+    async def delete_plan_adjustment(self, user_id: str, local_date: str) -> bool: ...
     async def add_entry(
         self, user_id: str, kind: EntryKind, entry: BaseModel
     ) -> None: ...
@@ -152,6 +162,21 @@ class InMemoryFitnessRepository:
 
     def _bucket(self, user_id: str, collection: str) -> dict[str, BaseModel]:
         return self._entries.setdefault((user_id, collection), {})
+
+    async def list_plan_adjustments(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[PlanAdjustment]:
+        return self._list(user_id, "plan_adjustments", start, end)
+
+    async def save_plan_adjustment(
+        self, user_id: str, adjustment: PlanAdjustment
+    ) -> None:
+        self._bucket(user_id, "plan_adjustments")[adjustment.local_date] = adjustment
+
+    async def delete_plan_adjustment(self, user_id: str, local_date: str) -> bool:
+        return (
+            self._bucket(user_id, "plan_adjustments").pop(local_date, None) is not None
+        )
 
     async def add_entry(self, user_id: str, kind: EntryKind, entry: BaseModel) -> None:
         self._bucket(user_id, _COLLECTION_BY_KIND[kind])[entry.entry_id] = entry  # type: ignore[attr-defined]
@@ -287,6 +312,28 @@ class FirestoreFitnessRepository:
         )
         await plans.document("current").set(stored.model_dump(mode="json"))
         return stored
+
+    async def list_plan_adjustments(
+        self, user_id: str, start: str | None = None, end: str | None = None
+    ) -> list[PlanAdjustment]:
+        return await self._list(user_id, "plan_adjustments", start, end)
+
+    async def save_plan_adjustment(
+        self, user_id: str, adjustment: PlanAdjustment
+    ) -> None:
+        await (
+            self._user(user_id)
+            .collection("plan_adjustments")
+            .document(adjustment.local_date)
+            .set(adjustment.model_dump(mode="json"))
+        )
+
+    async def delete_plan_adjustment(self, user_id: str, local_date: str) -> bool:
+        ref = self._user(user_id).collection("plan_adjustments").document(local_date)
+        if not (await ref.get()).exists:
+            return False
+        await ref.delete()
+        return True
 
     async def add_entry(self, user_id: str, kind: EntryKind, entry: BaseModel) -> None:
         collection = _COLLECTION_BY_KIND[kind]

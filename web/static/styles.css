@@ -3972,3 +3972,13 @@ body, button, a, label, .hold-to-talk, .composer, .tabbar { touch-action: manipu
 .voice-overlay[data-zone="cancel"] .vo-arc, .voice-overlay[data-zone="text"] .vo-arc { background: rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.7); }
 .voice-overlay[data-zone="working"] .vo-arc { opacity: 0.7; }
 .mic-tip .msg-error, .row.mic-tip .msg-error { background: var(--inset); color: var(--text); }
+
+/* One-off plan adjustments (a single date changed; the weekly plan is unchanged). */
+.pill-adjusted { background: var(--warn-soft); color: var(--warn-text); border: 1px solid transparent; }
+.pill-adjusted.sm { font-size: 0.6875rem; padding: 2px 8px; margin-left: 8px; vertical-align: middle; }
+.adjusted-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 6px 0 2px; }
+.session-card .adjusted-note { padding: 0 16px 8px; }
+.session-card.rest-adjusted { padding: 14px 16px; }
+.session-card.rest-adjusted .adjusted-note { padding: 0; }
+.week-strip .day-pill.adjusted { position: relative; }
+.week-strip .day-pill.adjusted::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }

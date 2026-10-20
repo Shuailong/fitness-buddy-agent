@@ -45,6 +45,7 @@ steps:
           --image="$${IMAGE}" \
           --region="${_REGION}" \
           --update-env-vars="GEMINI_PROJECT=adk-demo-2-l300,GEMINI_LOCATION=global,FORM_COACH_SERVICE_URL=$${VISION_URL}" \
+          --session-affinity \
           --quiet
 
 substitutions:

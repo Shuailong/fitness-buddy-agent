@@ -39,6 +39,7 @@ from app.plugins.health_policy_judge import HealthPolicyJudgePlugin
 from app.plugins.intent_outcome_audit import IntentOutcomeAuditPlugin
 from app.prompts import COACH_INSTRUCTION
 from app.sub_agents import nutrition_coach, weekly_reviewer, workout_planner
+from app.tools.context_tools import inject_local_date
 from app.tools.logging_tools import (
     delete_logged_entry,
     get_body_measurement_trend,
@@ -52,7 +53,13 @@ from app.tools.memory_tools import (
     remember_user_fact,
 )
 from app.tools.nutrition_tools import get_daily_nutrition_summary
-from app.tools.planning_tools import get_current_training_plan
+from app.tools.planning_tools import (
+    adjust_planned_day,
+    clear_planned_day_adjustment,
+    get_current_training_plan,
+    search_exercise_library,
+    update_weekly_plan_day,
+)
 from app.tools.profile_tools import (
     calculate_daily_energy_targets,
     get_fitness_profile,
@@ -82,6 +89,10 @@ root_agent = Agent(
         get_body_measurement_trend,
         get_daily_nutrition_summary,
         get_current_training_plan,
+        search_exercise_library,
+        adjust_planned_day,
+        clear_planned_day_adjustment,
+        update_weekly_plan_day,
         list_recent_log_entries,
         delete_logged_entry,
         remember_user_fact,
@@ -91,7 +102,7 @@ root_agent = Agent(
     generate_content_config=types.GenerateContentConfig(
         temperature=0.4, thinking_config=thinking_config(THINKING.coach)
     ),
-    before_model_callback=inject_coach_memory,
+    before_model_callback=[inject_coach_memory, inject_local_date],
     after_agent_callback=schedule_redacted_memory_ingest,
 )
 
