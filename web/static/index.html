@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0F1215">
   <meta name="color-scheme" content="dark light">
   <meta name="description" content="Fitness Buddy: your AI fitness coach that remembers you.">
@@ -356,17 +356,24 @@
         </div>
         <div class="composer-row">
           <button type="button" class="icon-btn voice-toggle" id="voice-toggle" data-i18n-attr="title:coach.voiceMode;aria-label:coach.voiceMode" title="Voice message" aria-label="Voice message" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-mic"/></svg></button>
-          <label class="icon-btn" data-i18n-attr="title:coach.camera" title="Take a photo">
-            <input type="file" id="camera-input" accept="image/*" capture="environment" class="sr-only" tabindex="-1">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-photo-camera"/></svg><span class="sr-only" data-i18n="coach.camera">Take a photo</span>
+          <div class="composer-field">
+            <textarea id="message-input" rows="1" maxlength="4000" data-i18n-attr="placeholder:coach.placeholder;aria-label:coach.message" placeholder="Message your coach" aria-label="Message"></textarea>
+            <button type="button" id="hold-to-talk" class="hold-to-talk" hidden data-i18n="coach.holdToTalk">Hold to talk</button>
+          </div>
+          <button type="button" class="icon-btn attach-toggle" id="attach-toggle" aria-expanded="false" aria-controls="attach-tray" data-i18n-attr="title:coach.attach;aria-label:coach.attach" title="Add a photo" aria-label="Add a photo"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-add-circle"/></svg></button>
+          <button type="submit" id="send-btn" class="send-btn" hidden data-i18n-attr="aria-label:coach.send" aria-label="Send"><span data-i18n="coach.sendShort">Send</span></button>
+        </div>
+        <input type="file" id="camera-input" accept="image/*" capture="environment" class="sr-only" tabindex="-1">
+        <input type="file" id="gallery-input" accept="image/jpeg,image/png,image/webp,image/*" class="sr-only" tabindex="-1">
+        <div id="attach-tray" class="attach-tray" hidden>
+          <label class="attach-tile" for="camera-input" data-i18n-attr="title:coach.camera" title="Take a photo">
+            <span class="attach-ic" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-photo-camera"/></svg></span>
+            <span data-i18n="coach.cameraShort">Camera</span>
           </label>
-          <label class="icon-btn" data-i18n-attr="title:coach.gallery" title="Choose a photo">
-            <input type="file" id="gallery-input" accept="image/jpeg,image/png,image/webp,image/*" class="sr-only" tabindex="-1">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-image"/></svg><span class="sr-only" data-i18n="coach.gallery">Choose a photo</span>
+          <label class="attach-tile" for="gallery-input" data-i18n-attr="title:coach.gallery" title="Choose a photo">
+            <span class="attach-ic" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-image"/></svg></span>
+            <span data-i18n="coach.galleryShort">Photos</span>
           </label>
-          <textarea id="message-input" rows="1" maxlength="4000" data-i18n-attr="placeholder:coach.placeholder;aria-label:coach.message" placeholder="Message your coach" aria-label="Message"></textarea>
-          <button type="button" id="hold-to-talk" class="hold-to-talk" hidden data-i18n="coach.holdToTalk">Hold to talk</button>
-          <button type="submit" id="send-btn" class="send-btn" data-i18n-attr="aria-label:coach.send" aria-label="Send"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-arrow-upward"/></svg></button>
         </div>
       </form>
     </aside>

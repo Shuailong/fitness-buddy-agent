@@ -18,10 +18,31 @@ export function voiceSupported() {
   return Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && (window.AudioContext || window.webkitAudioContext));
 }
 
+let releaseTimer = null;
+const IDLE_RELEASE_MS = 5 * 60 * 1000;
+
 /** Releases the microphone (the OS mic indicator turns off). */
 export function releaseMicrophone() {
+  clearTimeout(releaseTimer);
   if (sharedStream) for (const t of sharedStream.getTracks()) t.stop();
   sharedStream = null;
+}
+
+/**
+ * Opens the microphone ahead of time (on the voice-mode tap) and keeps it for
+ * a few idle minutes: browsers - iOS especially - otherwise ask for permission
+ * again each time a stopped stream is reopened.
+ */
+export async function warmMicrophone() {
+  await getStream();
+  try { localStorage.setItem("fb.mic_granted", "1"); } catch { /* ignore */ }
+  scheduleMicRelease();
+}
+
+/** Restarts the idle timer that releases the microphone. */
+export function scheduleMicRelease() {
+  clearTimeout(releaseTimer);
+  releaseTimer = setTimeout(releaseMicrophone, IDLE_RELEASE_MS);
 }
 
 function downsample(buffer, fromRate) {

@@ -3908,3 +3908,67 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
 .voice-partial-text { color: var(--text-strong); text-align: right; }
 .voice-partial-actions { display: inline-flex; gap: 8px; }
 .voice-partial-actions .btn-sm { min-height: 34px; padding: 0 14px; }
+
+/* ============================================================================
+   20. WeChat-style composer, attachment tray, recording overlay v2, no zoom
+   ============================================================================ */
+/* Mobile: no accidental page zoom (double-tap, input focus) */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body, button, a, label, .hold-to-talk, .composer, .tabbar { touch-action: manipulation; }
+@media (pointer: coarse) {
+  input, textarea, select, .text-input, #message-input { font-size: 16px !important; }
+}
+
+.composer-row { align-items: center; gap: 6px; padding: 6px 6px 6px 4px; border-radius: 26px; }
+.composer-row .icon-btn { width: 40px; height: 40px; color: var(--text); }
+.composer-row .icon-btn .icon { width: 28px; height: 28px; }
+.composer-field { flex: 1; min-width: 0; display: flex; }
+.composer-field #message-input { width: 100%; min-height: 40px; padding: 9px 12px; border-radius: 18px; background: var(--inset); border: 1px solid var(--line-soft); }
+.composer-field .hold-to-talk { width: 100%; min-height: 40px; border-radius: 18px; }
+.attach-toggle .icon { transition: transform 0.18s ease; }
+.attach-toggle.is-open .icon { transform: rotate(45deg); }
+.send-btn { width: auto; height: 36px; padding: 0 16px; border-radius: 10px; font-weight: 700; font-size: 0.95rem; }
+.send-btn .icon { display: none; }
+.attach-tray { display: flex; gap: 22px; padding: 16px 18px 6px; animation: trayIn 0.16s ease; }
+@keyframes trayIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.attach-tile { display: grid; justify-items: center; gap: 8px; color: var(--muted); font-size: 0.78rem; cursor: pointer; }
+.attach-ic { width: 60px; height: 60px; border-radius: 16px; display: grid; place-items: center; background: var(--card); border: 1px solid var(--line); color: var(--text); }
+.attach-ic .icon { width: 28px; height: 28px; }
+.attach-tile.is-disabled { opacity: 0.45; cursor: not-allowed; }
+.attach-tile:active .attach-ic { background: var(--elevated); }
+
+/* Recording overlay v2: WeChat layout - bubble in the middle, cancel / to-text
+   targets above a large bottom arc that says "Release to send". */
+.voice-overlay {
+  display: block; padding: 0; background: rgba(8, 10, 12, 0.78);
+}
+.vo-center { position: absolute; left: 0; right: 0; top: 38%; transform: translateY(-50%); display: grid; justify-items: center; gap: 10px; }
+.vo-bubble {
+  position: relative; display: flex; align-items: center; justify-content: center; min-width: 180px; height: 92px; padding: 0 26px;
+  border-radius: 18px; background: #95EC69; color: #1B3A0A; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4); transition: background-color 0.15s ease, min-width 0.15s ease;
+}
+.vo-bubble::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 18px; height: 18px; background: inherit; transform: translateX(-50%) rotate(45deg); border-radius: 3px; }
+.vo-bars { height: 40px; gap: 3px; }
+.vo-bars i { width: 3px; height: 40px; }
+.vo-time { color: #E8EAED; font-size: 0.85rem; font-weight: 600; min-height: 1.2em; margin-top: 8px; }
+.vo-zones { position: absolute; left: 0; right: 0; bottom: calc(205px + env(safe-area-inset-bottom)); display: flex; justify-content: space-between; padding: 0 12%; }
+.vo-zone { display: grid; justify-items: center; gap: 10px; }
+.vo-zone-label { font-size: 0.8rem; color: #fff; opacity: 0; transition: opacity 0.12s ease; }
+.vo-zone-ic { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.16); color: #E8EAED; font-size: 1.5rem; font-weight: 700; transition: transform 0.15s ease, background-color 0.15s ease, color 0.15s ease; }
+.vo-zone-ic .icon { width: 30px; height: 30px; }
+.vo-arc {
+  position: absolute; left: 50%; bottom: 0; width: 150vw; max-width: 900px; height: calc(170px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0; background: linear-gradient(180deg, #F1F3F4, #DADCE0); color: #3C4043;
+  display: grid; justify-items: center; align-content: start; gap: 6px; padding-top: 34px; transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+.vo-arc-ic .icon { width: 26px; height: 26px; }
+.vo-arc-label { font-size: 0.95rem; font-weight: 600; }
+.voice-overlay[data-zone="cancel"] .vo-bubble { background: #FA5151; color: #fff; min-width: 120px; }
+.voice-overlay[data-zone="cancel"] .vo-cancel .vo-zone-ic { background: #fff; color: #FA5151; transform: scale(1.22); }
+.voice-overlay[data-zone="cancel"] .vo-cancel .vo-zone-label { opacity: 1; }
+.voice-overlay[data-zone="text"] .vo-bubble { background: #fff; color: #1A73E8; min-width: 260px; }
+.voice-overlay[data-zone="text"] .vo-text .vo-zone-ic { background: #fff; color: #1A73E8; transform: scale(1.22); }
+.voice-overlay[data-zone="text"] .vo-text .vo-zone-label { opacity: 1; }
+.voice-overlay[data-zone="cancel"] .vo-arc, .voice-overlay[data-zone="text"] .vo-arc { background: rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.7); }
+.voice-overlay[data-zone="working"] .vo-arc { opacity: 0.7; }
+.mic-tip .msg-error, .row.mic-tip .msg-error { background: var(--inset); color: var(--text); }

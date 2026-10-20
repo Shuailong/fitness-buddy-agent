@@ -10,7 +10,7 @@ import { TurnProgress } from "./progress.js";
 import { feedbackThumbs, dailyPromptAfterTurn } from "./feedback.js";
 import { track } from "./telemetry.js";
 import { openPhotoLightbox } from "./modal.js";
-import { startRecording, voiceSupported, releaseMicrophone } from "./voice.js";
+import { startRecording, voiceSupported, releaseMicrophone, warmMicrophone, scheduleMicRelease } from "./voice.js";
 import { coachAvatar, getPersona, getPersonaId, onPersonaChange, openPersonaSelectorModal, speakCoachText, stopCoachSpeech, unlockCoachAudio } from "./personas.js";
 
 // While older history is rendered off-screen, message builders write here.
@@ -299,9 +299,10 @@ function applyLimits() {
     btn.removeAttribute("aria-disabled");
     btn.removeAttribute("title");
   }
-  for (const label of document.querySelectorAll(".composer-row label.icon-btn")) {
+  for (const label of document.querySelectorAll(".attach-tile")) {
     const key = (label.dataset.i18nAttr || "").split(":")[1];
-    label.querySelector("input").disabled = photoLeft > 0;
+    const fileInput = $(label.getAttribute("for"));
+    if (fileInput) fileInput.disabled = photoLeft > 0;
     label.classList.toggle("is-disabled", photoLeft > 0);
     if (photoLeft > 0) label.title = t("rate.photoWait", { time: duration(photoLeft) });
     else if (key) label.title = t(key);
@@ -321,11 +322,12 @@ function startLimit(err) {
 /** Puts a rate-limited message back into the composer so nothing is lost. */
 function restoreComposer(text, photoBlob) {
   const input = $("message-input");
-  if (text && !input.value.trim()) { input.value = text; autosize(input); }
+  if (text && !input.value.trim()) { input.value = text; autosize(input); updateComposerActions(); }
   if (photoBlob && !state.photo) {
     state.photo = { blob: photoBlob, url: URL.createObjectURL(photoBlob) };
     $("photo-preview-img").src = state.photo.url;
     $("photo-preview").hidden = false;
+    updateComposerActions();
   }
 }
 
@@ -569,6 +571,8 @@ export function prefillComposer(text) {
   const input = $("message-input");
   input.value = text;
   autosize(input);
+  if (!$("hold-to-talk").hidden) setVoiceMode(false);
+  updateComposerActions();
   input.focus();
   input.setSelectionRange(text.length, text.length);
 }
@@ -630,6 +634,7 @@ async function onPhotoSelected(event) {
     state.photo = { blob, url: URL.createObjectURL(blob) };
     $("photo-preview-img").src = state.photo.url;
     $("photo-preview").hidden = false;
+    updateComposerActions();
     $("message-input").focus();
   } catch (err) {
     addError(err.message);
@@ -640,6 +645,7 @@ function clearPhoto() {
   if (state.photo) URL.revokeObjectURL(state.photo.url);
   state.photo = null;
   $("photo-preview").hidden = true;
+  updateComposerActions();
   $("photo-preview-img").removeAttribute("src");
 }
 
@@ -839,6 +845,7 @@ async function sendVoiceMessage(blob, duration) {
         const input = $("message-input");
         input.value = finalText;
         autosize(input);
+        updateComposerActions();
         input.focus();
       },
     });
@@ -849,58 +856,109 @@ async function sendVoiceMessage(blob, duration) {
   await sendChat(text, null, { voiceRow: vm.row });
 }
 
+/**
+ * iPhone (Safari and home-screen apps) asks for the microphone again on every
+ * launch unless the site is set to "Allow". Explain that once, if we see the
+ * permission back at "prompt" after it was granted before.
+ */
+async function maybeShowMicTip() {
+  try {
+    if (localStorage.getItem("fb.mic_granted") !== "1" || localStorage.getItem("fb.mic_tip_shown") === "1") return;
+    if (!navigator.permissions || !navigator.permissions.query) return;
+    const st = await navigator.permissions.query({ name: "microphone" });
+    if (st.state !== "prompt") return;
+    localStorage.setItem("fb.mic_tip_shown", "1");
+    const isZh = getLang() === "zh";
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+    const tip = ios
+      ? (isZh ? "不想每次都授权麦克风？在 iPhone「设置 › App › Safari › 麦克风」中选择「允许」即可。" : "Tired of the microphone prompt? On iPhone open Settings › Apps › Safari › Microphone and choose Allow.")
+      : (isZh ? "不想每次都授权麦克风？点击地址栏左侧的站点设置，把麦克风设为「允许」。" : "Tired of the microphone prompt? Open site settings next to the address bar and set Microphone to Allow.");
+    addError(tip, { cls: "mic-tip" });
+  } catch (_) { /* Permissions API unsupported */ }
+}
+
+/** WeChat-style trailing button: "Send" when there is something to send, otherwise "+". */
+export function updateComposerActions() {
+  const input = $("message-input");
+  const voiceOn = !$("hold-to-talk").hidden;
+  const hasContent = Boolean(input.value.trim()) || Boolean(state.photo);
+  $("send-btn").hidden = voiceOn || !hasContent;
+  $("attach-toggle").hidden = !$("send-btn").hidden;
+}
+
+function setAttachTray(open) {
+  const tray = $("attach-tray");
+  tray.hidden = !open;
+  $("attach-toggle").setAttribute("aria-expanded", String(open));
+  $("attach-toggle").classList.toggle("is-open", open);
+  if (open) scrollToBottom();
+}
+
 function setVoiceMode(on) {
   const input = $("message-input");
   const hold = $("hold-to-talk");
   const toggle = $("voice-toggle");
   hold.hidden = !on;
   input.hidden = on;
-  $("send-btn").hidden = on;
+  setAttachTray(false);
+  updateComposerActions();
   toggle.setAttribute("aria-pressed", String(on));
   toggle.replaceChildren(icon(on ? "keyboard" : "mic"));
   const isZh = getLang() === "zh";
   toggle.title = on ? (isZh ? "切换到键盘" : "Switch to keyboard") : (isZh ? "语音消息" : "Voice message");
   toggle.setAttribute("aria-label", toggle.title);
   try { localStorage.setItem(VOICE_MODE_KEY, on ? "1" : "0"); } catch (_) { /* ignore */ }
-  if (!on) { input.focus(); releaseMicrophone(); }
+  if (on) {
+    // Ask for the microphone now (on this tap), not in the middle of a hold.
+    maybeShowMicTip();
+    warmMicrophone().catch(() => {});
+  } else {
+    input.focus();
+  }
 }
 
 function voiceOverlay() {
   const isZh = getLang() === "zh";
-  const bars = el("div", { class: "vo-bars", "aria-hidden": "true" }, Array.from({ length: 24 }, () => el("i")));
-  const time = el("span", { class: "vo-time", text: "0:00" });
-  const hint = el("p", { class: "vo-hint" });
-  const cancelZone = el("div", { class: "vo-zone vo-cancel" }, [el("span", { class: "vo-zone-ic", text: "✕" }), el("span", { text: isZh ? "取消" : "Cancel" })]);
-  const textZone = el("div", { class: "vo-zone vo-text" }, [el("span", { class: "vo-zone-ic", text: isZh ? "文" : "Aa" }), el("span", { text: isZh ? "转文字" : "To text" })]);
-  const node = el("div", { class: "voice-overlay", role: "dialog", "aria-live": "polite" }, [
-    el("div", { class: "vo-bubble" }, [bars, time]),
-    hint,
-    el("div", { class: "vo-zones" }, [cancelZone, el("div", { class: "vo-release" }, [icon("mic")]), textZone]),
+  const bars = el("div", { class: "vo-bars", "aria-hidden": "true" }, Array.from({ length: 22 }, () => el("i")));
+  const time = el("span", { class: "vo-time", text: "" });
+  const cancelZone = el("div", { class: "vo-zone vo-cancel" }, [
+    el("span", { class: "vo-zone-label", text: isZh ? "松开 取消" : "Release to cancel" }),
+    el("span", { class: "vo-zone-ic", "aria-hidden": "true" }, [icon("close")]),
   ]);
-  const levels = new Array(24).fill(0.08);
-  const hints = {
+  const textZone = el("div", { class: "vo-zone vo-text" }, [
+    el("span", { class: "vo-zone-label", text: isZh ? "松开 转文字" : "Release for text" }),
+    el("span", { class: "vo-zone-ic vo-zone-ic-text", "aria-hidden": "true", text: isZh ? "文" : "Aa" }),
+  ]);
+  const arcLabel = el("span", { class: "vo-arc-label" });
+  const node = el("div", { class: "voice-overlay", role: "dialog", "aria-live": "polite" }, [
+    el("div", { class: "vo-center" }, [el("div", { class: "vo-bubble" }, [bars]), time]),
+    el("div", { class: "vo-zones" }, [cancelZone, textZone]),
+    el("div", { class: "vo-arc" }, [el("span", { class: "vo-arc-ic", "aria-hidden": "true" }, [icon("mic")]), arcLabel]),
+  ]);
+  const levels = new Array(22).fill(0.1);
+  const labels = {
     starting: isZh ? "正在打开麦克风…" : "Opening microphone…",
-    send: isZh ? "松开 发送 · 左滑取消 · 右滑转文字" : "Release to send · slide left to cancel · right for text",
+    send: isZh ? "松开 发送" : "Release to send",
     cancel: isZh ? "松开 取消" : "Release to cancel",
-    text: isZh ? "松开 转文字（可编辑后发送）" : "Release to convert to text (edit before sending)",
-    working: isZh ? "正在识别…" : "Transcribing…",
+    text: isZh ? "松开 转文字" : "Release for text",
+    working: isZh ? "正在转文字…" : "Transcribing…",
   };
   return {
     node,
     setZone(zone) {
       node.dataset.zone = zone;
-      hint.textContent = hints[zone] || "";
+      arcLabel.textContent = labels[zone] || "";
     },
     level(v) {
-      levels.shift(); levels.push(Math.max(0.08, v));
+      levels.shift(); levels.push(Math.max(0.1, v));
       [...bars.children].forEach((b, i) => { b.style.transform = `scaleY(${levels[i]})`; });
     },
     time(secs) {
       const left = MAX_VOICE_S - secs;
-      time.textContent = left <= 10 ? (isZh ? `${Math.ceil(left)} 秒后自动发送` : `Sending in ${Math.ceil(left)}s`) : `0:${String(Math.floor(secs)).padStart(2, "0")}`;
+      time.textContent = left <= 10 ? (isZh ? `${Math.ceil(left)} 秒后自动发送` : `Sending in ${Math.ceil(left)}s`) : `${Math.floor(secs)}″`;
     },
     zoneAt(x, y) {
-      const hit = (z) => { const r = z.getBoundingClientRect(); return x >= r.left - 16 && x <= r.right + 16 && y >= r.top - 40 && y <= r.bottom + 16; };
+      const hit = (z) => { const rc = z.querySelector(".vo-zone-ic").getBoundingClientRect(); return x >= rc.left - 28 && x <= rc.right + 28 && y >= rc.top - 60 && y <= rc.bottom + 24; };
       if (hit(cancelZone)) return "cancel";
       if (hit(textZone)) return "text";
       return "send";
@@ -911,6 +969,13 @@ function voiceOverlay() {
 function initVoice() {
   const toggle = $("voice-toggle");
   const hold = $("hold-to-talk");
+  const attach = $("attach-toggle");
+  attach.addEventListener("click", () => setAttachTray($("attach-tray").hidden));
+  $("message-input").addEventListener("input", updateComposerActions);
+  $("message-input").addEventListener("focus", () => setAttachTray(false));
+  for (const id of ["camera-input", "gallery-input"]) $(id).addEventListener("change", () => { setAttachTray(false); setTimeout(updateComposerActions, 0); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) releaseMicrophone(); });
+  updateComposerActions();
   if (!voiceSupported()) { toggle.hidden = true; return; }
   let saved = "0";
   try { saved = localStorage.getItem(VOICE_MODE_KEY) || "0"; } catch (_) { /* ignore */ }
@@ -932,6 +997,7 @@ function initVoice() {
 
   async function finish(finalZone) {
     pressing = false;
+    scheduleMicRelease();
     const r = rec;
     rec = null;
     if (!r) { close(); return; }
@@ -959,6 +1025,7 @@ function initVoice() {
         const input = $("message-input");
         input.value = input.value ? `${input.value} ${text}` : text;
         autosize(input);
+        updateComposerActions();
         input.setSelectionRange(input.value.length, input.value.length);
       } catch (err) {
         close();
