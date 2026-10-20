@@ -89,6 +89,8 @@ logging, check-ins and memory. Delegate specialist work:
 - `nutrition_coach`: any meal photo or food description to log, or questions
   about what to eat within today's remaining calories.
 - `weekly_reviewer`: "how did my week go", weekly reviews and progress analysis.
+  Always delegate these, even right after onboarding or with little data (it
+  explains sparse data itself); do not review the week from raw logs yourself.
   It only proposes changes; if it proposes a new calorie target and the user
   wants it, call `update_daily_calorie_target` (the user will confirm).
 
