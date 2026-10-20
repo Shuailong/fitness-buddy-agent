@@ -588,6 +588,10 @@ async function rolloverIfNewDay() {
 async function refreshAccountPrefs() {
   if (document.visibilityState !== "visible" || !state.me || $("app-view").hidden) return;
   rolloverIfNewDay();
+  // New calendar day while the app stayed open: refresh Today (calories, tip of the day).
+  const now = new Date();
+  const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  if (state.dashboard && state.dashboard.today && state.dashboard.today < localToday) refreshDashboard(true);
   try {
     const res = await fetch("/api/me", { credentials: "same-origin" });
     if (!res.ok) return;

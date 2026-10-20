@@ -6,6 +6,7 @@ import { getLang } from "./i18n.js";
 import { showToast } from "./modal.js";
 import { coachAvatar, getPersona, getPersonaId, speakCoachText, stopCoachSpeech, unlockCoachAudio } from "./personas.js";
 import { track } from "./telemetry.js";
+import { MORE_TIPS } from "./tips_more.js";
 
 const LEARNED_KEY = "fb_tips_learned_v1";
 
@@ -17,7 +18,7 @@ export const TIP_CATEGORIES = [
   { id: "metabolism", icon: "local-fire-department", zh: "代谢与习惯", en: "Metabolism" },
 ];
 
-export const DAILY_TIPS = [
+const BASE_TIPS = [
   {
     id: "leucine_threshold",
     category: "nutrition",
@@ -290,17 +291,46 @@ function markTipLearned(tipId, todayIso) {
   return { ...next, isNew };
 }
 
+export const DAILY_TIPS = [...BASE_TIPS, ...MORE_TIPS];
+
+const TIP_OF_DAY_KEY = "fb_tip_of_day_v1";
+
+function localIsoDate(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dayNumber(iso) {
+  return Math.floor(Date.parse(`${iso}T00:00:00Z`) / 86400000);
+}
+
+/** Tips ordered for this user: goal-relevant first, then the rest (stable order). */
+function orderedTips(pool, goal) {
+  const relevant = pool.filter((t) => (t.goals || []).includes(goal));
+  const rest = pool.filter((t) => !(t.goals || []).includes(goal));
+  return [...relevant, ...rest];
+}
+
 /**
- * Deterministic daily default index based on YYYY-MM-DD and user goal.
+ * Today's tip, pinned for the whole day (marking it learned does not swap it).
+ * A new day moves to the next tip in a stable rotation, skipping tips the user
+ * already learned (until all are learned) and never repeating yesterday's tip.
  */
-function pickDailyTipIndex(pool, todayIso, goal) {
-  if (!pool.length) return 0;
-  const seedStr = `${todayIso || "2026-10-17"}:${goal || "general"}`;
-  let hash = 0;
-  for (let i = 0; i < seedStr.length; i++) {
-    hash = (hash * 31 + seedStr.charCodeAt(i)) >>> 0;
+export function pickTipOfDay(todayIso, goal, learnedIds = [], pool = DAILY_TIPS) {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(TIP_OF_DAY_KEY) || "null"); } catch { saved = null; }
+  if (saved && saved.date === todayIso) {
+    const pinned = pool.find((t) => t.id === saved.id);
+    if (pinned) return pinned;
   }
-  return hash % pool.length;
+  const order = orderedTips(pool, goal);
+  const learned = new Set(learnedIds);
+  const yesterday = saved && saved.date !== todayIso ? saved.id : null;
+  const start = ((dayNumber(todayIso) % order.length) + order.length) % order.length;
+  const rotated = [...order.slice(start), ...order.slice(0, start)];
+  const candidates = rotated.filter((t) => t.id !== yesterday);
+  const tip = candidates.find((t) => !learned.has(t.id)) || candidates[0] || order[0];
+  try { localStorage.setItem(TIP_OF_DAY_KEY, JSON.stringify({ date: todayIso, id: tip.id })); } catch { /* ignore */ }
+  return tip;
 }
 
 /**
@@ -309,7 +339,9 @@ function pickDailyTipIndex(pool, todayIso, goal) {
 export function dailyScienceCard(d, actions) {
   const lang = getLang();
   const isZh = lang === "zh";
-  const todayIso = (d && d.today) || new Date().toISOString().slice(0, 10);
+  // The dashboard can be a cached copy from yesterday; never go back in time.
+  const localToday = localIsoDate();
+  const todayIso = d && d.today && d.today > localToday ? d.today : localToday;
   const userGoal = (d && d.profile && d.profile.goal) || (d && d.plan && d.plan.goal) || "general_fitness";
 
   let activeCategory = "all";
@@ -324,8 +356,14 @@ export function dailyScienceCard(d, actions) {
     const filtered = activeCategory === "all"
       ? DAILY_TIPS
       : DAILY_TIPS.filter((item) => item.category === activeCategory);
-    const pool = filtered.length ? filtered : DAILY_TIPS;
-    const baseIdx = pickDailyTipIndex(pool, todayIso, userGoal);
+    const pool = orderedTips(filtered.length ? filtered : DAILY_TIPS, userGoal);
+    const dailyTip = pickTipOfDay(todayIso, userGoal, getLearnedState().ids);
+    // "All" starts on today's pinned tip; a category tab starts on that category's
+    // tip for today. "Next tip" walks the same stable order.
+    const startIdx = activeCategory === "all"
+      ? Math.max(0, pool.findIndex((t) => t.id === dailyTip.id))
+      : ((dayNumber(todayIso) % pool.length) + pool.length) % pool.length;
+    const baseIdx = startIdx;
     const currentTip = pool[(baseIdx + offset) % pool.length];
     const copy = currentTip[isZh ? "zh" : "en"];
     const catMeta = TIP_CATEGORIES.find((c) => c.id === currentTip.category) || TIP_CATEGORIES[0];
@@ -344,7 +382,10 @@ export function dailyScienceCard(d, actions) {
           el("span", { class: "science-tip-icon", "aria-hidden": "true" }, [icon("auto-awesome", { fill: true })]),
           el("div", {}, [
             el("div", { class: "science-eyebrow-row" }, [
-              el("span", { class: "eyebrow accent", text: isZh ? "每日科学微课堂 · DAILY LAB" : "DAILY SCIENCE MICRO-LESSON" }),
+              el("span", { class: "eyebrow accent", text: (() => {
+                const [, mm, dd] = todayIso.split("-").map(Number);
+                return isZh ? `每日科学微课堂 · ${mm}月${dd}日` : `DAILY SCIENCE · ${new Date(todayIso + "T00:00:00").toLocaleDateString("en", { month: "short", day: "numeric" })}`;
+              })() }),
               el("span", {
                 class: "pill pill-outline science-cat-pill",
                 text: isZh ? catMeta.zh : catMeta.en,
