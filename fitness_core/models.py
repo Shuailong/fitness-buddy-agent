@@ -258,3 +258,24 @@ class CheckInState(StrictModel):
 
     raised_keys: list[str] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+MemoryCategory = Literal[
+    "preference", "goal", "schedule", "training", "nutrition", "health", "other"
+]
+
+
+class UserMemory(StrictModel):
+    """A durable, user-visible fact the coach remembers across conversations.
+
+    Examples: "Prefers morning workouts", "Dislikes running", "Lactose
+    intolerant", "Wants a direct, no-fluff coaching tone".
+    """
+
+    memory_id: str
+    user_id: str
+    text: str = Field(min_length=1, max_length=240)
+    category: MemoryCategory = "other"
+    source: Literal["coach", "user"] = "coach"
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)

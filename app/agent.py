@@ -46,6 +46,11 @@ from app.tools.logging_tools import (
     log_workout_session,
     record_body_measurement,
 )
+from app.tools.memory_tools import (
+    forget_user_fact,
+    inject_coach_memory,
+    remember_user_fact,
+)
 from app.tools.nutrition_tools import get_daily_nutrition_summary
 from app.tools.planning_tools import get_current_training_plan
 from app.tools.profile_tools import (
@@ -79,11 +84,14 @@ root_agent = Agent(
         get_current_training_plan,
         list_recent_log_entries,
         delete_logged_entry,
+        remember_user_fact,
+        forget_user_fact,
     ],
     sub_agents=[workout_planner, nutrition_coach, weekly_reviewer],
     generate_content_config=types.GenerateContentConfig(
         temperature=0.4, thinking_config=thinking_config(THINKING.coach)
     ),
+    before_model_callback=inject_coach_memory,
     after_agent_callback=schedule_redacted_memory_ingest,
 )
 

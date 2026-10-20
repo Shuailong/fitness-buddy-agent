@@ -145,16 +145,34 @@ export function getPersona(id = getPersonaId(), lang = getLang()) {
   return { ...found, copy: found[l] };
 }
 
-export function setPersonaId(id) {
+export function setPersonaId(id, { sync = true } = {}) {
   const valid = PERSONAS.find((p) => p.id === id) ? id : DEFAULT_PERSONA_ID;
+  const previous = getPersonaId();
   try {
     localStorage.setItem(STORAGE_KEY, valid);
   } catch { /* ignore */ }
-  track("persona_change", { persona: valid });
+  if (sync) {
+    track("persona_change", { persona: valid });
+    // Persist to the account so the phone and desktop show the same coach.
+    fetch("/api/account/preferences", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coach_persona: valid }),
+    }).catch(() => { /* offline: localStorage still applies on this device */ });
+  }
+  if (previous === valid && !sync) return valid;
   for (const fn of listeners) {
-    try { fn(valid); } catch { /* ignore */ }
+    try { fn(valid, { previous, fromServer: !sync }); } catch { /* ignore */ }
   }
   return valid;
+}
+
+/** Applies the coach saved on the account (from /api/me) without re-posting it. */
+export function applyServerPersona(id) {
+  if (!id || !PERSONAS.some((p) => p.id === id) || id === getPersonaId()) return false;
+  setPersonaId(id, { sync: false });
+  return true;
 }
 
 export function onPersonaChange(fn) {
@@ -431,11 +449,22 @@ const COACH_AVATAR_SVGS = {
 export function coachAvatar(personaId = getPersonaId(), { size = "md", online = false, cls = "" } = {}) {
   const p = getPersona(personaId, getLang());
   const svgHtml = COACH_AVATAR_SVGS[p.id] || COACH_AVATAR_SVGS.iron_leo;
+  const sizeCls = ["sm", "lg", "xl"].includes(size) ? ` ${size}` : "";
   const wrap = el("span", {
-    class: `bot-avatar coach-svg-avatar ${p.accentClass}${size === "lg" ? " lg" : ""}${size === "xl" ? " xl" : ""}${cls ? ` ${cls}` : ""}`,
+    class: `bot-avatar coach-svg-avatar ${p.accentClass}${sizeCls}${cls ? ` ${cls}` : ""}`,
+    "data-persona": p.id,
     "aria-hidden": "true",
-    html: svgHtml,
-  });
+  }, [
+    // Explicit inner box + sized <svg>: iOS Safari collapses a viewBox-only
+    // SVG flex item to 0×0, which made the avatar invisible on iPhones.
+    el("span", { class: "coach-svg-avatar-inner", html: svgHtml }),
+  ]);
+  const svg = wrap.querySelector("svg");
+  if (svg) {
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    svg.classList.add("coach-portrait-svg");
+  }
   if (online) {
     wrap.append(el("i", { class: "online" }));
   }

@@ -37,9 +37,9 @@ function appendMessage(node) {
   else messagesEl().append(node);
 }
 
-function coachRow(children, { avatar = true, indent = false } = {}) {
-  const p = getPersona(getPersonaId(), getLang());
-  return el("div", { class: `row from-coach${avatar ? "" : " no-avatar"}${indent ? " indent" : ""}` }, [
+function coachRow(children, { avatar = true, indent = false, personaId = getPersonaId() } = {}) {
+  const p = getPersona(personaId, getLang());
+  return el("div", { class: `row from-coach${avatar ? "" : " no-avatar"}${indent ? " indent" : ""}`, "data-persona": p.id }, [
     avatar
       ? coachAvatar(p.id)
       : el("span", { class: "bot-avatar spacer", "aria-hidden": "true" }),
@@ -76,10 +76,14 @@ function resetTtsBtn(btn) {
   btn.replaceChildren(icon("volume-up"), el("span", { text: isZh ? "朗读" : "Listen" }));
 }
 
-function addCoachMessage(text, author, eventId = null) {
+/**
+ * Renders a coach reply. ``personaId`` is the coach who actually wrote it
+ * (history keeps the original coach after a switch); defaults to the current one.
+ */
+function addCoachMessage(text, author, eventId = null, personaId = null) {
   const body = [];
   const isZh = getLang() === "zh";
-  const p = getPersona(getPersonaId(), getLang());
+  const p = getPersona(personaId || getPersonaId(), getLang());
   const personaLabel = p.copy.shortName;
   if (author && !["fitness_coach", "coach"].includes(author)) {
     const key = `author.${author}`;
@@ -113,7 +117,7 @@ function addCoachMessage(text, author, eventId = null) {
       );
       unlockCoachAudio();
       await speakCoachText(text, {
-        personaId: getPersonaId(),
+        personaId: p.id,
         lang: getLang(),
         onStart: () => {
           if (activeMsgTtsBtn !== ttsBtn) return;
@@ -139,7 +143,7 @@ function addCoachMessage(text, author, eventId = null) {
     ttsBtn,
   ]);
   body.push(footRow);
-  appendMessage(coachRow(body));
+  appendMessage(coachRow(body, { personaId: p.id }));
   lastCoachEventId = eventId;
   receivedCoachText = true;
   scrollToBottom();
@@ -428,7 +432,7 @@ export async function openSession({ fresh = false } = {}) {
     const history = session.history || await getJson("/api/history");
     for (const m of history.messages) {
       if (m.role === "user") addUserMessage(m.text, m.image_url || null, m.has_image);
-      else if (m.role === "coach") addCoachMessage(m.text, m.author, m.event_id || null);
+      else if (m.role === "coach") addCoachMessage(m.text, m.author, m.event_id || null, m.persona || null);
       else if (m.role === "decision") addDecision(m);
       else if (m.role === "card" && m.kind === "meal_logged") addMealCard(m);
     }
@@ -589,18 +593,37 @@ export function syncCoachPersonaHeader() {
     );
   }
 
-  // Also keep existing coach message rows in sync when switching persona
-  for (const row of document.querySelectorAll("#messages .row.from-coach")) {
-    const av = row.querySelector(".coach-svg-avatar, .bot-avatar");
-    if (av) av.replaceWith(coachAvatar(p.id));
-    const author = row.querySelector(".author");
-    if (author) author.textContent = p.copy.shortName;
-  }
+}
+
+/**
+ * Switching coach keeps the same conversation and memories; past replies keep
+ * the coach who wrote them, and a divider marks where the new coach takes over.
+ */
+function markPersonaSwitch(id, { previous, fromServer } = {}) {
+  if (!previous || previous === id) return;
+  const m = messagesEl();
+  if (!m || !m.querySelector(".row")) return;
+  const p = getPersona(id, getLang());
+  const isZh = getLang() === "zh";
+  m.append(el("div", { class: "row system" }, [
+    el("p", { class: "persona-switch-divider" }, [
+      coachAvatar(p.id, { size: "sm" }),
+      el("span", {
+        text: isZh
+          ? `${fromServer ? "已同步其他设备的选择：" : ""}${p.copy.shortName} 接手对话 · 聊天记录与教练记忆保留`
+          : `${fromServer ? "Synced from another device: " : ""}${p.copy.shortName} takes over · history & memories kept`,
+      }),
+    ]),
+  ]));
+  scrollToBottom();
 }
 
 export function initChat() {
   syncCoachPersonaHeader();
-  onPersonaChange(() => syncCoachPersonaHeader());
+  onPersonaChange((id, info) => {
+    syncCoachPersonaHeader();
+    markPersonaSwitch(id, info);
+  });
   $("composer").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (state.streaming) return;

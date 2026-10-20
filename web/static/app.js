@@ -14,7 +14,7 @@ import { initLanding, localizeLandingImages } from "./js/landing.js";
 import { track, enableTelemetry } from "./js/telemetry.js";
 import { openFeedbackDialog } from "./js/feedback.js";
 import { exportData, openDeleteDialog, openPrivacySettingsModal } from "./js/account.js";
-import { onPersonaChange } from "./js/personas.js";
+import { onPersonaChange, applyServerPersona, getPersonaId } from "./js/personas.js";
 
 const ROUTES = ["today", "coach", "progress", "plan", "settings", "admin"];
 const desktop = window.matchMedia("(min-width: 1024px)");
@@ -505,6 +505,40 @@ function renderAvatar() {
   renderMenus();
 }
 
+/**
+ * The coach persona lives on the account (/api/me.preferences) so every device
+ * shows the same coach. A device that chose a coach before this existed
+ * uploads its local choice once.
+ */
+function syncPersonaFromAccount(me) {
+  if (!me) return;
+  const saved = me.preferences && me.preferences.coach_persona;
+  if (saved) {
+    applyServerPersona(saved);
+  } else {
+    fetch("/api/account/preferences", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coach_persona: getPersonaId() }),
+    }).catch(() => {});
+  }
+}
+
+/** When the app returns to the foreground, pick up a coach changed on another device. */
+async function refreshAccountPrefs() {
+  if (document.visibilityState !== "visible" || !state.me || $("app-view").hidden) return;
+  try {
+    const res = await fetch("/api/me", { credentials: "same-origin" });
+    if (!res.ok) return;
+    const me = await res.json();
+    state.me = { ...state.me, ...me };
+    const saved = me.preferences && me.preferences.coach_persona;
+    if (saved) applyServerPersona(saved);
+    writeBootCache();
+  } catch (_) { /* offline */ }
+}
+
 async function startApp(meData = null, prefetchedDashboardPromise = null) {
   $("landing-view").hidden = true;
   document.querySelector(".skip-link").setAttribute("href", "#main-content");
@@ -518,6 +552,7 @@ async function startApp(meData = null, prefetchedDashboardPromise = null) {
   }
   const shareUsageData = !(state.me && state.me.privacy && state.me.privacy.share_usage_data === false);
   enableTelemetry(shareUsageData);
+  syncPersonaFromAccount(state.me);
   track("app_open");
   renderAvatar();
   writeBootCache();
@@ -579,12 +614,17 @@ async function boot() {
     renderMenus();
     if (!$("landing-view").hidden) renderGisButton();
   });
-  onPersonaChange(() => {
+  onPersonaChange((id) => {
+    if (state.me) {
+      state.me.preferences = { ...(state.me.preferences || {}), coach_persona: id };
+      writeBootCache();
+    }
     renderMenus();
     if (!$("app-view").hidden && (currentView() === "today" || currentView() === "settings")) {
       renderView(currentView());
     }
   });
+  document.addEventListener("visibilitychange", refreshAccountPrefs);
   desktop.addEventListener("change", applyRoute);
   $("feedback-fab").addEventListener("click", () => openFeedbackDialog({ page: currentPage() }));
   $("new-chat-btn").addEventListener("click", async () => {
@@ -599,6 +639,9 @@ async function boot() {
   if (cached && cached.me) {
     state.config = cached.config || state.config;
     state.me = cached.me;
+    if (cached.me.preferences && cached.me.preferences.coach_persona) {
+      applyServerPersona(cached.me.preferences.coach_persona);
+    }
     if (cached.dashboard && cached.dashboard.has_profile) {
       state.dashboard = cached.dashboard;
       $("landing-view").hidden = true;

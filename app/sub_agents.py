@@ -41,6 +41,7 @@ from app.prompts import (
 from app.schemas import MealLogResult, PlanCritique, PlanTaskResult, WeeklyReview
 from app.tools._common import storage_user_id
 from app.tools.logging_tools import get_body_measurement_trend, list_recent_log_entries
+from app.tools.memory_tools import inject_coach_memory
 from app.tools.nutrition_tools import get_daily_nutrition_summary, log_meal_entry
 from app.tools.planning_tools import (
     get_current_training_plan,
@@ -95,6 +96,7 @@ workout_planner = Agent(
         save_weekly_training_plan,
     ],
     sub_agents=[plan_critic],
+    before_model_callback=inject_coach_memory,
 )
 
 nutrition_coach = Agent(
@@ -114,6 +116,7 @@ nutrition_coach = Agent(
         get_daily_nutrition_summary,
         list_recent_log_entries,
     ],
+    before_model_callback=inject_coach_memory,
 )
 
 

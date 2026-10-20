@@ -58,6 +58,8 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from fitness_core.memories import CATEGORIES as MEMORY_CATEGORIES
+from fitness_core.memories import MAX_MEMORIES, remember
 from fitness_core.models import utc_now
 from fitness_core.repository import get_repository
 from web.admin import (
@@ -123,6 +125,7 @@ from web.observability import (
     web_span,
 )
 from web.ratelimit import RateLimiter, build_rate_limiter
+from web.user_prefs import forget_user_prefs, get_user_prefs, set_user_prefs
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -252,6 +255,20 @@ class DeleteAccountRequest(BaseModel):
     """Explicit confirmation for account deletion."""
 
     confirm: Literal["DELETE"]
+
+
+class PreferencesRequest(BaseModel):
+    """Cross-device app preferences (currently the selected coach persona)."""
+
+    coach_persona: str | None = Field(default=None, max_length=40)
+
+
+class MemoryRequest(BaseModel):
+    """A Coach Memory entry added or edited by the user in Settings."""
+
+    text: str = Field(min_length=1, max_length=240)
+    category: str = Field(default="other", max_length=20)
+    replaces_memory_id: str | None = Field(default=None, max_length=40)
 
 
 class PrivacySettingsRequest(BaseModel):
@@ -572,9 +589,10 @@ def create_app(
     @app.get("/api/me")
     async def me(request: Request, user: UserDep) -> dict[str, Any]:
         repo = get_repository()
-        role, privacy_pref, _ = await asyncio.gather(
+        role, privacy_pref, prefs, _ = await asyncio.gather(
             get_user_role(repo, user, settings),
             get_user_privacy_pref(repo, user.user_id),
+            get_user_prefs(repo, user.user_id),
             touch_user_presence(repo, user, request=request),
         )
         return {
@@ -585,7 +603,18 @@ def create_app(
             "role": role,
             "is_admin": role == "admin",
             "privacy": privacy_pref,
+            "preferences": prefs,
         }
+
+    @app.post("/api/account/preferences")
+    async def update_preferences(
+        body: PreferencesRequest, user: UserDep
+    ) -> dict[str, Any]:
+        """Saves cross-device preferences so phone and desktop stay in sync."""
+        prefs = await set_user_prefs(
+            get_repository(), user.user_id, coach_persona=body.coach_persona
+        )
+        return {"ok": True, "preferences": prefs}
 
     # ------------------------------------------------------------- sessions
     def _usable(session: dict[str, Any] | None) -> bool:
@@ -878,6 +907,11 @@ def create_app(
                 detail=f"Messages are limited to {MAX_TEXT_CHARS} characters.",
             )
         norm_lang = normalize_lang(lang)
+        if not persona:
+            # Fall back to the persona saved for this account (other device).
+            persona = (await get_user_prefs(get_repository(), user.user_id)).get(
+                "coach_persona"
+            )
         parts: list[dict[str, Any]] = []
         uploaded_photo: tuple[str, bytes] | None = None
         if text:
@@ -1471,6 +1505,53 @@ def create_app(
         )
         return {"ok": True, "entry": record}
 
+    # ------------------------------------------------------------ coach memory
+    @app.get("/api/memories")
+    async def list_memories(user: UserDep) -> dict[str, Any]:
+        """Lists the user's Coach Memory (durable facts shared by all coaches)."""
+        memories = await get_repository().list_memories(user.user_id)
+        return {
+            "memories": [
+                m.model_dump(mode="json", exclude={"user_id"}) for m in memories
+            ],
+            "max": MAX_MEMORIES,
+            "categories": list(MEMORY_CATEGORIES),
+        }
+
+    @app.post("/api/memories")
+    async def add_memory(body: MemoryRequest, user: UserDep) -> dict[str, Any]:
+        """Adds or edits a memory on the user's behalf."""
+        result = await remember(
+            get_repository(),
+            user.user_id,
+            body.text,
+            category=body.category,
+            source="user",
+            replaces_memory_id=body.replaces_memory_id,
+        )
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result["error_message"])
+        memory = dict(result["memory"])
+        memory.pop("user_id", None)
+        return {"status": result["status"], "memory": memory}
+
+    @app.delete("/api/memories/{memory_id}")
+    async def delete_memory(memory_id: str, user: UserDep) -> dict[str, Any]:
+        """Forgets one memory."""
+        ok = await get_repository().delete_memory(user.user_id, memory_id[:40])
+        if not ok:
+            raise HTTPException(status_code=404, detail="Memory not found.")
+        return {"ok": True}
+
+    @app.delete("/api/memories")
+    async def clear_memories(user: UserDep) -> dict[str, Any]:
+        """Forgets every Coach Memory entry for this user."""
+        repo = get_repository()
+        memories = await repo.list_memories(user.user_id)
+        for m in memories:
+            await repo.delete_memory(user.user_id, m.memory_id)
+        return {"ok": True, "deleted": len(memories)}
+
     # ------------------------------------------------------------ account (privacy)
     @app.get("/api/account/privacy")
     async def get_privacy_settings(user: UserDep) -> dict[str, Any]:
@@ -1549,6 +1630,7 @@ def create_app(
         repo = get_repository()
         result: dict[str, Any] = {"deleted": True}
         result["documents"] = await repo.delete_user_data(user.user_id)
+        forget_user_prefs(repo, user.user_id)
         result["telemetry_purged"] = await purge_user_telemetry(repo, user.user_id)
         errors: list[str] = []
         try:

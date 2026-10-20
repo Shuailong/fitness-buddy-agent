@@ -151,6 +151,21 @@ def build_persona_prefix(persona_id: str | None, lang: str = "zh") -> str:
     return f"[Coach Persona Directive: {directive}]\n\n"
 
 
+_DIRECTIVE_OPEN = "[Coach Persona Directive: "
+
+
+def persona_from_directive(text: str | None) -> str | None:
+    """Returns the persona ID whose directive prefixes ``text`` (chat history), or None."""
+    if not text or not text.startswith(_DIRECTIVE_OPEN):
+        return None
+    end = text.find("]\n\n")
+    directive = text[len(_DIRECTIVE_OPEN) : end if end != -1 else None]
+    for pid, spec in COACH_PERSONAS.items():
+        if directive in (spec.get("prompt_zh"), spec.get("prompt_en")):
+            return pid
+    return None
+
+
 # Archetype classification by exercise_id / keywords
 _ARCHETYPES: dict[str, tuple[str, ...]] = {
     "squat": (

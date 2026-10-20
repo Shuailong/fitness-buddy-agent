@@ -45,6 +45,7 @@ from fitness_core.models import (
     FitnessProfile,
     MealEntry,
     TrainingPlan,
+    UserMemory,
     WeeklyReviewRecord,
     WorkoutSession,
     utc_now,
@@ -103,6 +104,9 @@ class FitnessRepository(Protocol):
     async def export_user_data(self, user_id: str) -> dict[str, Any]: ...
     async def delete_user_data(self, user_id: str) -> int: ...
     async def add_feedback(self, record: dict[str, Any]) -> None: ...
+    async def list_memories(self, user_id: str) -> list[UserMemory]: ...
+    async def save_memory(self, memory: UserMemory) -> None: ...
+    async def delete_memory(self, user_id: str, memory_id: str) -> bool: ...
 
 
 def _sort_key(entry: BaseModel) -> str:
@@ -125,6 +129,7 @@ class InMemoryFitnessRepository:
         self._archived_plans: dict[str, list[TrainingPlan]] = {}
         self._entries: dict[tuple[str, str], dict[str, BaseModel]] = {}
         self._check_ins: dict[str, CheckInState] = {}
+        self._memories: dict[str, dict[str, UserMemory]] = {}
         self.feedback: list[dict[str, Any]] = []
 
     async def get_profile(self, user_id: str) -> FitnessProfile | None:
@@ -210,6 +215,8 @@ class InMemoryFitnessRepository:
         for (uid, collection), bucket in self._entries.items():
             if uid == user_id:
                 data[collection] = [dump(e) for e in bucket.values()]
+        if self._memories.get(user_id):
+            data["memories"] = [dump(m) for m in self._memories[user_id].values()]
         return data
 
     async def delete_user_data(self, user_id: str) -> int:
@@ -217,12 +224,24 @@ class InMemoryFitnessRepository:
         deleted += int(self._plans.pop(user_id, None) is not None)
         deleted += len(self._archived_plans.pop(user_id, []))
         deleted += int(self._check_ins.pop(user_id, None) is not None)
+        deleted += len(self._memories.pop(user_id, {}))
         for key in [k for k in self._entries if k[0] == user_id]:
             deleted += len(self._entries.pop(key))
         return deleted
 
     async def add_feedback(self, record: dict[str, Any]) -> None:
         self.feedback.append(dict(record))
+
+    async def list_memories(self, user_id: str) -> list[UserMemory]:
+        return sorted(
+            self._memories.get(user_id, {}).values(), key=lambda m: m.created_at
+        )
+
+    async def save_memory(self, memory: UserMemory) -> None:
+        self._memories.setdefault(memory.user_id, {})[memory.memory_id] = memory
+
+    async def delete_memory(self, user_id: str, memory_id: str) -> bool:
+        return self._memories.get(user_id, {}).pop(memory_id, None) is not None
 
 
 class FirestoreFitnessRepository:
@@ -367,6 +386,30 @@ class FirestoreFitnessRepository:
 
     async def add_feedback(self, record: dict[str, Any]) -> None:
         await self._db.collection("feedback").document(new_entry_id()).set(record)
+
+    def _memories(self, user_id: str):
+        return self._user(user_id).collection("memories")
+
+    async def list_memories(self, user_id: str) -> list[UserMemory]:
+        items = [
+            UserMemory.model_validate(doc.to_dict())
+            async for doc in self._memories(user_id).stream()
+        ]
+        return sorted(items, key=lambda m: m.created_at)
+
+    async def save_memory(self, memory: UserMemory) -> None:
+        await (
+            self._memories(memory.user_id)
+            .document(memory.memory_id)
+            .set(memory.model_dump(mode="json"))
+        )
+
+    async def delete_memory(self, user_id: str, memory_id: str) -> bool:
+        ref = self._memories(user_id).document(memory_id)
+        if not (await ref.get()).exists:
+            return False
+        await ref.delete()
+        return True
 
 
 @functools.cache

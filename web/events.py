@@ -37,6 +37,7 @@ import json
 from typing import Any
 
 from web.config import DEFAULT_LANG, GREETING_TEXTS
+from web.form_coach import persona_from_directive
 
 CONFIRMATION_CALL = "adk_request_confirmation"
 MEAL_LOG_TOOL = "log_meal_entry"
@@ -360,6 +361,8 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
     messages: list[dict[str, Any]] = []
     pending: list[dict[str, Any]] = []
     last_user_image_url: str | None = None
+    # The coach persona each reply was written as (from the user turn's directive).
+    current_persona: str | None = None
     for event in events:
         if _is_hidden_event(event):
             continue
@@ -375,6 +378,7 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
             if image_url:
                 last_user_image_url = image_url
             text = "\n".join(texts)
+            current_persona = persona_from_directive(text) or current_persona
             if text.startswith("[Coach Persona Directive:"):
                 end_idx = text.find("]\n\n")
                 if end_idx != -1:
@@ -428,6 +432,7 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
                         "author": event.get("author") or "coach",
                         "text": text,
                         "event_id": event.get("id"),
+                        **({"persona": current_persona} if current_persona else {}),
                     }
                 )
     return {"messages": messages, "pending_confirmations": pending}

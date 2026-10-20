@@ -10,6 +10,7 @@ import { state, actions } from "./state.js";
 import { initials } from "./logic.js";
 import { track, enableTelemetry } from "./telemetry.js";
 import { coachAvatar, getPersona, getPersonaId, renderPersonaSelectorGrid } from "./personas.js";
+import { coachMemoryCard } from "./memory.js";
 
 function segmented(label, options, current, onPick, cls = "") {
   return el("div", { class: `menu-seg ${cls}`.trim(), role: "group", "aria-label": label }, options.map((o) =>
@@ -243,6 +244,9 @@ export function renderSettingsView(root, {
           }),
         }),
       ]),
+
+      // 1b. Coach Memory (cross-session preferences, shared by all coaches)
+      coachMemoryCard({ showToast }),
 
       // 2. Appearance, Language & Product Feedback
       el("section", { class: "card settings-card", "aria-labelledby": "settings-pref-heading" }, [

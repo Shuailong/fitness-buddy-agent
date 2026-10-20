@@ -3425,12 +3425,17 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
   border-radius: 50%;
   flex: none;
   overflow: visible;
+  padding: 0;
+  background: var(--elevated);
+  border: 0;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
 }
 .coach-svg-avatar-inner {
-  display: inline-flex;
+  display: block;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  flex: 1 0 100%;
   border-radius: 50%;
   overflow: hidden;
   border: 1.5px solid var(--line);
@@ -3444,10 +3449,31 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
 .coach-svg-avatar.persona-chen .coach-svg-avatar-inner {
   border-color: rgba(56, 189, 248, 0.55);
 }
+.coach-svg-avatar svg,
 .coach-svg-avatar .coach-portrait-svg {
   width: 100%;
   height: 100%;
   display: block;
+}
+.coach-svg-avatar .online {
+  z-index: 1;
+}
+/* Mobile coach rows: keep the avatar visible (never shrink inside the flex row) */
+.row.from-coach > .coach-svg-avatar {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+.persona-switch-divider {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--muted);
+  padding: 4px 12px 4px 4px;
+  border-radius: var(--r-full);
+  background: var(--card);
+  border: 1px solid var(--line-soft);
 }
 .coach-svg-avatar.sm {
   width: 26px;
@@ -3708,4 +3734,32 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
     padding: 6px 4px;
     font-size: 0.68rem;
   }
+}
+
+/* ============================================================================
+   16. Coach Memory (Settings)
+   ============================================================================ */
+.memory-list { display: grid; gap: 8px; }
+.memory-item {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  padding: 10px 8px 10px 12px; border-radius: var(--r-lg); background: var(--inset); border: 1px solid var(--line-soft);
+}
+.memory-cat-icon {
+  display: inline-flex; width: 32px; height: 32px; border-radius: 50%; align-items: center; justify-content: center;
+  background: var(--primary-soft); color: var(--on-primary-soft);
+}
+.memory-cat-icon .icon { width: 17px; height: 17px; }
+.memory-body { display: grid; gap: 2px; min-width: 0; }
+.memory-text { margin: 0; font-size: 0.92rem; color: var(--text-strong); overflow-wrap: anywhere; }
+.memory-del { width: 36px; height: 36px; }
+.memory-del .icon { width: 18px; height: 18px; }
+.memory-empty { padding: 12px 14px; border-radius: var(--r-lg); background: var(--inset); border: 1px dashed var(--line); line-height: 1.5; }
+.memory-add { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.memory-add .text-input { min-height: 44px; margin: 0; }
+.memory-cat { width: auto; padding-right: 8px; }
+.memory-foot { display: flex; justify-content: flex-end; }
+.memory-foot:empty, .memory-foot:has(> [hidden]:only-child) { display: none; }
+@media (max-width: 560px) {
+  .memory-add { grid-template-columns: minmax(0, 1fr) auto; }
+  .memory-add .memory-cat { grid-column: 1 / -1; width: 100%; }
 }
