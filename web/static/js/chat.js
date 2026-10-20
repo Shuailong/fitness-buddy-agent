@@ -12,7 +12,11 @@ import { track } from "./telemetry.js";
 import { openPhotoLightbox } from "./modal.js";
 import { coachAvatar, getPersona, getPersonaId, onPersonaChange, openPersonaSelectorModal, speakCoachText, stopCoachSpeech, unlockCoachAudio } from "./personas.js";
 
-const messagesEl = () => $("messages");
+// While older history is rendered off-screen, message builders write here.
+let renderTarget = null;
+const messagesEl = () => renderTarget || $("messages");
+// Continuous timeline: earlier conversations load on scroll-up, one at a time.
+const timeline = { oldestStartedAt: null, hasMore: false, loading: false, observer: null };
 let receivedCoachText = false;
 // The in-flight turn: { progress: TurnProgress, row, skeleton } or null.
 let turn = null;
@@ -24,6 +28,7 @@ const limits = { send: 0, sendScope: null, photo: 0 };
 let limitTimer = null;
 
 function scrollToBottom() {
+  if (renderTarget) return;
   const m = messagesEl();
   requestAnimationFrame(() => { m.scrollTop = m.scrollHeight; });
 }
@@ -33,6 +38,7 @@ function scrollToBottom() {
  * element, so new bubbles/cards are inserted right before it.
  */
 function appendMessage(node) {
+  if (renderTarget) { renderTarget.append(node); return; }
   if (turn && !turn.progress.finished && turn.row.isConnected) turn.row.before(node);
   else messagesEl().append(node);
 }
@@ -418,36 +424,139 @@ function sessionLoadingSkeleton() {
   ]);
 }
 
-/** Opens (or resumes) the conversation and renders its history. Returns the session info. */
+/** The local "conversation day" (ISO date): days roll over at 4 am, like the server. */
+export function conversationDay(now = new Date()) {
+  const d = new Date(now.getTime() - 4 * 3600 * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dayLabel(day) {
+  const [y, m, d] = String(day || "").split("-").map(Number);
+  const date = y ? new Date(y, m - 1, d) : new Date();
+  const today = conversationDay();
+  const yesterday = conversationDay(new Date(Date.now() - 24 * 3600 * 1000));
+  if (!day || day === today) return t("coach.today", { date: dateFull(date) });
+  if (day === yesterday) return t("coach.yesterday", { date: dateFull(date) });
+  return dateFull(date);
+}
+
+function dayDivider(day) {
+  return el("p", { class: "day-divider", "data-day": day || conversationDay(), text: dayLabel(day) });
+}
+
+function renderHistoryMessages(messages) {
+  for (const m of messages) {
+    if (m.role === "user") addUserMessage(m.text, m.image_url || null, m.has_image);
+    else if (m.role === "coach") addCoachMessage(m.text, m.author, m.event_id || null, m.persona || null);
+    else if (m.role === "decision") addDecision(m);
+    else if (m.role === "card" && m.kind === "meal_logged") addMealCard(m);
+  }
+}
+
+function historyLoader() {
+  const isZh = getLang() === "zh";
+  const btn = el("button", {
+    type: "button",
+    class: "history-loader-btn",
+    onclick: () => loadOlderHistory(),
+  }, [icon("schedule"), el("span", { text: isZh ? "查看更早的聊天" : "Earlier messages" })]);
+  return el("div", { class: "row system history-loader", id: "history-loader" }, [btn]);
+}
+
+function setLoaderState(stateName) {
+  const loader = $("history-loader");
+  if (!loader) return;
+  const isZh = getLang() === "zh";
+  const btn = loader.querySelector("button");
+  if (stateName === "end") {
+    loader.replaceChildren(el("p", { class: "history-end muted small", text: isZh ? "已经到最早的聊天记录了" : "This is the beginning of your chat history" }));
+    if (timeline.observer) timeline.observer.disconnect();
+  } else if (btn) {
+    btn.disabled = stateName === "loading";
+    btn.lastElementChild.textContent = stateName === "loading"
+      ? (isZh ? "加载中…" : "Loading…")
+      : (isZh ? "查看更早的聊天" : "Earlier messages");
+  }
+}
+
+/** Prepends the previous conversation (one session) above what is shown, keeping the scroll position. */
+export async function loadOlderHistory() {
+  if (timeline.loading || !timeline.hasMore || !timeline.oldestStartedAt) return;
+  timeline.loading = true;
+  setLoaderState("loading");
+  try {
+    const data = await getJson(`/api/history/older?before=${encodeURIComponent(timeline.oldestStartedAt)}`);
+    if (!data.session_id || !data.messages.length) {
+      timeline.hasMore = false;
+      setLoaderState("end");
+      return;
+    }
+    const m = $("messages");
+    const loader = $("history-loader");
+    const chunk = el("div");
+    const saved = { lastCoachEventId, receivedCoachText };
+    renderTarget = chunk;
+    try {
+      chunk.append(dayDivider(data.day));
+      renderHistoryMessages(data.messages);
+    } finally {
+      renderTarget = null;
+      ({ lastCoachEventId, receivedCoachText } = saved);
+    }
+    // One divider per day: drop the next chunk's divider when it is the same day.
+    const next = loader ? loader.nextElementSibling : m.firstElementChild;
+    if (next && next.classList.contains("day-divider") && next.dataset.day === data.day) next.remove();
+    const fromBottom = m.scrollHeight - m.scrollTop;
+    const nodes = [...chunk.childNodes];
+    if (loader) loader.after(...nodes); else m.prepend(...nodes);
+    m.scrollTop = m.scrollHeight - fromBottom;
+    timeline.oldestStartedAt = data.started_at;
+    timeline.hasMore = Boolean(data.has_more);
+    track("history_older", { has_more: timeline.hasMore });
+    setLoaderState(timeline.hasMore ? "idle" : "end");
+  } catch (err) {
+    setLoaderState("idle");
+    addError(err.message);
+  } finally {
+    timeline.loading = false;
+  }
+}
+
+function startTimeline(session) {
+  timeline.oldestStartedAt = session.started_at || Date.now() / 1000;
+  timeline.hasMore = true;
+  const m = messagesEl();
+  m.prepend(historyLoader());
+  if (timeline.observer) timeline.observer.disconnect();
+  if ("IntersectionObserver" in window) {
+    // Auto-load when the user scrolls up to the top of the chat.
+    timeline.observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting) && m.scrollHeight > m.clientHeight) loadOlderHistory();
+    }, { root: m, rootMargin: "120px 0px 0px 0px" });
+    timeline.observer.observe($("history-loader"));
+  }
+}
+
+/** Opens (or resumes) today's conversation and renders it below earlier days. Returns the session info. */
 export async function openSession({ fresh = false } = {}) {
   const bootSk = sessionLoadingSkeleton();
   messagesEl().replaceChildren(bootSk);
   try {
     const session = await (await postJson("/api/session", { new: fresh, include_history: true })).json();
     bootSk.remove();
-    if (session.is_new) {
-      renderIntro();
-      return session;
-    }
+    state.sessionDay = session.day || conversationDay();
+    messagesEl().append(dayDivider(session.day));
+    startTimeline(session);
+    if (session.is_new) return session;
     const history = session.history || await getJson("/api/history");
-    for (const m of history.messages) {
-      if (m.role === "user") addUserMessage(m.text, m.image_url || null, m.has_image);
-      else if (m.role === "coach") addCoachMessage(m.text, m.author, m.event_id || null, m.persona || null);
-      else if (m.role === "decision") addDecision(m);
-      else if (m.role === "card" && m.kind === "meal_logged") addMealCard(m);
-    }
+    renderHistoryMessages(history.messages);
     for (const card of history.pending_confirmations) addConfirmationCard(card);
-    if (!history.messages.length && !history.pending_confirmations.length) renderIntro();
     scrollToBottom();
     return session;
   } catch (err) {
     bootSk.remove();
     throw err;
   }
-}
-
-function renderIntro() {
-  messagesEl().append(el("p", { class: "day-divider", text: t("coach.today", { date: dateFull(new Date()) }) }));
 }
 
 // ------------------------------------------------------------- composer
@@ -602,7 +711,7 @@ export function syncCoachPersonaHeader() {
 function markPersonaSwitch(id, { previous, fromServer } = {}) {
   if (!previous || previous === id) return;
   const m = messagesEl();
-  if (!m || !m.querySelector(".row")) return;
+  if (!m || !m.querySelector(".row.from-coach, .row.from-user")) return;
   const p = getPersona(id, getLang());
   const isZh = getLang() === "zh";
   m.append(el("div", { class: "row system" }, [

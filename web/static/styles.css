@@ -3763,3 +3763,17 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
   .memory-add { grid-template-columns: minmax(0, 1fr) auto; }
   .memory-add .memory-cat { grid-column: 1 / -1; width: 100%; }
 }
+
+/* ============================================================================
+   17. Continuous chat timeline (earlier days load on scroll-up)
+   ============================================================================ */
+.history-loader { justify-content: center; padding: 2px 0 4px; }
+.history-loader-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 14px;
+  border-radius: var(--r-full); border: 1px solid var(--line-soft); background: var(--card);
+  color: var(--muted); font-size: 0.78rem; font-weight: 600; cursor: pointer;
+}
+.history-loader-btn:hover:not(:disabled) { color: var(--primary-text); border-color: var(--primary-border); }
+.history-loader-btn .icon { width: 15px; height: 15px; }
+.history-end { margin: 0; text-align: center; font-size: 0.74rem; }
+.messages > .day-divider { position: sticky; top: 4px; z-index: 2; box-shadow: var(--shadow-sm); }

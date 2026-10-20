@@ -70,6 +70,9 @@ class WebSettings:
     session_secret: str = ""
     session_max_age_seconds: int = 7 * 24 * 3600
     session_idle_hours: float = 6.0
+    # One conversation per local day: a new session starts after this hour
+    # (user's time zone). A negative value restores the idle-hours rule.
+    day_rollover_hour: int = 4
     dev_auth_bypass_requested: bool = False
     is_cloud_run: bool = False
     agent_backend: str = "local"
@@ -97,6 +100,7 @@ class WebSettings:
                 os.environ.get("SESSION_MAX_AGE_SECONDS", 7 * 24 * 3600)
             ),
             session_idle_hours=float(os.environ.get("SESSION_IDLE_HOURS", 6)),
+            day_rollover_hour=int(os.environ.get("DAY_ROLLOVER_HOUR", 4)),
             dev_auth_bypass_requested=_bool("DEV_AUTH_BYPASS"),
             is_cloud_run=bool(os.environ.get("K_SERVICE")),
             agent_backend=os.environ.get("AGENT_BACKEND", "local").strip().lower(),

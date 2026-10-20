@@ -3,7 +3,7 @@
 import { $, el, icon } from "./js/util.js";
 import { api, getJson } from "./js/api.js";
 import { state, actions } from "./js/state.js";
-import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions, syncCoachPersonaHeader } from "./js/chat.js";
+import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions, syncCoachPersonaHeader, conversationDay } from "./js/chat.js";
 import { renderToday, renderProgress, renderPlan, loadingView, errorView, setupProfileView } from "./js/views.js";
 import { startOnboarding, rerenderOnboarding } from "./js/onboarding.js";
 import { buildOnboardingMessage, initials } from "./js/logic.js";
@@ -296,6 +296,7 @@ function renderMenus() {
     isAdmin,
     onAdmin: () => { closeMenus(); navigate("admin"); },
     onSettings: () => { closeMenus(); navigate("settings"); },
+    onNewChat: startNewChat,
     showSignOut: !(state.config && state.config.dev_auth_bypass),
     onSignOut: signOut,
     onFeedback: () => { closeMenus(); openFeedbackDialog({ page: currentPage() }); },
@@ -525,9 +526,33 @@ function syncPersonaFromAccount(me) {
   }
 }
 
+/** Manual "new chat" (menu): starts a fresh conversation; earlier ones stay above. */
+async function startNewChat() {
+  if (state.streaming) return;
+  closeMenus();
+  track("new_chat");
+  if (!desktop.matches) navigate("coach");
+  state.sessionReady = openSession({ fresh: true }).catch((err) => { addError(err.message); return null; });
+  const session = await state.sessionReady;
+  if (session && session.is_new) await sendChat(greetingText(), null, { hidden: true });
+}
+
+/**
+ * A new local day started while the app stayed open (e.g. resumed in the
+ * morning): reopen so the server rolls over to today's conversation and the
+ * coach runs its daily check-in. Yesterday stays visible above.
+ */
+async function rolloverIfNewDay() {
+  if (state.streaming || !state.sessionDay || state.sessionDay === conversationDay()) return;
+  state.sessionReady = openSession().catch((err) => { addError(err.message); return null; });
+  const session = await state.sessionReady;
+  if (session && session.is_new && !state.onboarding) await sendChat(greetingText(), null, { hidden: true });
+}
+
 /** When the app returns to the foreground, pick up a coach changed on another device. */
 async function refreshAccountPrefs() {
   if (document.visibilityState !== "visible" || !state.me || $("app-view").hidden) return;
+  rolloverIfNewDay();
   try {
     const res = await fetch("/api/me", { credentials: "same-origin" });
     if (!res.ok) return;
@@ -627,12 +652,7 @@ async function boot() {
   document.addEventListener("visibilitychange", refreshAccountPrefs);
   desktop.addEventListener("change", applyRoute);
   $("feedback-fab").addEventListener("click", () => openFeedbackDialog({ page: currentPage() }));
-  $("new-chat-btn").addEventListener("click", async () => {
-    if (state.streaming) return;
-    state.sessionReady = openSession({ fresh: true }).catch((err) => { addError(err.message); return null; });
-    const session = await state.sessionReady;
-    if (session && session.is_new) await sendChat(greetingText(), null, { hidden: true });
-  });
+  $("new-chat-btn").addEventListener("click", startNewChat);
 
   // Optimistic instant render from localStorage cache for returning mobile users.
   const cached = readBootCache();

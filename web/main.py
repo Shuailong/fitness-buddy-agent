@@ -41,6 +41,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Request,
     UploadFile,
     WebSocket,
@@ -104,11 +105,14 @@ from web.dashboard import (
 )
 from web.events import (
     CONFIRMATION_CALL,
+    DEFAULT_TIMEZONE,
     build_history,
+    conversation_day,
     extract_meal_photos_from_events,
     has_pending_confirmation,
     session_events,
     session_last_update,
+    session_started_at,
     simplify_event,
 )
 from web.form_coach import (
@@ -210,6 +214,8 @@ TELEMETRY_EVENTS = frozenset(
         "exercise_guide",
         "form_check",
         "persona_change",
+        "history_older",
+        "new_chat",
     }
 )
 DASHBOARD_TIMEOUT_S = 15.0
@@ -617,15 +623,34 @@ def create_app(
         return {"ok": True, "preferences": prefs}
 
     # ------------------------------------------------------------- sessions
-    def _usable(session: dict[str, Any] | None) -> bool:
+    def _usable(session: dict[str, Any] | None, timezone: str) -> bool:
+        """Whether to keep using ``session`` instead of starting a new one.
+
+        Default: one conversation per local day (new session after
+        ``DAY_ROLLOVER_HOUR``, 4 am). A paused confirmation always keeps it.
+        """
         if not session:
             return False
-        if settings.session_idle_hours <= 0 or has_pending_confirmation(session):
+        if has_pending_confirmation(session):
+            return True
+        if settings.day_rollover_hour >= 0:
+            hour = settings.day_rollover_hour
+            return conversation_day(
+                session_last_update(session), timezone, hour
+            ) == conversation_day(time.time(), timezone, hour)
+        if settings.session_idle_hours <= 0:
             return True
         return (
             time.time() - session_last_update(session)
             < settings.session_idle_hours * 3600
         )
+
+    async def _user_timezone(user_id: str) -> str:
+        try:
+            profile = await get_repository().get_profile(user_id)
+        except Exception:
+            profile = None
+        return (profile.timezone if profile else None) or DEFAULT_TIMEZONE
 
     @app.post("/api/session")
     async def open_session(
@@ -634,12 +659,14 @@ def create_app(
         client: AgentDep,
         body: SessionRequest | None = None,
     ) -> JSONResponse:
-        """Reuses the user's recent conversation or starts a new one.
+        """Reuses today's conversation or starts a new one.
 
-        A conversation idle for more than ``SESSION_IDLE_HOURS`` is closed so
-        the next visit starts fresh and the coach runs its check-ins (FR-8).
+        Conversations roll over once per local day (``DAY_ROLLOVER_HOUR``), so
+        the first visit of a day starts fresh and the coach runs its check-ins
+        (FR-8). Earlier days stay readable via ``GET /api/history/older``.
         """
         cookie = read_session(request)
+        timezone = await _user_timezone(user.user_id)
 
         async def choose() -> dict[str, Any]:
             chosen: dict[str, Any] | None = None
@@ -648,7 +675,7 @@ def create_app(
                     candidate = await client.get_session(
                         user.user_id, str(cookie["sid"])
                     )
-                    chosen = candidate if _usable(candidate) else None
+                    chosen = candidate if _usable(candidate, timezone) else None
                 if chosen is None:
                     sessions = await client.list_sessions(user.user_id)
                     if sessions:
@@ -656,7 +683,7 @@ def create_app(
                         candidate = await client.get_session(
                             user.user_id, str(latest["id"])
                         )
-                        chosen = candidate if _usable(candidate) else None
+                        chosen = candidate if _usable(candidate, timezone) else None
             return chosen or await client.create_session(user.user_id)
 
         with web_span("open_session", backend=settings.agent_backend):
@@ -692,7 +719,13 @@ def create_app(
             session_id=session_id,
             is_new=is_new,
         )
-        payload: dict[str, Any] = {"session_id": session_id, "is_new": is_new}
+        started = session_started_at(chosen) if not is_new else time.time()
+        payload: dict[str, Any] = {
+            "session_id": session_id,
+            "is_new": is_new,
+            "started_at": started,
+            "day": conversation_day(started, timezone, settings.day_rollover_hour),
+        }
         if body and body.include_history and not is_new:
             for entry_id, (mime, raw_bytes) in extract_meal_photos_from_events(
                 events
@@ -710,6 +743,53 @@ def create_app(
             },
         )
         return response
+
+    @app.get("/api/history/older")
+    async def older_history(
+        user: UserDep,
+        client: AgentDep,
+        before: float = Query(..., gt=0, description="Epoch seconds (exclusive)."),
+    ) -> dict[str, Any]:
+        """The most recent earlier conversation that started before ``before``.
+
+        Powers the continuous chat timeline: the client scrolls up and asks for
+        one earlier conversation at a time (empty sessions are skipped).
+        Pending confirmations of old sessions are not actionable, so they are
+        dropped.
+        """
+        timezone = await _user_timezone(user.user_id)
+        with web_span("history_older", backend=settings.agent_backend):
+            try:
+                sessions = await asyncio.wait_for(
+                    client.list_sessions(user.user_id), SESSION_TIMEOUT_S
+                )
+            except TimeoutError as exc:
+                raise HTTPException(
+                    status_code=504, detail="Loading older messages took too long."
+                ) from exc
+            # Sessions that ended before ``before`` (newest first).
+            candidates = sorted(
+                (s for s in sessions if 0 < session_last_update(s) < before),
+                key=session_last_update,
+                reverse=True,
+            )
+            for index, meta in enumerate(candidates[:8]):
+                session = await client.get_session(user.user_id, str(meta["id"]))
+                events = session_events(session)
+                hist = build_history(events)
+                if not hist["messages"]:
+                    continue
+                started = session_started_at(session)
+                return {
+                    "session_id": str(meta["id"]),
+                    "started_at": started,
+                    "day": conversation_day(
+                        started, timezone, settings.day_rollover_hour
+                    ),
+                    "messages": hist["messages"],
+                    "has_more": index + 1 < len(candidates),
+                }
+        return {"session_id": None, "messages": [], "has_more": False}
 
     @app.get("/api/history")
     async def history(

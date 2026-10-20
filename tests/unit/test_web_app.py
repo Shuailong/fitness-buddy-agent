@@ -396,12 +396,13 @@ def test_session_reuse_and_new() -> None:
     assert first["is_new"] is True
     client.post("/api/chat", data={"text": GREETING_TEXT})
     again = client.post("/api/session").json()
-    assert again == {"session_id": first["session_id"], "is_new": False}
+    assert again["session_id"] == first["session_id"] and again["is_new"] is False
+    assert again["day"] and again["started_at"] > 0
     fresh = client.post("/api/session", json={"new": True}).json()
     assert fresh["is_new"] is True and fresh["session_id"] != first["session_id"]
 
 
-def test_idle_session_is_replaced() -> None:
+def test_yesterdays_session_is_replaced() -> None:
     client, agent = _dev_client(
         FakeAgentClient(
             turn_events=[
@@ -411,6 +412,27 @@ def test_idle_session_is_replaced() -> None:
                 },
             ]
         )
+    )
+    first = client.post("/api/session").json()
+    client.post("/api/chat", data={"text": "hello"})
+    agent.sessions["dev-user"][first["session_id"]]["lastUpdateTime"] = (
+        time.time() - 25 * 3600
+    )
+    second = client.post("/api/session").json()
+    assert second["is_new"] is True and second["session_id"] != first["session_id"]
+
+
+def test_idle_rule_when_daily_rollover_disabled() -> None:
+    client, agent = _client(
+        _settings(dev_auth_bypass_requested=True, day_rollover_hour=-1),
+        FakeAgentClient(
+            turn_events=[
+                {
+                    "author": "fitness_coach",
+                    "content": {"role": "model", "parts": [{"text": "Hi"}]},
+                }
+            ]
+        ),
     )
     first = client.post("/api/session").json()
     client.post("/api/chat", data={"text": "hello"})
@@ -1750,4 +1772,3 @@ def test_coach_personas_and_live_form_check() -> None:
     settings_js = client.get("/static/js/settings.js")
     assert settings_js.status_code == 200
     assert "export function renderSettingsView" in settings_js.text
-

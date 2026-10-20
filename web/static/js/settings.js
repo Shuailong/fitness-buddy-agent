@@ -68,6 +68,7 @@ export function settingsMenu({
   isAdmin = false,
   onAdmin = null,
   onSettings = null,
+  onNewChat = null,
   showSignOut = true,
   onSignOut,
   onFeedback = null,
@@ -83,6 +84,7 @@ export function settingsMenu({
     email ? el("p", { class: "menu-email", text: email }) : null,
     el("div", { class: "menu-group menu-group-top" }, [
       onSettings ? item("tune", isZh ? "全部设置与教练中心" : "All Settings & Coach Studio", onSettings, "settings-primary-item") : null,
+      onNewChat ? item("edit-square", isZh ? "开始新对话" : "Start a new chat", onNewChat) : null,
       isAdmin && onAdmin ? item("shield", t("menu.admin"), onAdmin, "admin-item") : null,
     ].filter(Boolean)),
     el("p", { class: "menu-label", text: t("menu.theme") }),

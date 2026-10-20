@@ -34,7 +34,9 @@ from __future__ import annotations
 
 import base64
 import json
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from web.config import DEFAULT_LANG, GREETING_TEXTS
 from web.form_coach import persona_from_directive
@@ -90,6 +92,7 @@ ACTIVITY_LABELS_ZH: dict[str, str] = {
 }
 _LABELS = {"en": ACTIVITY_LABELS, "zh": ACTIVITY_LABELS_ZH}
 _HIDDEN_GREETINGS = frozenset(GREETING_TEXTS.values())
+DEFAULT_TIMEZONE = "Asia/Singapore"
 # Internal plumbing calls that mean nothing to the user.
 SILENT_CALLS = frozenset(
     {"finish_task", "preload_memory", "load_memory", "set_model_response"}
@@ -450,6 +453,32 @@ def session_last_update(session: dict[str, Any]) -> float:
         return float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def session_started_at(session: dict[str, Any]) -> float:
+    """Epoch seconds of the first event (falls back to the last update time)."""
+    for event in session_events(session):
+        try:
+            ts = float(_get(event, "timestamp") or 0)
+        except (TypeError, ValueError):
+            ts = 0.0
+        if ts:
+            return ts
+    return session_last_update(session)
+
+
+def conversation_day(ts: float, timezone: str | None, rollover_hour: int = 4) -> str:
+    """The local "conversation day" (ISO date) of ``ts``; days start at ``rollover_hour``.
+
+    With the default 4 am rollover, a chat at 01:00 still belongs to the
+    previous day, so late-night sessions are not split at midnight.
+    """
+    try:
+        tz = ZoneInfo(timezone or DEFAULT_TIMEZONE)
+    except (ZoneInfoNotFoundError, ValueError):
+        tz = ZoneInfo(DEFAULT_TIMEZONE)
+    local = datetime.fromtimestamp(ts or 0, tz) - timedelta(hours=max(rollover_hour, 0))
+    return local.date().isoformat()
 
 
 def has_pending_confirmation(session: dict[str, Any] | None) -> bool:

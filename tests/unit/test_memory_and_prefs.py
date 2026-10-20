@@ -147,3 +147,57 @@ def test_history_keeps_the_coach_who_wrote_each_reply() -> None:
     assert [m["persona"] for m in msgs] == ["iron_leo", "warm_maya"]
     users = [m for m in build_history(events)["messages"] if m["role"] == "user"]
     assert users[0]["text"] == "练腿"
+
+
+def test_conversation_day_rolls_over_at_4am() -> None:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from web.events import conversation_day
+
+    tz = ZoneInfo("Asia/Singapore")
+
+    def ts(h: int, day: int = 20) -> float:
+        return datetime(2026, 10, day, h, 30, tzinfo=tz).timestamp()
+
+    assert conversation_day(ts(1), "Asia/Singapore") == "2026-10-19"  # 01:30
+    assert conversation_day(ts(5), "Asia/Singapore") == "2026-10-20"
+    assert conversation_day(ts(23, 19), "Asia/Singapore") == "2026-10-19"
+    assert conversation_day(ts(5), "Not/AZone") == "2026-10-20"  # fallback tz
+
+
+def test_older_history_pages_back_one_conversation_at_a_time(memory_repo) -> None:
+    import time as _time
+
+    agent = FakeAgentClient(
+        turn_events=[
+            {
+                "author": "fitness_coach",
+                "id": "c",
+                "content": {"parts": [{"text": "hi"}]},
+            }
+        ]
+    )
+    client, _ = _dev_client(agent)
+    sessions = []
+    for i, text in enumerate(["day one", "day two"]):
+        sid = client.post("/api/session", json={"new": True}).json()["session_id"]
+        client.post("/api/chat", data={"text": text})
+        agent.sessions["dev-user"][sid]["lastUpdateTime"] = (
+            _time.time() - (2 - i) * 86400
+        )
+        sessions.append(sid)
+    # An empty session in between is skipped.
+    empty = client.post("/api/session", json={"new": True}).json()["session_id"]
+    agent.sessions["dev-user"][empty]["lastUpdateTime"] = _time.time() - 3600
+    today = client.post("/api/session", json={"new": True}).json()
+
+    first = client.get(f"/api/history/older?before={today['started_at']}").json()
+    assert first["session_id"] == sessions[1]
+    assert [m["text"] for m in first["messages"] if m["role"] == "user"] == ["day two"]
+    assert first["has_more"] is True and first["day"]
+    second = client.get(f"/api/history/older?before={first['started_at']}").json()
+    assert second["session_id"] == sessions[0]
+    third = client.get(f"/api/history/older?before={second['started_at']}").json()
+    assert third["session_id"] is None and third["has_more"] is False
+    assert client.get("/api/history/older").status_code == 422
