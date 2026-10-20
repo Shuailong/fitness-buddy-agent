@@ -131,6 +131,7 @@ from web.observability import (
 )
 from web.ratelimit import RateLimiter, build_rate_limiter
 from web.user_prefs import forget_user_prefs, get_user_prefs, set_user_prefs
+from web.voice import MAX_AUDIO_BYTES, VOICE_MARKER, sniff_audio, transcribe_audio
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -216,6 +217,7 @@ TELEMETRY_EVENTS = frozenset(
         "form_check",
         "persona_change",
         "history_older",
+        "voice_message",
         "install_banner",
         "new_chat",
     }
@@ -1000,6 +1002,39 @@ def create_app(
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
+    @app.post("/api/transcribe")
+    async def transcribe(
+        user: UserDep,
+        audio: Annotated[UploadFile, File()],
+        lang: Annotated[str | None, Form()] = None,
+    ) -> JSONResponse:
+        """Speech-to-text for voice messages (the transcript is then sent as chat text)."""
+        if limited := await rate_limited(
+            user, ["messages_per_minute", "voice_per_day"]
+        ):
+            return limited
+        data = await audio.read(MAX_AUDIO_BYTES + 1)
+        if len(data) > MAX_AUDIO_BYTES:
+            raise HTTPException(
+                status_code=413, detail="Voice messages are limited to about 2 minutes."
+            )
+        mime = sniff_audio(data)
+        if mime is None:
+            raise HTTPException(status_code=415, detail="Unsupported audio format.")
+        try:
+            text = await transcribe_audio(data, mime, normalize_lang(lang))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502, detail="Could not transcribe that recording."
+            ) from exc
+        log_event(
+            "voice_transcribed",
+            user=_pseudonym(user.user_id),
+            chars=len(text),
+            bytes=len(data),
+        )
+        return JSONResponse({"text": text})
+
     @app.post("/api/chat")
     async def chat(
         request: Request,
@@ -1008,6 +1043,7 @@ def create_app(
         image: Annotated[UploadFile | None, File()] = None,
         lang: Annotated[str | None, Form()] = None,
         persona: Annotated[str | None, Form()] = None,
+        voice: Annotated[str | None, Form()] = None,
     ) -> StreamingResponse:
         session_id = active_session_id(request, user)
         text = text.strip()
@@ -1030,7 +1066,8 @@ def create_app(
                 if text not in GREETING_TEXTS.values()
                 else ""
             )
-            parts.append({"text": f"{prefix}{text}"})
+            marker = VOICE_MARKER if voice == "1" else ""
+            parts.append({"text": f"{prefix}{marker}{text}"})
         if image is not None and (image.filename or image.size):
             data = await image.read(MAX_IMAGE_BYTES + 1)
             if len(data) > MAX_IMAGE_BYTES:

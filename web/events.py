@@ -40,6 +40,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from web.config import DEFAULT_LANG, GREETING_TEXTS
 from web.form_coach import persona_from_directive
+from web.voice import strip_voice_marker
 
 CONFIRMATION_CALL = "adk_request_confirmation"
 MEAL_LOG_TOOL = "log_meal_entry"
@@ -386,12 +387,15 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
                 end_idx = text.find("]\n\n")
                 if end_idx != -1:
                     text = text[end_idx + 3 :].lstrip()
+            text, is_voice = strip_voice_marker(text)
             if (text and text not in _HIDDEN_GREETINGS) or has_image:
                 user_msg: dict[str, Any] = {
                     "role": "user",
                     "text": text,
                     "has_image": has_image,
                 }
+                if is_voice:
+                    user_msg["voice"] = True
                 if image_url:
                     user_msg["image_url"] = image_url
                 messages.append(user_msg)

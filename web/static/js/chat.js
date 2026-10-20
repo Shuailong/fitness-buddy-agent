@@ -10,6 +10,7 @@ import { TurnProgress } from "./progress.js";
 import { feedbackThumbs, dailyPromptAfterTurn } from "./feedback.js";
 import { track } from "./telemetry.js";
 import { openPhotoLightbox } from "./modal.js";
+import { startRecording, voiceSupported, releaseMicrophone } from "./voice.js";
 import { coachAvatar, getPersona, getPersonaId, onPersonaChange, openPersonaSelectorModal, speakCoachText, stopCoachSpeech, unlockCoachAudio } from "./personas.js";
 
 // While older history is rendered off-screen, message builders write here.
@@ -53,8 +54,11 @@ function coachRow(children, { avatar = true, indent = false, personaId = getPers
   ]);
 }
 
-export function addUserMessage(text, imageUrl, hadImage) {
+export function addUserMessage(text, imageUrl, hadImage, { voice = false } = {}) {
   const children = [];
+  if (voice) {
+    children.push(el("span", { class: "voice-tag" }, [icon("mic"), getLang() === "zh" ? "语音" : "Voice"]));
+  }
   if (imageUrl) {
     children.push(
       el("img", {
@@ -380,7 +384,7 @@ async function streamRequest(path, options, { photo = false, onRateLimited = nul
 }
 
 /** Sends a chat turn (text and/or a photo). Hidden turns don't render a bubble. */
-export async function sendChat(text, photoBlob = null, { hidden = false } = {}) {
+export async function sendChat(text, photoBlob = null, { hidden = false, voiceRow = null } = {}) {
   if (state.streaming) return false;
   if (sendBlocked() || (photoBlob && photoBlocked())) {
     if (!hidden) restoreComposer(text, photoBlocked() ? null : photoBlob);
@@ -394,7 +398,8 @@ export async function sendChat(text, photoBlob = null, { hidden = false } = {}) 
   form.append("lang", getLang());
   if (!hidden) form.append("persona", getPersonaId());
   if (photoBlob) form.append("image", photoBlob, "photo.jpg");
-  const userRow = hidden ? null : addUserMessage(text, photoBlob ? URL.createObjectURL(photoBlob) : null);
+  if (voiceRow) form.append("voice", "1");
+  const userRow = hidden ? null : voiceRow || addUserMessage(text, photoBlob ? URL.createObjectURL(photoBlob) : null);
   await streamRequest("/api/chat", { method: "POST", body: form }, {
     photo: Boolean(photoBlob),
     onRateLimited: (err) => {
@@ -446,7 +451,7 @@ function dayDivider(day) {
 
 function renderHistoryMessages(messages) {
   for (const m of messages) {
-    if (m.role === "user") addUserMessage(m.text, m.image_url || null, m.has_image);
+    if (m.role === "user") addUserMessage(m.text, m.image_url || null, m.has_image, { voice: Boolean(m.voice) });
     else if (m.role === "coach") addCoachMessage(m.text, m.author, m.event_id || null, m.persona || null);
     else if (m.role === "decision") addDecision(m);
     else if (m.role === "card" && m.kind === "meal_logged") addMealCard(m);
@@ -727,6 +732,249 @@ function markPersonaSwitch(id, { previous, fromServer } = {}) {
   scrollToBottom();
 }
 
+// ------------------------------------------------------------- voice messages
+const VOICE_MODE_KEY = "fb.voice_mode";
+const MAX_VOICE_S = 60;
+const MIN_VOICE_S = 0.7;
+
+function fmtSecs(s) {
+  const n = Math.max(1, Math.round(s));
+  return `${n}″`;
+}
+
+/** WeChat-style voice bubble: tap to play; transcript shown underneath. */
+function addUserVoiceMessage({ url, duration }) {
+  const isZh = getLang() === "zh";
+  const width = Math.round(108 + Math.min(duration, MAX_VOICE_S) * 3.2);
+  const audio = new Audio(url);
+  const playIcon = el("span", { class: "voice-play", "aria-hidden": "true" }, [icon("play-arrow")]);
+  const bars = el("span", { class: "voice-bars", "aria-hidden": "true" }, Array.from({ length: 5 }, () => el("i")));
+  const bubble = el("button", {
+    type: "button",
+    class: "bubble bubble-user voice-bubble",
+    style: { width: `${width}px` },
+    "aria-label": isZh ? `播放语音 ${Math.round(duration)} 秒` : `Play voice message, ${Math.round(duration)} seconds`,
+    onclick: () => {
+      if (audio.paused) { audio.currentTime = 0; audio.play().catch(() => {}); } else { audio.pause(); }
+    },
+  }, [el("span", { class: "voice-dur", text: fmtSecs(duration) }), bars, playIcon]);
+  audio.addEventListener("play", () => bubble.classList.add("is-playing"));
+  for (const ev of ["pause", "ended"]) audio.addEventListener(ev, () => bubble.classList.remove("is-playing"));
+  const transcript = el("p", { class: "voice-transcript is-pending" }, [
+    el("span", { class: "pc-spinner", "aria-hidden": "true" }),
+    el("span", { text: isZh ? "转文字中…" : "Transcribing…" }),
+  ]);
+  const row = el("div", { class: "row from-user voice-row" }, [el("div", { class: "voice-stack" }, [bubble, transcript])]);
+  messagesEl().append(row);
+  scrollToBottom();
+  return {
+    row,
+    setTranscript(text) {
+      transcript.classList.remove("is-pending");
+      transcript.replaceChildren(el("span", { text }));
+      scrollToBottom();
+    },
+    fail(message) {
+      transcript.classList.remove("is-pending");
+      transcript.classList.add("is-error");
+      transcript.replaceChildren(icon("warning"), el("span", { text: message }));
+    },
+  };
+}
+
+async function transcribeBlob(blob) {
+  const form = new FormData();
+  form.append("audio", blob, "voice.wav");
+  form.append("lang", getLang());
+  const res = await api("/api/transcribe", { method: "POST", body: form });
+  const data = await res.json();
+  return String(data.text || "").trim();
+}
+
+async function sendVoiceMessage(blob, duration) {
+  const isZh = getLang() === "zh";
+  const vm = addUserVoiceMessage({ url: URL.createObjectURL(blob), duration });
+  let text = "";
+  try {
+    text = await transcribeBlob(blob);
+  } catch (err) {
+    vm.fail(isRateLimited(err) ? err.message : (isZh ? "转文字失败，请重试或改用文字" : "Couldn't transcribe - try again or type instead"));
+    return;
+  }
+  if (!text) {
+    vm.fail(isZh ? "没听清，请再说一次" : "Didn't catch that - please try again");
+    return;
+  }
+  vm.setTranscript(text);
+  track("voice_message", { mode: "send", seconds: Math.round(duration) });
+  await sendChat(text, null, { voiceRow: vm.row });
+}
+
+function setVoiceMode(on) {
+  const input = $("message-input");
+  const hold = $("hold-to-talk");
+  const toggle = $("voice-toggle");
+  hold.hidden = !on;
+  input.hidden = on;
+  $("send-btn").hidden = on;
+  toggle.setAttribute("aria-pressed", String(on));
+  toggle.replaceChildren(icon(on ? "keyboard" : "mic"));
+  const isZh = getLang() === "zh";
+  toggle.title = on ? (isZh ? "切换到键盘" : "Switch to keyboard") : (isZh ? "语音消息" : "Voice message");
+  toggle.setAttribute("aria-label", toggle.title);
+  try { localStorage.setItem(VOICE_MODE_KEY, on ? "1" : "0"); } catch (_) { /* ignore */ }
+  if (!on) { input.focus(); releaseMicrophone(); }
+}
+
+function voiceOverlay() {
+  const isZh = getLang() === "zh";
+  const bars = el("div", { class: "vo-bars", "aria-hidden": "true" }, Array.from({ length: 24 }, () => el("i")));
+  const time = el("span", { class: "vo-time", text: "0:00" });
+  const hint = el("p", { class: "vo-hint" });
+  const cancelZone = el("div", { class: "vo-zone vo-cancel" }, [el("span", { class: "vo-zone-ic", text: "✕" }), el("span", { text: isZh ? "取消" : "Cancel" })]);
+  const textZone = el("div", { class: "vo-zone vo-text" }, [el("span", { class: "vo-zone-ic", text: isZh ? "文" : "Aa" }), el("span", { text: isZh ? "转文字" : "To text" })]);
+  const node = el("div", { class: "voice-overlay", role: "dialog", "aria-live": "polite" }, [
+    el("div", { class: "vo-bubble" }, [bars, time]),
+    hint,
+    el("div", { class: "vo-zones" }, [cancelZone, el("div", { class: "vo-release" }, [icon("mic")]), textZone]),
+  ]);
+  const levels = new Array(24).fill(0.08);
+  const hints = {
+    starting: isZh ? "正在打开麦克风…" : "Opening microphone…",
+    send: isZh ? "松开 发送 · 左滑取消 · 右滑转文字" : "Release to send · slide left to cancel · right for text",
+    cancel: isZh ? "松开 取消" : "Release to cancel",
+    text: isZh ? "松开 转文字（可编辑后发送）" : "Release to convert to text (edit before sending)",
+    working: isZh ? "正在识别…" : "Transcribing…",
+  };
+  return {
+    node,
+    setZone(zone) {
+      node.dataset.zone = zone;
+      hint.textContent = hints[zone] || "";
+    },
+    level(v) {
+      levels.shift(); levels.push(Math.max(0.08, v));
+      [...bars.children].forEach((b, i) => { b.style.transform = `scaleY(${levels[i]})`; });
+    },
+    time(secs) {
+      const left = MAX_VOICE_S - secs;
+      time.textContent = left <= 10 ? (isZh ? `${Math.ceil(left)} 秒后自动发送` : `Sending in ${Math.ceil(left)}s`) : `0:${String(Math.floor(secs)).padStart(2, "0")}`;
+    },
+    zoneAt(x, y) {
+      const hit = (z) => { const r = z.getBoundingClientRect(); return x >= r.left - 16 && x <= r.right + 16 && y >= r.top - 40 && y <= r.bottom + 16; };
+      if (hit(cancelZone)) return "cancel";
+      if (hit(textZone)) return "text";
+      return "send";
+    },
+  };
+}
+
+function initVoice() {
+  const toggle = $("voice-toggle");
+  const hold = $("hold-to-talk");
+  if (!voiceSupported()) { toggle.hidden = true; return; }
+  let saved = "0";
+  try { saved = localStorage.getItem(VOICE_MODE_KEY) || "0"; } catch (_) { /* ignore */ }
+  if (saved === "1") setVoiceMode(true);
+  toggle.addEventListener("click", () => setVoiceMode(hold.hidden));
+
+  let rec = null;
+  let overlay = null;
+  let pressing = false;
+  let zone = "send";
+  let timer = null;
+
+  const close = () => {
+    clearInterval(timer);
+    timer = null;
+    hold.classList.remove("is-pressed");
+    if (overlay) { overlay.node.remove(); overlay = null; }
+  };
+
+  async function finish(finalZone) {
+    pressing = false;
+    const r = rec;
+    rec = null;
+    if (!r) { close(); return; }
+    if (finalZone === "cancel") { r.cancel(); close(); return; }
+    const { blob, duration } = await r.stop();
+    const isZh = getLang() === "zh";
+    if (duration < MIN_VOICE_S) {
+      close();
+      addError(isZh ? "说话时间太短" : "Too short - hold while you speak", { cls: "voice-short" });
+      setTimeout(() => { for (const n of messagesEl().querySelectorAll(".voice-short")) n.remove(); }, 2500);
+      return;
+    }
+    if (finalZone === "text") {
+      overlay.setZone("working");
+      try {
+        const text = await transcribeBlob(blob);
+        close();
+        if (!text) { addError(isZh ? "没听清，请再说一次" : "Didn't catch that - please try again"); return; }
+        track("voice_message", { mode: "to_text", seconds: Math.round(duration) });
+        setVoiceMode(false);
+        const input = $("message-input");
+        input.value = input.value ? `${input.value} ${text}` : text;
+        autosize(input);
+        input.setSelectionRange(input.value.length, input.value.length);
+      } catch (err) {
+        close();
+        addError(isRateLimited(err) ? err.message : (isZh ? "转文字失败，请重试" : "Couldn't transcribe - please try again"));
+      }
+      return;
+    }
+    close();
+    sendVoiceMessage(blob, duration);
+  }
+
+  hold.addEventListener("contextmenu", (e) => e.preventDefault());
+  hold.addEventListener("pointerdown", async (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    const isZh = getLang() === "zh";
+    if (state.streaming) { addError(isZh ? "教练正在回复，请稍等" : "Your coach is still replying - one moment"); return; }
+    if (sendBlocked()) { showLimitError(limits.sendScope); return; }
+    try { hold.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    pressing = true;
+    zone = "send";
+    hold.classList.add("is-pressed");
+    overlay = voiceOverlay();
+    overlay.setZone("starting");
+    document.body.append(overlay.node);
+    stopCoachSpeech();
+    const asked = performance.now();
+    try {
+      rec = await startRecording({ onLevel: (v) => overlay && overlay.level(v) });
+    } catch (err) {
+      close();
+      pressing = false;
+      addError(isZh ? "无法使用麦克风：请在浏览器设置中允许麦克风权限" : "Microphone unavailable - allow microphone access in your browser settings");
+      return;
+    }
+    if (!pressing) {
+      // Released while the permission prompt was open: don't send a stray clip.
+      rec.cancel(); rec = null; close();
+      if (performance.now() - asked > 600) addError(isZh ? "已开启麦克风，请再次按住说话" : "Microphone ready - press and hold again to talk");
+      return;
+    }
+    if (navigator.vibrate) navigator.vibrate(15);
+    overlay.setZone(zone);
+    timer = setInterval(() => {
+      if (!rec || !overlay) return;
+      const secs = (performance.now() - rec.startedAt) / 1000;
+      overlay.time(secs);
+      if (secs >= MAX_VOICE_S) finish(zone === "cancel" ? "send" : zone);
+    }, 200);
+  });
+  hold.addEventListener("pointermove", (e) => {
+    if (!pressing || !overlay || !rec) return;
+    const next = overlay.zoneAt(e.clientX, e.clientY);
+    if (next !== zone) { zone = next; overlay.setZone(zone); if (navigator.vibrate) navigator.vibrate(8); }
+  });
+  hold.addEventListener("pointerup", () => { if (pressing) finish(zone); });
+  hold.addEventListener("pointercancel", () => { if (pressing) finish("cancel"); });
+}
+
 export function initChat() {
   syncCoachPersonaHeader();
   onPersonaChange((id, info) => {
@@ -758,4 +1006,5 @@ export function initChat() {
   $("camera-input").addEventListener("change", onPhotoSelected);
   $("gallery-input").addEventListener("change", onPhotoSelected);
   $("photo-remove").addEventListener("click", clearPhoto);
+  initVoice();
 }

@@ -214,3 +214,64 @@ def test_install_page_and_service_worker_are_served() -> None:
     assert sw.headers["content-type"].startswith("text/javascript")
     assert sw.headers.get("service-worker-allowed") == "/"
     assert client.get("/static/img/install-qr.svg").status_code == 200
+
+
+def _wav_bytes(seconds: float = 1.0) -> bytes:
+    import io
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\x00\x00" * int(16000 * seconds))
+    return buf.getvalue()
+
+
+def test_voice_transcribe_and_voice_chat_flag(
+    memory_repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import web.main as main_mod
+
+    async def fake_transcribe(data: bytes, mime: str, lang: str) -> str:
+        assert mime == "audio/wav" and lang == "zh"
+        return "今天练腿 帮我安排一下"
+
+    monkeypatch.setattr(main_mod, "transcribe_audio", fake_transcribe)
+    agent = FakeAgentClient(
+        turn_events=[
+            {
+                "author": "fitness_coach",
+                "id": "c",
+                "content": {"parts": [{"text": "好"}]},
+            }
+        ]
+    )
+    client, _ = _dev_client(agent)
+    res = client.post(
+        "/api/transcribe",
+        files={"audio": ("voice.wav", _wav_bytes(), "audio/wav")},
+        data={"lang": "zh"},
+    )
+    assert res.status_code == 200 and res.json()["text"] == "今天练腿 帮我安排一下"
+    bad = client.post(
+        "/api/transcribe", files={"audio": ("x.txt", b"hello world", "text/plain")}
+    )
+    assert bad.status_code == 415
+
+    sid = client.post("/api/session", json={"new": True}).json()["session_id"]
+    client.post(
+        "/api/chat",
+        data={"text": "今天练腿 帮我安排一下", "lang": "zh", "voice": "1"},
+    )
+    sent = agent.messages[-1]["parts"][0]["text"]
+    assert "[Voice message] 今天练腿" in sent
+    hist = build_history(agent.sessions["dev-user"][sid]["events"])
+    user_msgs = [m for m in hist["messages"] if m["role"] == "user"]
+    assert user_msgs[-1] == {
+        "role": "user",
+        "text": "今天练腿 帮我安排一下",
+        "has_image": False,
+        "voice": True,
+    }

@@ -59,6 +59,9 @@ def default_limits() -> dict[str, Limit]:
             "photos_per_day", _int_env("RATE_PHOTOS_PER_DAY", 40), 86400
         ),
         "feedback": Limit("feedback", _int_env("RATE_FEEDBACK_PER_HOUR", 30), 3600),
+        "voice_per_day": Limit(
+            "voice_per_day", _int_env("RATE_VOICE_PER_DAY", 150), 86400
+        ),
     }
 
 

@@ -64,6 +64,7 @@
   <link rel="modulepreload" href="/static/js/exercises.js">
   <link rel="modulepreload" href="/static/js/modal.js">
   <link rel="modulepreload" href="/static/js/pwa.js">
+  <link rel="modulepreload" href="/static/js/voice.js">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script type="module" src="/static/app.js?v=__ASSET_VERSION__"></script>
 </head>
@@ -354,6 +355,7 @@
           <button type="button" id="photo-remove" class="photo-remove" data-i18n-attr="aria-label:coach.removePhoto" aria-label="Remove photo"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-close"/></svg></button>
         </div>
         <div class="composer-row">
+          <button type="button" class="icon-btn voice-toggle" id="voice-toggle" data-i18n-attr="title:coach.voiceMode;aria-label:coach.voiceMode" title="Voice message" aria-label="Voice message" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-mic"/></svg></button>
           <label class="icon-btn" data-i18n-attr="title:coach.camera" title="Take a photo">
             <input type="file" id="camera-input" accept="image/*" capture="environment" class="sr-only" tabindex="-1">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-photo-camera"/></svg><span class="sr-only" data-i18n="coach.camera">Take a photo</span>
@@ -363,6 +365,7 @@
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-image"/></svg><span class="sr-only" data-i18n="coach.gallery">Choose a photo</span>
           </label>
           <textarea id="message-input" rows="1" maxlength="4000" data-i18n-attr="placeholder:coach.placeholder;aria-label:coach.message" placeholder="Message your coach" aria-label="Message"></textarea>
+          <button type="button" id="hold-to-talk" class="hold-to-talk" hidden data-i18n="coach.holdToTalk">Hold to talk</button>
           <button type="submit" id="send-btn" class="send-btn" data-i18n-attr="aria-label:coach.send" aria-label="Send"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-arrow-upward"/></svg></button>
         </div>
       </form>
