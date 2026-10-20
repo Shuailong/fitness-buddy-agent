@@ -5,6 +5,7 @@ import { api, getJson } from "./js/api.js";
 import { state, actions } from "./js/state.js";
 import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions, syncCoachPersonaHeader, conversationDay, renderOfflineChat, flushOutbox } from "./js/chat.js";
 import { initOffline, onBackOnline, isOffline, clearOfflineData } from "./js/offline.js";
+import { CHANGELOG, hasUnseenChanges, initChangelogSeen } from "./js/changelog-data.js";
 import { renderToday, renderProgress, renderPlan, loadingView, errorView, setupProfileView } from "./js/views.js";
 import { startOnboarding, rerenderOnboarding } from "./js/onboarding.js";
 import { buildOnboardingMessage, initials } from "./js/logic.js";
@@ -58,6 +59,24 @@ function writeBootCache() {
       dashboard: state.dashboard || null,
     }));
   } catch (_) { /* quota or private mode */ }
+}
+
+// ------------------------------------------------------------- what's new
+const WHATSNEW_TOAST_KEY = "fb.changelog_toasted";
+
+/** Once per release: a toast pointing at /changelog when there's something new. */
+function announceWhatsNew() {
+  if (!hasUnseenChanges()) return;
+  try {
+    if (localStorage.getItem(WHATSNEW_TOAST_KEY) === CHANGELOG[0].id) return;
+    localStorage.setItem(WHATSNEW_TOAST_KEY, CHANGELOG[0].id);
+  } catch (_) { return; }
+  const title = CHANGELOG[0].title[getLang() === "zh" ? "zh" : "en"];
+  setTimeout(() => showToast(t("whatsnew.toast", { title }), {
+    iconName: "auto-awesome",
+    timeout: 9000,
+    onClick: () => { location.href = "/changelog"; },
+  }), 1500);
 }
 
 // ------------------------------------------------------------- demo mode
@@ -571,6 +590,10 @@ function renderAvatar() {
       ? el("img", { src: me.picture, alt: "", referrerpolicy: "no-referrer" })
       : el("span", { text: initials(me) }));
   }
+  for (const id of ["avatar-btn", "rail-avatar-btn"]) {
+    const btn = $(id);
+    if (btn) btn.classList.toggle("has-news", hasUnseenChanges());
+  }
   const railAdmin = $("rail-admin-link");
   if (railAdmin) railAdmin.hidden = !Boolean(me.is_admin);
   renderMenus();
@@ -703,6 +726,7 @@ async function startApp(meData = null, prefetchedDashboardPromise = null, { offl
   track("app_open");
   renderAvatar();
   renderDemoBanner();
+  announceWhatsNew();
   writeBootCache();
 
   // Unhide the app shell immediately so the user sees either cached data or
@@ -798,6 +822,7 @@ async function boot() {
 
   // Optimistic instant render from localStorage cache for returning mobile users.
   const cached = readBootCache();
+  initChangelogSeen({ returning: Boolean(cached && cached.me) });
   if (cached && cached.me) {
     state.config = cached.config || state.config;
     state.me = cached.me;

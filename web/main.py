@@ -168,6 +168,7 @@ def precache_urls() -> list[str]:
     v = ASSET_VERSION
     urls = [
         "/",
+        "/changelog",
         "/manifest.webmanifest",
         f"/static/app.js?v={v}",
         f"/static/styles.css?v={v}",
@@ -586,6 +587,17 @@ def create_app(
         if install_html.exists()
         else "<!doctype html><title>Install</title><p>Coming soon.</p>"
     )
+
+    changelog_page = (
+        (STATIC_DIR / "changelog.html")
+        .read_text(encoding="utf-8")
+        .replace(ASSET_VERSION_PLACEHOLDER, ASSET_VERSION)
+    )
+
+    @app.get("/changelog", include_in_schema=False)
+    async def changelog() -> HTMLResponse:
+        """What's new: user-facing release notes (data in js/changelog-data.js)."""
+        return HTMLResponse(changelog_page, headers={"Cache-Control": "no-cache"})
 
     @app.get("/install", include_in_schema=False)
     async def install() -> HTMLResponse:

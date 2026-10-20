@@ -11,6 +11,7 @@ import { initials } from "./logic.js";
 import { track, enableTelemetry } from "./telemetry.js";
 import { coachAvatar, getPersona, getPersonaId, renderPersonaSelectorGrid } from "./personas.js";
 import { coachMemoryCard } from "./memory.js";
+import { hasUnseenChanges } from "./changelog-data.js";
 
 function segmented(label, options, current, onPick, cls = "") {
   return el("div", { class: `menu-seg ${cls}`.trim(), role: "group", "aria-label": label }, options.map((o) =>
@@ -85,6 +86,11 @@ export function settingsMenu({
     el("div", { class: "menu-group menu-group-top" }, [
       onSettings ? item("tune", isZh ? "全部设置与教练中心" : "All Settings & Coach Studio", onSettings, "settings-primary-item") : null,
       onNewChat ? item("edit-square", isZh ? "开始新对话" : "Start a new chat", onNewChat) : null,
+      el("a", { class: "menu-item", href: "/changelog" }, [
+        icon("auto-awesome"),
+        el("span", { text: t("menu.changelog") }),
+        hasUnseenChanges() ? el("span", { class: "news-dot", "aria-label": t("menu.changelogNew") }) : null,
+      ]),
       isAdmin && onAdmin ? item("shield", t("menu.admin"), onAdmin, "admin-item") : null,
     ].filter(Boolean)),
     el("p", { class: "menu-label", text: t("menu.theme") }),
@@ -417,6 +423,10 @@ export function renderSettingsView(root, {
                   el("span", { text: t("menu.export") }),
                 ])
               : null,
+            el("a", { class: "btn btn-secondary btn-sm", href: "/changelog" }, [
+              icon("auto-awesome"),
+              el("span", { text: t("menu.changelog") }),
+            ]),
             el("a", { class: "btn btn-secondary btn-sm", href: "/privacy", target: "_blank", rel: "noopener" }, [
               icon("privacy-tip"),
               el("span", { text: t("menu.privacy") }),

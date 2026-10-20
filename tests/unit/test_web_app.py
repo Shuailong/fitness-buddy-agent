@@ -2029,3 +2029,13 @@ def test_expired_demo_cookie_is_rejected_and_swept(memory_repo) -> None:
         return await expired_demo_ids(memory_repo)
 
     assert asyncio.run(sweep()) == ["demo-old"]
+
+
+def test_changelog_page_is_public_and_versioned() -> None:
+    client, _ = _client()
+    resp = client.get("/changelog")
+    assert resp.status_code == 200 and "__ASSET_VERSION__" not in resp.text
+    assert "/static/js/changelog.js?v=" in resp.text
+    data = client.get("/static/js/changelog-data.js").text
+    ids = re.findall(r'id: "(\d{4}-\d{2}-\d{2}[a-z]?)"', data)
+    assert ids and ids == sorted(ids, reverse=True) and len(ids) == len(set(ids))
