@@ -275,6 +275,7 @@ const photoBlocked = () => limits.photo > Date.now();
 
 function rateMessage(scope, seconds) {
   const time = duration(seconds);
+  if (String(scope || "").startsWith("demo_")) return t("rate.demo");
   if (scope === "photos_per_day") return t("rate.photos", { time });
   if (scope === "messages_per_day") return t("rate.day", { time });
   return t("rate.minute", { time });

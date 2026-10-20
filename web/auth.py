@@ -50,6 +50,8 @@ class CurrentUser:
     email: str
     given_name: str = ""
     picture: str = ""
+    # Demo mode (no sign-in): a throwaway account with small quotas.
+    is_demo: bool = False
 
 
 def _b64encode(data: bytes) -> str:
@@ -151,11 +153,17 @@ def current_user(request: Request) -> CurrentUser:
     session = read_session(request)
     if not session.get("sub"):
         raise HTTPException(status_code=401, detail="Sign in required.")
+    is_demo = bool(session.get("demo"))
+    if is_demo and time.time() > int(session.get("demo_exp") or 0):
+        raise HTTPException(
+            status_code=401, detail="The demo has ended. Sign in to keep going."
+        )
     return CurrentUser(
         user_id=str(session["sub"]),
         email=str(session.get("email", "")),
         given_name=str(session.get("given_name", "")),
         picture=str(session.get("picture", "")),
+        is_demo=is_demo,
     )
 
 

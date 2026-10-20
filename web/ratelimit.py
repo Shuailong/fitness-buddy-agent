@@ -62,6 +62,29 @@ def default_limits() -> dict[str, Limit]:
         "voice_per_day": Limit(
             "voice_per_day", _int_env("RATE_VOICE_PER_DAY", 150), 86400
         ),
+        # Demo mode (no sign-in): small per-account quotas, per-IP and global
+        # caps on new demo accounts, and a global cap on demo messages.
+        "demo_messages_per_day": Limit(
+            "demo_messages_per_day", _int_env("RATE_DEMO_MESSAGES_PER_DAY", 20), 86400
+        ),
+        "demo_photos_per_day": Limit(
+            "demo_photos_per_day", _int_env("RATE_DEMO_PHOTOS_PER_DAY", 3), 86400
+        ),
+        "demo_voice_per_day": Limit(
+            "demo_voice_per_day", _int_env("RATE_DEMO_VOICE_PER_DAY", 10), 86400
+        ),
+        "demo_tts_per_day": Limit(
+            "demo_tts_per_day", _int_env("RATE_DEMO_TTS_PER_DAY", 20), 86400
+        ),
+        "demo_starts_per_ip": Limit(
+            "demo_starts_per_ip", _int_env("RATE_DEMO_STARTS_PER_IP", 5), 86400
+        ),
+        "demo_starts_total": Limit(
+            "demo_starts_total", _int_env("RATE_DEMO_STARTS_PER_DAY", 300), 86400
+        ),
+        "demo_messages_total": Limit(
+            "demo_messages_total", _int_env("RATE_DEMO_MESSAGES_TOTAL", 3000), 86400
+        ),
     }
 
 
@@ -76,6 +99,7 @@ class RateDecision:
 
 class CounterStore(Protocol):
     async def increment(self, key: str, expire_at: datetime) -> int: ...
+    async def get(self, key: str) -> int: ...
 
 
 class MemoryCounterStore:
@@ -89,6 +113,9 @@ class MemoryCounterStore:
         async with self._lock:
             self._counts[key] = self._counts.get(key, 0) + 1
             return self._counts[key]
+
+    async def get(self, key: str) -> int:
+        return self._counts.get(key, 0)
 
 
 class FirestoreCounterStore:
@@ -111,6 +138,10 @@ class FirestoreCounterStore:
         )
         snap = await ref.get()
         return int((snap.to_dict() or {}).get("count", 1))
+
+    async def get(self, key: str) -> int:
+        snap = await self._db.collection("rate_limits").document(key).get()
+        return int((snap.to_dict() or {}).get("count", 0)) if snap.exists else 0
 
 
 class RateLimiter:
@@ -145,6 +176,19 @@ class RateLimiter:
                 retry_after = int((window + 1) * limit.window_seconds - now) + 1
                 return RateDecision(False, scope, max(retry_after, 1))
         return RateDecision(True)
+
+    async def remaining(
+        self, user_id: str, scope: str, now: float | None = None
+    ) -> int:
+        """Hits left in the current window (never negative; full on errors)."""
+        now = time.time() if now is None else now
+        limit = self.limits[scope]
+        key = f"{user_id}:{scope}:{int(now // limit.window_seconds)}"
+        try:
+            used = await self._store.get(key)
+        except Exception:
+            used = 0
+        return max(limit.max_hits - used, 0)
 
 
 def build_rate_limiter() -> RateLimiter:

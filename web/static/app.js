@@ -60,6 +60,68 @@ function writeBootCache() {
   } catch (_) { /* quota or private mode */ }
 }
 
+// ------------------------------------------------------------- demo mode
+function demoRemaining() {
+  const demo = state.me && state.me.demo;
+  return demo && demo.remaining ? demo.remaining.demo_messages_per_day : null;
+}
+
+function renderDemoBanner() {
+  const banner = $("demo-banner");
+  if (!banner) return;
+  const isDemo = Boolean(state.me && state.me.is_demo);
+  banner.hidden = !isDemo;
+  if (!isDemo) return;
+  const left = demoRemaining();
+  banner.replaceChildren(
+    icon("bolt-fill"),
+    el("div", { class: "demo-banner-text" }, [
+      el("strong", { text: t("demo.bannerTitle") }),
+      el("span", { text: left === null ? t("demo.bannerSubNoCount") : t("demo.bannerSub", { n: left }) }),
+    ]),
+    el("button", { type: "button", class: "btn btn-primary btn-sm", onclick: () => { track("demo", { action: "sign_in" }); signOut(); } }, [t("demo.signIn")]),
+  );
+}
+
+async function refreshDemoStatus() {
+  if (!(state.me && state.me.is_demo)) return;
+  try {
+    const res = await fetch("/api/me", { credentials: "same-origin" });
+    if (res.status === 401) { showToast(t("demo.ended"), { iconName: "warning" }); signOut(); return; }
+    if (res.ok) { state.me = { ...state.me, ...(await res.json()) }; renderDemoBanner(); }
+  } catch (_) { /* offline */ }
+}
+
+async function startDemo(btn) {
+  const err = $("signin-error");
+  if (err) err.textContent = "";
+  for (const b of document.querySelectorAll("[data-demo-start]")) b.disabled = true;
+  try {
+    const res = await fetch("/auth/demo", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lang: getLang(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "" }),
+    });
+    if (!res.ok) throw new Error(res.status === 429 ? t("demo.busy") : t("demo.failed"));
+    track("demo", { action: "start" });
+    clearBootCache();
+    state.dashboard = null;
+    await startApp();
+  } catch (e) {
+    if (err) err.textContent = e.message;
+    if (btn) btn.focus();
+  } finally {
+    for (const b of document.querySelectorAll("[data-demo-start]")) b.disabled = false;
+  }
+}
+
+function bindDemo() {
+  for (const b of document.querySelectorAll("[data-demo-start]")) {
+    b.addEventListener("click", () => startDemo(b));
+  }
+}
+
 function clearBootCache() {
   try { window.localStorage.removeItem(BOOT_CACHE_KEY); } catch (_) {}
   clearOfflineData();
@@ -192,6 +254,7 @@ async function changeRange(range) {
 }
 
 async function refreshDashboard(immediate = false) {
+  refreshDemoStatus();
   clearTimeout(refreshTimer);
   const run = async () => {
     try { await loadDashboard(); } catch (_) { /* keep the old data */ }
@@ -410,6 +473,9 @@ function renderGisButton() {
 
 function showSignIn() {
   enableTelemetry(false);
+  for (const b of document.querySelectorAll("[data-demo-start]")) b.hidden = !state.config.demo_enabled;
+  document.querySelector(".lp-cta-row")?.classList.toggle("has-demo", Boolean(state.config.demo_enabled));
+  renderDemoBanner();
   lastTab = null;
   $("app-view").hidden = true;
   $("onboarding-view").hidden = true;
@@ -636,6 +702,7 @@ async function startApp(meData = null, prefetchedDashboardPromise = null, { offl
   syncPersonaFromAccount(state.me);
   track("app_open");
   renderAvatar();
+  renderDemoBanner();
   writeBootCache();
 
   // Unhide the app shell immediately so the user sees either cached data or
@@ -698,6 +765,7 @@ async function boot() {
   actions.setLanguage = setLanguage;
   actions.setBusy = setBusy;
   actions.onConfirmation = onConfirmation;
+  actions.isDemo = () => Boolean(state.me && state.me.is_demo);
 
   initChat();
   bindMenus();
@@ -705,6 +773,7 @@ async function boot() {
   onBackOnline(resumeOnline);
   registerServiceWorker();
   bindInstallBanner();
+  bindDemo();
 
   window.addEventListener("hashchange", applyRoute);
   for (const id of ["lp-theme-slot", "topbar-theme-slot", "rail-theme-slot"]) $(id).replaceChildren(themeToggle());

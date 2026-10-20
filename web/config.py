@@ -75,6 +75,8 @@ class WebSettings:
     day_rollover_hour: int = 4
     dev_auth_bypass_requested: bool = False
     is_cloud_run: bool = False
+    # "Try without signing in" (throwaway demo accounts with small quotas).
+    demo_enabled: bool = True
     agent_backend: str = "local"
     local_agent_url: str = "http://localhost:8000"
     agent_app_name: str = "app"
@@ -103,6 +105,8 @@ class WebSettings:
             day_rollover_hour=int(os.environ.get("DAY_ROLLOVER_HOUR", 4)),
             dev_auth_bypass_requested=_bool("DEV_AUTH_BYPASS"),
             is_cloud_run=bool(os.environ.get("K_SERVICE")),
+            demo_enabled=os.environ.get("DEMO_MODE", "true").strip().lower()
+            not in ("0", "false", "no", "off"),
             agent_backend=os.environ.get("AGENT_BACKEND", "local").strip().lower(),
             local_agent_url=os.environ.get(
                 "LOCAL_AGENT_URL", "http://localhost:8000"

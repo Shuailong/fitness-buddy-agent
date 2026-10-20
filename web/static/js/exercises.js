@@ -878,6 +878,11 @@ function inspectCanvasFrameStats(ctx, width, height) {
  * strict evidence verification, biomechanical HUD overlay, and neural TTS voice feedback.
  */
 export function openLiveFormCoachModal(exOrId, actions) {
+  if (actions && actions.isDemo && actions.isDemo()) {
+    // Live camera coaching is the most expensive feature: signed-in accounts only.
+    showToast(getLang() === "zh" ? "实时摄像指导需要登录后使用" : "Live camera coaching needs a signed-in account", { iconName: "lock" });
+    return;
+  }
   // Synchronously unlock browser audio inside the user click gesture!
   unlockCoachAudio();
 

@@ -116,7 +116,7 @@ export function settingsMenu({
     ].filter(Boolean)),
     el("div", { class: "menu-group" }, [
       onDelete ? item("delete-forever", t("menu.delete"), onDelete, "danger") : null,
-      showSignOut ? item("logout", t("menu.signOut"), onSignOut) : null,
+      showSignOut ? item("logout", t(state.me && state.me.is_demo ? "demo.leave" : "menu.signOut"), onSignOut) : null,
     ].filter(Boolean)),
   ];
 }
@@ -400,7 +400,7 @@ export function renderSettingsView(root, {
                   text: isAdmin ? (isZh ? "管理员 · Admin" : "Admin") : (isZh ? "内测成员 · Member" : "Beta Member"),
                 }),
               ]),
-              el("span", { class: "muted small", text: me.email || "" }),
+              el("span", { class: "muted small", text: me.is_demo ? t("demo.badge") : me.email || "" }),
             ]),
           ]),
 
@@ -425,7 +425,7 @@ export function renderSettingsView(root, {
             showSignOut && onSignOut
               ? el("button", { type: "button", class: "btn btn-secondary btn-sm", onclick: onSignOut }, [
                   icon("logout"),
-                  el("span", { text: t("menu.signOut") }),
+                  el("span", { text: t(state.me && state.me.is_demo ? "demo.leave" : "menu.signOut") }),
                 ])
               : null,
             onDelete

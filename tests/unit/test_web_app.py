@@ -1950,3 +1950,82 @@ def test_service_worker_precaches_the_versioned_app_shell() -> None:
     assert any(u.startswith("/static/app.js?v=") for u in urls)
     for url in urls:  # every precached file exists (a 404 would leave a hole offline)
         assert client.get(url).status_code == 200, url
+
+
+# ------------------------------------------------------------------- demo mode
+def test_demo_mode_seeds_a_throwaway_account_with_small_quotas(memory_repo) -> None:
+    client, _ = _client()
+    assert client.get("/api/config").json()["demo_enabled"] is True
+    start = client.post("/auth/demo", json={"lang": "zh", "timezone": "Asia/Shanghai"})
+    assert start.status_code == 200 and start.json()["demo"] is True
+    me = client.get("/api/me").json()
+    assert me["is_demo"] is True and me["given_name"] == "体验用户"
+    assert me["demo"]["remaining"]["demo_messages_per_day"] == 20
+    uid = next(iter(memory_repo._profiles))
+    assert uid.startswith("demo-")
+    dash = client.get("/api/dashboard").json()
+    assert dash["has_profile"] is True and dash["plan"]["sessions"]
+    assert len(dash["weight"]["points"]) >= 10  # two weeks of sample history
+    # Chat works, and counts against the demo quota.
+    client.post("/api/session")
+    events = _parse_sse(client.post("/api/chat", data={"text": "hi coach"}).text)
+    assert any(e["type"] == "text" for e in events)
+    assert (
+        client.get("/api/me").json()["demo"]["remaining"]["demo_messages_per_day"] == 19
+    )
+    # The live camera coach is for signed-in accounts only.
+    assert (
+        client.post("/api/form-check", data={"exercise_id": "squat"}).status_code == 403
+    )
+    # Leaving the demo deletes its data.
+    client.post("/auth/logout")
+    assert uid not in memory_repo._profiles
+    assert client.get("/api/me").status_code == 401
+
+
+def test_demo_quota_blocks_after_limit(memory_repo) -> None:
+    client, _ = _client()
+    app = client.app
+    app.state.limiter.limits["demo_messages_per_day"] = Limit(
+        "demo_messages_per_day", 2, 86400
+    )
+    client.post("/auth/demo", json={"lang": "en"})
+    client.post("/api/session")
+    for _ in range(2):
+        assert client.post("/api/chat", data={"text": "hello"}).status_code == 200
+    blocked = client.post("/api/chat", data={"text": "hello"})
+    assert blocked.status_code == 429
+    assert blocked.json()["scope"] == "demo_messages_per_day"
+
+
+def test_demo_starts_are_capped_per_ip_and_can_be_disabled(memory_repo) -> None:
+    client, _ = _client()
+    client.app.state.limiter.limits["demo_starts_per_ip"] = Limit(
+        "demo_starts_per_ip", 2, 86400
+    )
+    assert client.post("/auth/demo").status_code == 200
+    assert client.post("/auth/demo").status_code == 200
+    third = client.post("/auth/demo")
+    assert third.status_code == 429 and third.json()["code"] == "demo_unavailable"
+    off, _ = _client(_settings(demo_enabled=False))
+    assert off.post("/auth/demo").status_code == 404
+    assert off.get("/api/config").json()["demo_enabled"] is False
+
+
+def test_expired_demo_cookie_is_rejected_and_swept(memory_repo) -> None:
+    from web.demo import expired_demo_ids, register_demo
+
+    client, _ = _client()
+    client.post("/auth/demo")
+    signer = client.app.state.signer
+    data = signer.loads(client.cookies.get("fb_session"))
+    data["demo_exp"] = int(time.time()) - 5
+    client.cookies.set("fb_session", signer.dumps(data))
+    assert client.get("/api/me").status_code == 401
+
+    async def sweep() -> list[str]:
+        await register_demo(memory_repo, "demo-old")
+        memory_repo.demo_registry["demo-old"]["created_at"] -= 3 * 86400
+        return await expired_demo_ids(memory_repo)
+
+    assert asyncio.run(sweep()) == ["demo-old"]

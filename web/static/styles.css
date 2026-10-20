@@ -3994,3 +3994,13 @@ body, button, a, label, .hold-to-talk, .composer, .tabbar { touch-action: manipu
 .queued-tag .icon { width: 13px; height: 13px; }
 .offline-note { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--r); background: var(--warn-soft); color: var(--warn-text); font-size: 0.8125rem; }
 .offline-note .icon { width: 16px; height: 16px; flex: none; }
+
+/* Demo mode (no sign-in). */
+.demo-banner { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; padding: 10px 12px 10px 14px; border-radius: var(--r); background: var(--primary-soft); color: var(--on-primary-soft); border: 1px solid var(--primary-border); }
+.demo-banner > .icon { width: 20px; height: 20px; flex: none; }
+.demo-banner-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; font-size: 0.8125rem; }
+.demo-banner-text strong { font-size: 0.875rem; }
+.demo-banner .btn { flex: none; }
+.lp-demo-btn .icon { width: 18px; height: 18px; }
+.lp-demo-link { display: block; margin: 14px auto 0; }
+@media (max-width: 600px) { .lp-cta-row.has-demo .lp-how-link { display: none; } .lp-cta-row.has-demo .lp-demo-btn { width: 100%; max-width: 360px; justify-content: center; } }

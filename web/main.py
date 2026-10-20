@@ -34,9 +34,11 @@ import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import (
+    BackgroundTasks,
     Depends,
     FastAPI,
     File,
@@ -104,6 +106,14 @@ from web.dashboard import (
     get_pending_meal_photo,
     save_meal_photo,
     save_pending_meal_photo,
+)
+from web.demo import (
+    client_ip_key,
+    expired_demo_ids,
+    forget_demo,
+    new_demo_identity,
+    register_demo,
+    seed_demo_account,
 )
 from web.events import (
     CONFIRMATION_CALL,
@@ -210,6 +220,13 @@ class TtsRequest(BaseModel):
     lang: str | None = Field(default="zh", max_length=12)
 
 
+class DemoStartRequest(BaseModel):
+    """Starts a no-sign-in demo account."""
+
+    lang: str | None = Field(default=None, description="UI language: en or zh.")
+    timezone: str | None = Field(default=None, max_length=64)
+
+
 class GoogleCredential(BaseModel):
     """ID token returned by Google Identity Services."""
 
@@ -249,6 +266,7 @@ TELEMETRY_EVENTS = frozenset(
         "voice_message",
         "install_banner",
         "new_chat",
+        "demo",
     }
 )
 DASHBOARD_TIMEOUT_S = 15.0
@@ -451,8 +469,33 @@ def create_app(
             response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
+    _DEMO_SCOPES = {
+        "messages_per_day": "demo_messages_per_day",
+        "photos_per_day": "demo_photos_per_day",
+        "voice_per_day": "demo_voice_per_day",
+    }
+
     async def rate_limited(user: CurrentUser, scopes: list[str]) -> JSONResponse | None:
-        """Returns a 429 response when the user is over a limit, else None."""
+        """Returns a 429 response when the user is over a limit, else None.
+
+        Demo accounts use their own small daily quotas, and all demo messages
+        together share a global daily cap.
+        """
+        if user.is_demo:
+            scopes = [_DEMO_SCOPES.get(s, s) for s in scopes]
+            if "demo_messages_per_day" in scopes:
+                total = await app.state.limiter.hit("demo-all", ["demo_messages_total"])
+                if not total.allowed:
+                    return JSONResponse(
+                        {
+                            "detail": "The demo is busy right now. Sign in to keep chatting.",
+                            "code": "rate_limited",
+                            "scope": "demo_messages_total",
+                            "retry_after": total.retry_after,
+                        },
+                        status_code=429,
+                        headers={"Retry-After": str(total.retry_after)},
+                    )
         decision = await app.state.limiter.hit(user.user_id, scopes)
         if decision.allowed:
             return None
@@ -584,7 +627,101 @@ def create_app(
             "greeting_text": GREETING_TEXT,
             "greeting_texts": GREETING_TEXTS,
             "max_image_bytes": MAX_IMAGE_BYTES,
+            "demo_enabled": settings.demo_enabled,
         }
+
+    async def purge_user_everywhere(user_id: str) -> dict[str, Any]:
+        """Deletes a user's documents, conversations and coach memories."""
+        client: AgentClient = app.state.agent
+        repo = get_repository()
+        result: dict[str, Any] = {"deleted": True}
+        result["documents"] = await repo.delete_user_data(user_id)
+        forget_user_prefs(repo, user_id)
+        result["telemetry_purged"] = await purge_user_telemetry(repo, user_id)
+        errors: list[str] = []
+        try:
+            sessions = await asyncio.wait_for(
+                client.list_sessions(user_id), SESSION_TIMEOUT_S
+            )
+            for meta in sessions:
+                await client.delete_session(user_id, str(meta["id"]))
+            result["conversations"] = len(sessions)
+        except Exception as exc:
+            errors.append(f"conversations:{type(exc).__name__}")
+        try:
+            result["memories"] = await asyncio.wait_for(
+                client.delete_user_memories(user_id), SESSION_TIMEOUT_S
+            )
+        except Exception as exc:
+            errors.append(f"memories:{type(exc).__name__}")
+        if errors:
+            result["incomplete"] = errors
+        return result
+
+    async def purge_expired_demos() -> None:
+        """Sweeps demo accounts past their lifetime (runs after new demo starts)."""
+        repo = get_repository()
+        try:
+            for user_id in await expired_demo_ids(repo):
+                await purge_user_everywhere(user_id)
+                await forget_demo(repo, user_id)
+                log_event("demo_purged", user=_pseudonym(user_id))
+        except Exception as exc:
+            log_event(
+                "demo_purge_failed", severity=logging.WARNING, error=type(exc).__name__
+            )
+
+    @app.post("/auth/demo")
+    async def auth_demo(
+        request: Request,
+        background: BackgroundTasks,
+        body: DemoStartRequest | None = None,
+    ) -> JSONResponse:
+        """Starts a throwaway demo account: no sign-in, small quotas, 24 h."""
+        if not settings.demo_enabled:
+            raise HTTPException(status_code=404, detail="Demo mode is off.")
+        body = body or DemoStartRequest()
+        lang = normalize_lang(body.lang)
+        limiter = app.state.limiter
+        for key, scope in (
+            (client_ip_key(request), "demo_starts_per_ip"),
+            ("demo-all", "demo_starts_total"),
+        ):
+            decision = await limiter.hit(key, [scope])
+            if not decision.allowed:
+                log_event("demo_start_limited", severity=logging.WARNING, scope=scope)
+                return JSONResponse(
+                    {
+                        "detail": "Demo is busy right now. Please sign in or try again later.",
+                        "code": "demo_unavailable",
+                        "scope": scope,
+                        "retry_after": decision.retry_after,
+                    },
+                    status_code=429,
+                    headers={"Retry-After": str(decision.retry_after)},
+                )
+        identity = new_demo_identity(lang)
+        repo = get_repository()
+        timezone = (body.timezone or "").strip()
+        try:
+            ZoneInfo(timezone)
+        except Exception:
+            timezone = ""
+        await seed_demo_account(repo, identity["sub"], lang, timezone)
+        await register_demo(repo, identity["sub"])
+        geo = extract_client_geo(request, fallback_lang=lang)
+        await record_ops_event(
+            repo,
+            "sign_in",
+            user_id=identity["sub"],
+            outcome="demo",
+            country=geo["country"],
+        )
+        log_event("sign_in", outcome="demo", user=_pseudonym(identity["sub"]))
+        background.add_task(purge_expired_demos)
+        response = JSONResponse({"demo": True, "expires_at": identity["demo_exp"]})
+        write_session(request, response, identity)
+        return response
 
     @app.post("/auth/google")
     async def auth_google(body: GoogleCredential, request: Request) -> JSONResponse:
@@ -685,7 +822,19 @@ def create_app(
         return response
 
     @app.post("/auth/logout")
-    async def auth_logout(request: Request) -> JSONResponse:
+    async def auth_logout(
+        request: Request, background: BackgroundTasks
+    ) -> JSONResponse:
+        session = read_session(request)
+        if session.get("demo") and session.get("sub"):
+            # Leaving the demo deletes its throwaway data right away.
+            demo_id = str(session["sub"])
+
+            async def purge() -> None:
+                await purge_user_everywhere(demo_id)
+                await forget_demo(get_repository(), demo_id)
+
+            background.add_task(purge)
         response = JSONResponse({"ok": True})
         clear_session(request, response)
         return response
@@ -708,6 +857,20 @@ def create_app(
             "is_admin": role == "admin",
             "privacy": privacy_pref,
             "preferences": prefs,
+            "is_demo": user.is_demo,
+            **({"demo": await demo_status(user, request)} if user.is_demo else {}),
+        }
+
+    async def demo_status(user: CurrentUser, request: Request) -> dict[str, Any]:
+        limiter = app.state.limiter
+        scopes = ("demo_messages_per_day", "demo_photos_per_day", "demo_voice_per_day")
+        remaining = await asyncio.gather(
+            *(limiter.remaining(user.user_id, s) for s in scopes)
+        )
+        return {
+            "expires_at": int(read_session(request).get("demo_exp") or 0),
+            "limits": {s: limiter.limits[s].max_hits for s in scopes},
+            "remaining": dict(zip(scopes, remaining, strict=True)),
         }
 
     @app.post("/api/account/preferences")
@@ -1309,6 +1472,10 @@ def create_app(
         image: Annotated[UploadFile | None, File()] = None,
     ) -> dict[str, Any]:
         """Analyzes a live camera frame for real-time exercise form & voice coaching."""
+        if user.is_demo:
+            raise HTTPException(
+                status_code=403, detail="Live form coaching needs a signed-in account."
+            )
         data = b""
         mime = "image/jpeg"
         if image is not None and (image.filename or image.size):
@@ -1350,6 +1517,8 @@ def create_app(
     @app.post("/api/tts")
     async def coach_tts(body: TtsRequest, user: UserDep) -> dict[str, Any]:
         """Synthesizes natural neural speech for the active coach persona."""
+        if user.is_demo and await rate_limited(user, ["demo_tts_per_day"]):
+            return {"ok": False, "reason": "demo_limit"}
         res = await synthesize_coach_speech(
             text=body.text,
             persona=body.persona,
@@ -1411,6 +1580,9 @@ def create_app(
             await websocket.close(code=4401)
             return
 
+        if user.is_demo:
+            await websocket.close(code=4403)
+            return
         await websocket.accept()
         await websocket.send_json({"type": "ready", "mode": "live_ws_stream"})
         repo = get_repository()
@@ -1945,36 +2117,17 @@ def create_app(
         request: Request, body: DeleteAccountRequest, user: UserDep, client: AgentDep
     ) -> JSONResponse:
         """Deletes the user's stored data, conversations and coach memories."""
-        repo = get_repository()
-        result: dict[str, Any] = {"deleted": True}
-        result["documents"] = await repo.delete_user_data(user.user_id)
-        forget_user_prefs(repo, user.user_id)
-        result["telemetry_purged"] = await purge_user_telemetry(repo, user.user_id)
-        errors: list[str] = []
-        try:
-            sessions = await asyncio.wait_for(
-                client.list_sessions(user.user_id), SESSION_TIMEOUT_S
-            )
-            for meta in sessions:
-                await client.delete_session(user.user_id, str(meta["id"]))
-            result["conversations"] = len(sessions)
-        except Exception as exc:
-            errors.append(f"conversations:{type(exc).__name__}")
-        try:
-            result["memories"] = await asyncio.wait_for(
-                client.delete_user_memories(user.user_id), SESSION_TIMEOUT_S
-            )
-        except Exception as exc:
-            errors.append(f"memories:{type(exc).__name__}")
+        result = await purge_user_everywhere(user.user_id)
+        errors: list[str] = result.get("incomplete", [])
+        if user.is_demo:
+            await forget_demo(get_repository(), user.user_id)
         log_event(
             "account_deleted",
             severity=logging.WARNING if errors else logging.INFO,
             user=_pseudonym(user.user_id),
             errors=errors,
-            **{k: v for k, v in result.items() if k != "deleted"},
+            **{k: v for k, v in result.items() if k not in ("deleted", "incomplete")},
         )
-        if errors:
-            result["incomplete"] = errors
         response = JSONResponse(result)
         clear_session(request, response)
         return response
