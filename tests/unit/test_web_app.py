@@ -1932,3 +1932,21 @@ def test_dashboard_shows_todays_adjustment(memory_repo) -> None:
     )
     # The weekly template itself is unchanged.
     assert {s["focus"] for s in data["plan"]["sessions"]} == {"Strength"}
+
+
+def test_service_worker_precaches_the_versioned_app_shell() -> None:
+    client, _ = _client()
+    resp = client.get("/sw.js")
+    assert resp.status_code == 200
+    assert resp.headers["service-worker-allowed"] == "/"
+    body = resp.text
+    assert "__ASSET_VERSION__" not in body and "__PRECACHE__" not in body
+    match = re.search(r"const PRECACHE = (\[.*?\]);", body)
+    assert match
+    urls = json.loads(match.group(1))
+    assert (
+        "/" in urls and "/static/js/offline.js" in urls and "/static/js/chat.js" in urls
+    )
+    assert any(u.startswith("/static/app.js?v=") for u in urls)
+    for url in urls:  # every precached file exists (a 404 would leave a hole offline)
+        assert client.get(url).status_code == 200, url

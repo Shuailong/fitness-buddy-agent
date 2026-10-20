@@ -3,7 +3,8 @@
 import { $, el, icon } from "./js/util.js";
 import { api, getJson } from "./js/api.js";
 import { state, actions } from "./js/state.js";
-import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions, syncCoachPersonaHeader, conversationDay } from "./js/chat.js";
+import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions, syncCoachPersonaHeader, conversationDay, renderOfflineChat, flushOutbox } from "./js/chat.js";
+import { initOffline, onBackOnline, isOffline, clearOfflineData } from "./js/offline.js";
 import { renderToday, renderProgress, renderPlan, loadingView, errorView, setupProfileView } from "./js/views.js";
 import { startOnboarding, rerenderOnboarding } from "./js/onboarding.js";
 import { buildOnboardingMessage, initials } from "./js/logic.js";
@@ -61,6 +62,7 @@ function writeBootCache() {
 
 function clearBootCache() {
   try { window.localStorage.removeItem(BOOT_CACHE_KEY); } catch (_) {}
+  clearOfflineData();
 }
 
 /** The hidden "opened the app" message in the current language. */
@@ -603,7 +605,22 @@ async function refreshAccountPrefs() {
   } catch (_) { /* offline */ }
 }
 
-async function startApp(meData = null, prefetchedDashboardPromise = null) {
+/**
+ * The connection came back: open the real conversation if we started offline,
+ * send what was typed meanwhile, and refresh the dashboard.
+ */
+async function resumeOnline() {
+  if (!state.me || $("app-view").hidden) return;
+  if (state.startedOffline) {
+    state.startedOffline = false;
+    state.sessionReady = openSession().catch((err) => { addError(err.message); return null; });
+  }
+  await state.sessionReady;
+  await flushOutbox();
+  refreshDashboard(true);
+}
+
+async function startApp(meData = null, prefetchedDashboardPromise = null, { offline = false } = {}) {
   $("landing-view").hidden = true;
   document.querySelector(".skip-link").setAttribute("href", "#main-content");
   if (meData) {
@@ -627,6 +644,19 @@ async function startApp(meData = null, prefetchedDashboardPromise = null) {
     $("app-view").hidden = false;
     applyRoute();
     hideBootSplash();
+  }
+
+  if (offline) {
+    // No connection: last-synced dashboard (boot cache) and conversation;
+    // typed messages wait in the outbox until we're back online.
+    state.startedOffline = true;
+    state.sessionReady = Promise.resolve(null);
+    renderOfflineChat();
+    renderSuggestions(state.dashboard);
+    $("app-view").hidden = false;
+    applyRoute();
+    hideBootSplash();
+    return;
   }
 
   // Open the conversation and load the dashboard in parallel.
@@ -671,6 +701,8 @@ async function boot() {
 
   initChat();
   bindMenus();
+  initOffline();
+  onBackOnline(resumeOnline);
   registerServiceWorker();
   bindInstallBanner();
 
@@ -730,6 +762,10 @@ async function boot() {
       state.dashboard = null;
     }
     await startApp(meData, pre.dashboard || null);
+  } else if (cached && cached.me && (!cfg || isOffline())) {
+    // Network down (even /api/config failed): don't sign the user out, open
+    // the app from the last-synced data instead.
+    await startApp(cached.me, null, { offline: true });
   } else {
     clearBootCache();
     state.me = null;

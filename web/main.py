@@ -151,6 +151,34 @@ def _asset_version() -> str:
 
 
 ASSET_VERSION = _asset_version()
+
+
+def precache_urls() -> list[str]:
+    """The offline app shell: the page, its versioned assets and every JS module."""
+    v = ASSET_VERSION
+    urls = [
+        "/",
+        "/manifest.webmanifest",
+        f"/static/app.js?v={v}",
+        f"/static/styles.css?v={v}",
+        f"/static/js/theme-boot.js?v={v}",
+        "/static/icons.svg",
+        "/static/img/app/icon-192.png",
+        "/static/img/app/apple-touch-icon.png",
+    ]
+    urls += [
+        f"/static/fonts/{p.name}"
+        for p in sorted((STATIC_DIR / "fonts").glob("*.woff2"))
+    ]
+    # Modules are imported without ?v= (the cache itself is per deploy).
+    urls += [
+        f"/static/js/{p.name}"
+        for p in sorted((STATIC_DIR / "js").glob("*.js"))
+        if p.name not in ("install.js", "admin.js")
+    ]
+    return urls
+
+
 MAX_TEXT_CHARS = 4000
 
 _IMAGE_SIGNATURES: list[tuple[str, bytes, int]] = [
@@ -521,11 +549,22 @@ def create_app(
         """Step-by-step guide to add the app to a phone's home screen."""
         return HTMLResponse(install_page, headers={"Cache-Control": "no-cache"})
 
+    sw_source = (
+        (STATIC_DIR / "sw.js")
+        .read_text(encoding="utf-8")
+        .replace(ASSET_VERSION_PLACEHOLDER, ASSET_VERSION)
+        .replace("__PRECACHE__", json.dumps(precache_urls()))
+    )
+
     @app.get("/sw.js", include_in_schema=False)
-    async def service_worker() -> FileResponse:
-        """Root-scoped service worker (installability + offline page only)."""
-        return FileResponse(
-            STATIC_DIR / "sw.js",
+    async def service_worker() -> Response:
+        """Root-scoped service worker: installability + offline app shell.
+
+        The deploy's content hash is baked in, so every deploy installs a new
+        worker that precaches the new shell and drops the old cache.
+        """
+        return Response(
+            sw_source,
             media_type="text/javascript",
             headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
         )

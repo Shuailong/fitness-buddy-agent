@@ -10,6 +10,7 @@ import { TurnProgress } from "./progress.js";
 import { feedbackThumbs, dailyPromptAfterTurn } from "./feedback.js";
 import { track } from "./telemetry.js";
 import { openPhotoLightbox } from "./modal.js";
+import { isOffline, saveChatSnapshot, appendChatSnapshot, loadChatSnapshot, outbox, queueMessage, dropQueued } from "./offline.js";
 import { startRecording, voiceSupported, releaseMicrophone, warmMicrophone, scheduleMicRelease } from "./voice.js";
 import { coachAvatar, getPersona, getPersonaId, onPersonaChange, openPersonaSelectorModal, speakCoachText, stopCoachSpeech, unlockCoachAudio } from "./personas.js";
 
@@ -333,7 +334,10 @@ function restoreComposer(text, photoBlob) {
 
 function handleEvent(ev) {
   switch (ev.type) {
-    case "text": addCoachMessage(ev.text, ev.author, ev.event_id || null); break;
+    case "text":
+      addCoachMessage(ev.text, ev.author, ev.event_id || null);
+      appendChatSnapshot(snapshotOwner(), { role: "coach", text: ev.text, author: ev.author, persona: getPersonaId() });
+      break;
     case "activity": addActivity(ev.label); break;
     case "confirmation": {
       // Collapse first so the summary pill sits right above the approval card.
@@ -426,8 +430,21 @@ async function streamRequest(path, options, { photo = false, onRateLimited = nul
 }
 
 /** Sends a chat turn (text and/or a photo). Hidden turns don't render a bubble. */
-export async function sendChat(text, photoBlob = null, { hidden = false, voiceRow = null } = {}) {
+export async function sendChat(text, photoBlob = null, { hidden = false, voiceRow = null, row = null } = {}) {
   if (state.streaming) return false;
+  if (isOffline() && !hidden) {
+    // No connection: keep text in the outbox (sent when back online); photos
+    // and voice need the server, so say so instead of losing them.
+    if (photoBlob || voiceRow) {
+      if (voiceRow) voiceRow.remove();
+      restoreComposer(text, photoBlob);
+      addError(t(photoBlob ? "offline.noPhoto" : "offline.noVoice"));
+      return false;
+    }
+    if (!row) addQueuedMessage(queueMessage(snapshotOwner(), text));
+    return false;
+  }
+  if (hidden && isOffline()) return false;
   if (sendBlocked() || (photoBlob && photoBlocked())) {
     if (!hidden) restoreComposer(text, photoBlocked() ? null : photoBlob);
     showLimitError(sendBlocked() ? limits.sendScope : "photos_per_day");
@@ -441,7 +458,8 @@ export async function sendChat(text, photoBlob = null, { hidden = false, voiceRo
   if (!hidden) form.append("persona", getPersonaId());
   if (photoBlob) form.append("image", photoBlob, "photo.jpg");
   if (voiceRow) form.append("voice", "1");
-  const userRow = hidden ? null : voiceRow || addUserMessage(text, photoBlob ? URL.createObjectURL(photoBlob) : null);
+  const userRow = hidden ? null : voiceRow || row || addUserMessage(text, photoBlob ? URL.createObjectURL(photoBlob) : null);
+  if (!hidden) appendChatSnapshot(snapshotOwner(), { role: "user", text, has_image: Boolean(photoBlob), voice: Boolean(voiceRow) });
   await streamRequest("/api/chat", { method: "POST", body: form }, {
     photo: Boolean(photoBlob),
     onRateLimited: (err) => {
@@ -597,12 +615,58 @@ export async function openSession({ fresh = false } = {}) {
     if (session.is_new) return session;
     const history = session.history || await getJson("/api/history");
     renderHistoryMessages(history.messages);
+    saveChatSnapshot(snapshotOwner(), history.messages);
     for (const card of history.pending_confirmations) addConfirmationCard(card);
+    renderQueuedMessages();
     scrollToBottom();
     return session;
   } catch (err) {
     bootSk.remove();
     throw err;
+  }
+}
+
+// ------------------------------------------------------------- offline
+const snapshotOwner = () => (state.me && state.me.email) || null;
+
+/** A user bubble waiting in the outbox (sent automatically when back online). */
+function addQueuedMessage(item) {
+  const row = addUserMessage(item.text, null, false);
+  row.dataset.outboxId = item.id;
+  row.classList.add("is-queued");
+  const body = row.querySelector(".row-body") || row;
+  body.append(el("span", { class: "queued-tag" }, [icon("schedule"), t("offline.queued")]));
+  scrollToBottom();
+  return row;
+}
+
+function renderQueuedMessages() {
+  for (const item of outbox(snapshotOwner())) {
+    if (!document.querySelector(`[data-outbox-id="${CSS.escape(item.id)}"]`)) addQueuedMessage(item);
+  }
+}
+
+/** Offline start: the last-synced conversation plus queued messages, read-only until reconnect. */
+export function renderOfflineChat() {
+  const snap = loadChatSnapshot(snapshotOwner());
+  messagesEl().replaceChildren(dayDivider(state.sessionDay || conversationDay()));
+  if (snap) renderHistoryMessages(snap.messages);
+  messagesEl().append(el("div", { class: "row system" }, [el("p", { class: "offline-note" }, [icon("cloud"), t("offline.chatNote")])]));
+  renderQueuedMessages();
+  scrollToBottom();
+}
+
+/** Sends queued messages one by one (oldest first) once the connection is back. */
+export async function flushOutbox() {
+  const owner = snapshotOwner();
+  for (const item of outbox(owner)) {
+    if (isOffline() || state.streaming) return;
+    const row = document.querySelector(`[data-outbox-id="${CSS.escape(item.id)}"]`) || addQueuedMessage(item);
+    row.classList.remove("is-queued");
+    const tag = row.querySelector(".queued-tag");
+    if (tag) tag.remove();
+    dropQueued(owner, item.id);
+    await sendChat(item.text, null, { row });
   }
 }
 
@@ -1083,6 +1147,7 @@ function initVoice() {
     e.preventDefault();
     const isZh = getLang() === "zh";
     if (state.streaming) { addError(isZh ? "教练正在回复，请稍等" : "Your coach is still replying - one moment"); return; }
+    if (isOffline()) { addError(t("offline.noVoice")); return; }
     if (sendBlocked()) { showLimitError(limits.sendScope); return; }
     try { hold.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
     pressing = true;
