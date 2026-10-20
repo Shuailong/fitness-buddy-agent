@@ -3,8 +3,9 @@
 // - The app shell (HTML, JS, CSS, fonts, icons) is precached per deploy
 //   (cache name = content hash of the static files), so the app opens and
 //   shows your last-synced data without a connection.
-// - Pages: network first, falling back to the cached shell, then to a small
-//   offline page. Static files: cache first (the cache is per deploy).
+// - App pages (/ and /changelog): cache first, refreshed in the background;
+//   other pages: network first, falling back to the cached shell, then to a
+//   small offline page. Static files: cache first (the cache is per deploy).
 // - API responses (your data) are never stored here; the app keeps its own
 //   small last-synced snapshot in localStorage and clears it on sign-out.
 const VERSION = "__ASSET_VERSION__";
@@ -34,6 +35,30 @@ self.addEventListener("activate", (event) => {
     await self.clients.claim();
   })());
 });
+
+// App pages that are part of the precached shell: served from the cache at
+// once (no white screen while the network wakes up), refreshed in the
+// background. The cache is per deploy, so page and assets always match.
+const SHELL_PAGES = new Set(["/", "/changelog"]);
+
+async function shellFirst(request, path) {
+  const cache = await caches.open(CACHE);
+  const hit = await cache.match(path);
+  const refresh = fetch(request).then(async (response) => {
+    // Only keep pages built for this deploy (a newer deploy installs a new
+    // worker, which precaches its own pages and assets).
+    if (response.ok && response.type === "basic" && !response.redirected) {
+      const html = await response.clone().text();
+      if (html.includes(`?v=${VERSION}`)) await cache.put(path, response.clone());
+    }
+    return response;
+  });
+  if (hit) {
+    refresh.catch(() => {});
+    return hit;
+  }
+  return refresh.catch(() => fromNetworkThenShell(request));
+}
 
 async function fromNetworkThenShell(request) {
   try {
@@ -74,6 +99,10 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     // Only the app pages; auth redirects and APIs always hit the network.
     if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/")) return;
+    if (SHELL_PAGES.has(url.pathname)) {
+      event.respondWith(shellFirst(request, url.pathname));
+      return;
+    }
     event.respondWith(fromNetworkThenShell(request));
     return;
   }
