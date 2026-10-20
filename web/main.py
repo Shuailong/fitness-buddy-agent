@@ -82,6 +82,7 @@ from web.auth import (
     clear_session,
     current_user,
     get_user_role,
+    get_waitlist_entry,
     is_email_allowed,
     read_session,
     save_waitlist_entry,
@@ -215,6 +216,7 @@ TELEMETRY_EVENTS = frozenset(
         "form_check",
         "persona_change",
         "history_older",
+        "install_banner",
         "new_chat",
     }
 )
@@ -476,6 +478,29 @@ def create_app(
     async def privacy() -> HTMLResponse:
         return HTMLResponse(privacy_page, headers={"Cache-Control": "no-cache"})
 
+    install_html = STATIC_DIR / "install.html"
+    install_page = (
+        install_html.read_text(encoding="utf-8").replace(
+            ASSET_VERSION_PLACEHOLDER, ASSET_VERSION
+        )
+        if install_html.exists()
+        else "<!doctype html><title>Install</title><p>Coming soon.</p>"
+    )
+
+    @app.get("/install", include_in_schema=False)
+    async def install() -> HTMLResponse:
+        """Step-by-step guide to add the app to a phone's home screen."""
+        return HTMLResponse(install_page, headers={"Cache-Control": "no-cache"})
+
+    @app.get("/sw.js", include_in_schema=False)
+    async def service_worker() -> FileResponse:
+        """Root-scoped service worker (installability + offline page only)."""
+        return FileResponse(
+            STATIC_DIR / "sw.js",
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+        )
+
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
@@ -509,18 +534,23 @@ def create_app(
                 )
         except AllowlistDeniedError as exc:
             try:
-                await save_waitlist_entry(
-                    repo,
-                    exc.email,
-                    {
-                        "email": exc.email,
-                        "given_name": exc.given_name,
-                        "lang": normalize_lang(body.lang),
-                        "country": geo["country"],
-                        "requested_at": utc_now().isoformat(),
-                        "status": "pending",
-                    },
-                )
+                # Repeat attempts must not reset an admin's decision (a revoked
+                # user stays revoked) or the original request time.
+                existing = await get_waitlist_entry(repo, exc.email) or {}
+                now_iso = utc_now().isoformat()
+                record: dict[str, Any] = {
+                    "email": exc.email,
+                    "given_name": exc.given_name,
+                    "lang": normalize_lang(body.lang),
+                    "country": geo["country"],
+                    "last_attempt_at": now_iso,
+                    "attempts": int(existing.get("attempts") or 0) + 1,
+                }
+                if not existing.get("requested_at"):
+                    record["requested_at"] = now_iso
+                if not existing.get("status"):
+                    record["status"] = "pending"
+                await save_waitlist_entry(repo, exc.email, record)
             except Exception as store_exc:
                 log_event(
                     "waitlist_store_failed",

@@ -15,6 +15,7 @@ import { track, enableTelemetry } from "./js/telemetry.js";
 import { openFeedbackDialog } from "./js/feedback.js";
 import { exportData, openDeleteDialog, openPrivacySettingsModal } from "./js/account.js";
 import { onPersonaChange, applyServerPersona, getPersonaId } from "./js/personas.js";
+import { registerServiceWorker, isStandalone, detectPlatform, canPromptInstall, promptInstall, onInstallStateChange } from "./js/pwa.js";
 
 const ROUTES = ["today", "coach", "progress", "plan", "settings", "admin"];
 const desktop = window.matchMedia("(min-width: 1024px)");
@@ -111,6 +112,7 @@ function applyRoute() {
     renderView(view);
   }
   updateTitle();
+  updateInstallBanner();
 }
 
 // ------------------------------------------------------------- dashboard
@@ -526,6 +528,39 @@ function syncPersonaFromAccount(me) {
   }
 }
 
+// ------------------------------------------------------------- install banner
+const INSTALL_DISMISS_KEY = "fb.install_banner_dismissed_at";
+
+/** A small, dismissible "add to home screen" prompt on phones (hidden in the installed app). */
+function updateInstallBanner() {
+  const banner = $("install-banner");
+  if (!banner) return;
+  let dismissedAt = 0;
+  try { dismissedAt = Number(localStorage.getItem(INSTALL_DISMISS_KEY) || 0); } catch (_) {}
+  const recentlyDismissed = Date.now() - dismissedAt < 14 * 24 * 3600 * 1000;
+  const phone = detectPlatform().os !== "desktop";
+  banner.hidden = !phone || isStandalone() || recentlyDismissed || currentRoute() !== "today" || $("app-view").hidden;
+}
+
+function bindInstallBanner() {
+  $("install-banner-cta").addEventListener("click", async () => {
+    track("install_banner", { action: canPromptInstall() ? "prompt" : "guide" });
+    if (canPromptInstall()) {
+      const outcome = await promptInstall();
+      if (outcome === "accepted") $("install-banner").hidden = true;
+    } else {
+      location.href = "/install";
+    }
+  });
+  $("install-banner-close").addEventListener("click", () => {
+    try { localStorage.setItem(INSTALL_DISMISS_KEY, String(Date.now())); } catch (_) {}
+    track("install_banner", { action: "dismiss" });
+    $("install-banner").hidden = true;
+  });
+  onInstallStateChange(updateInstallBanner);
+  window.addEventListener("hashchange", updateInstallBanner);
+}
+
 /** Manual "new chat" (menu): starts a fresh conversation; earlier ones stay above. */
 async function startNewChat() {
   if (state.streaming) return;
@@ -632,6 +667,8 @@ async function boot() {
 
   initChat();
   bindMenus();
+  registerServiceWorker();
+  bindInstallBanner();
 
   window.addEventListener("hashchange", applyRoute);
   for (const id of ["lp-theme-slot", "topbar-theme-slot", "rail-theme-slot"]) $(id).replaceChildren(themeToggle());

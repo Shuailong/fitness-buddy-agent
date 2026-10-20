@@ -201,3 +201,16 @@ def test_older_history_pages_back_one_conversation_at_a_time(memory_repo) -> Non
     third = client.get(f"/api/history/older?before={second['started_at']}").json()
     assert third["session_id"] is None and third["has_more"] is False
     assert client.get("/api/history/older").status_code == 422
+
+
+def test_install_page_and_service_worker_are_served() -> None:
+    client, _ = _dev_client()
+    page = client.get("/install")
+    assert page.status_code == 200
+    assert "/static/js/install.js?v=" in page.text
+    assert "__ASSET_VERSION__" not in page.text
+    sw = client.get("/sw.js")
+    assert sw.status_code == 200
+    assert sw.headers["content-type"].startswith("text/javascript")
+    assert sw.headers.get("service-worker-allowed") == "/"
+    assert client.get("/static/img/install-qr.svg").status_code == 200

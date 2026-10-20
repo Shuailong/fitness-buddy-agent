@@ -279,6 +279,16 @@ export function renderSettingsView(root, {
             ]),
             langSwitch(),
           ]),
+          el("div", { class: "settings-pref-item" }, [
+            el("div", { class: "settings-pref-copy" }, [
+              el("strong", { text: isZh ? "安装到手机桌面" : "Install on your phone" }),
+              el("span", { class: "muted small", text: isZh ? "像 App 一样全屏打开，iPhone / 安卓约 10 秒完成" : "Opens full-screen like an app - about 10 seconds on iPhone or Android" }),
+            ]),
+            el("a", { class: "btn btn-secondary btn-sm", href: "/install" }, [
+              icon("install-mobile"),
+              el("span", { text: isZh ? "安装指南" : "Install guide" }),
+            ]),
+          ]),
           onFeedback
             ? el("div", { class: "settings-pref-item" }, [
                 el("div", { class: "settings-pref-copy" }, [

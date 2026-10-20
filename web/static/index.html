@@ -62,6 +62,7 @@
   <link rel="modulepreload" href="/static/js/tips.js">
   <link rel="modulepreload" href="/static/js/exercises.js">
   <link rel="modulepreload" href="/static/js/modal.js">
+  <link rel="modulepreload" href="/static/js/pwa.js">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script type="module" src="/static/app.js?v=__ASSET_VERSION__"></script>
 </head>
@@ -270,6 +271,7 @@
         <nav class="lp-footer-links" data-i18n-attr="aria-label:lp.footer.nav" aria-label="Footer">
           <a href="https://github.com/Shuailong/fitness-buddy-agent" target="_blank" rel="noopener noreferrer"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-code"/></svg>GitHub</a>
           <a href="#lp-safety" data-scroll="lp-safety" data-i18n="lp.footer.medical">Not medical advice</a>
+          <a href="/install"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-install-mobile"/></svg><span data-i18n="lp.footer.install">Install on your phone</span></a>
           <a href="/privacy"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-privacy-tip"/></svg><span data-i18n="lp.footer.privacy">Privacy</span></a>
         </nav>
       </div>
@@ -317,6 +319,12 @@
           <div class="menu" id="user-menu" hidden></div>
         </div>
       </header>
+      <div id="install-banner" class="install-banner" hidden>
+        <img src="/static/img/app/icon-192.png" alt="" width="36" height="36">
+        <div class="install-banner-text"><strong data-i18n="install.bannerTitle">Install Fitness Buddy</strong><span data-i18n="install.bannerSub">Full-screen, one tap from your home screen</span></div>
+        <button type="button" class="btn btn-primary btn-sm" id="install-banner-cta" data-i18n="install.bannerCta">Install</button>
+        <button type="button" class="icon-btn" id="install-banner-close" data-i18n-attr="aria-label:install.dismiss" aria-label="Dismiss"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-close"/></svg></button>
+      </div>
       <section id="view-today" class="view" data-view="today" data-i18n-attr="aria-label:nav.today" aria-label="Today"></section>
       <section id="view-progress" class="view" data-view="progress" data-i18n-attr="aria-label:nav.progress" aria-label="Progress" hidden></section>
       <section id="view-plan" class="view" data-view="plan" data-i18n-attr="aria-label:nav.plan" aria-label="Plan" hidden></section>

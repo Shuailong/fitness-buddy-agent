@@ -3777,3 +3777,65 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
 .history-loader-btn .icon { width: 15px; height: 15px; }
 .history-end { margin: 0; text-align: center; font-size: 0.74rem; }
 .messages > .day-divider { position: sticky; top: 4px; z-index: 2; box-shadow: var(--shadow-sm); }
+
+/* ============================================================================
+   18. Install guide (/install)
+   ============================================================================ */
+.inst-main { padding-top: 24px; padding-bottom: 56px; display: grid; gap: 20px; max-width: 760px; }
+.inst-hero { text-align: center; display: grid; justify-items: center; gap: 10px; padding: 12px 0 4px; }
+.inst-app-icon { width: 84px; height: 84px; border-radius: 22px; box-shadow: 0 10px 30px var(--primary-glow); }
+.inst-hero h1 { font-size: clamp(1.5rem, 5vw, 2.1rem); font-weight: 700; margin: 6px 0 0; }
+.inst-lead { color: var(--muted); max-width: 46ch; margin: 0; }
+.inst-perks { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 6px; }
+.inst-perks li { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: var(--r-full); background: var(--card); border: 1px solid var(--line); font-size: 0.82rem; color: var(--text); }
+.inst-perks .icon { width: 16px; height: 16px; color: var(--primary-text); }
+.inst-guide { display: grid; gap: 14px; }
+.inst-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 4px; border-radius: var(--r-full); background: var(--inset); border: 1px solid var(--line-soft); }
+.inst-tab { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; border-radius: var(--r-full); border: 0; background: transparent; color: var(--muted); font-weight: 600; font-size: 0.88rem; cursor: pointer; }
+.inst-tab .icon { width: 18px; height: 18px; }
+.inst-tab.active { background: var(--primary); color: var(--on-primary); box-shadow: 0 4px 14px var(--primary-glow); }
+.inst-detected { margin: 0; text-align: center; }
+.inst-panel { display: grid; gap: 14px; }
+.inst-steps { display: grid; gap: 10px; counter-reset: none; }
+.inst-step { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 14px; border-radius: var(--r-lg); background: var(--inset); border: 1px solid var(--line-soft); }
+.inst-step-num { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--primary); color: var(--on-primary); font-weight: 800; font-size: 0.85rem; }
+.inst-step-icon { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; background: var(--card); border: 1px solid var(--line); color: #0A84FF; }
+.inst-step-icon .icon { width: 26px; height: 26px; }
+.inst-step-text { display: grid; gap: 3px; }
+.inst-step-text strong { font-size: 1rem; color: var(--text-strong); }
+.inst-note { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: var(--r); background: var(--warn-soft); color: var(--warn-text); font-size: 0.88rem; }
+.inst-note .icon { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+.inst-one-tap-card { display: grid; justify-items: center; gap: 6px; padding: 6px 0 2px; }
+.inst-one-tap { width: 100%; max-width: 360px; }
+.inst-desktop { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 24px; }
+.inst-qr { display: grid; justify-items: center; gap: 8px; padding: 14px; border-radius: var(--r-lg); background: #fff; }
+.inst-qr img { width: 196px; height: 196px; display: block; }
+.inst-qr-url { margin: 0; font-size: 0.75rem; color: #444; font-weight: 600; }
+.inst-desktop-lead { font-size: 1.05rem; font-weight: 600; color: var(--text-strong); margin: 0 0 8px; }
+.inst-inapp { border-color: var(--warn); display: grid; gap: 10px; justify-items: start; }
+.inst-inapp-head { display: flex; align-items: center; gap: 8px; color: var(--warn-text); }
+.inst-inapp-head h2 { font-size: 1.05rem; margin: 0; }
+.inst-inapp-hint { align-self: end; font-size: 1.4rem; letter-spacing: 0.1em; color: var(--warn-text); }
+.inst-done { display: grid; justify-items: center; text-align: center; gap: 10px; }
+.inst-done-icon .icon { width: 48px; height: 48px; color: var(--primary-text); }
+.inst-faq h2 { font-size: 1.05rem; margin: 0 0 10px; }
+.inst-faq-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.inst-faq-item { padding: 14px; border-radius: var(--r-lg); background: var(--card); border: 1px solid var(--line-soft); }
+.inst-faq-item p { margin: 6px 0 0; }
+.inst-open-web { justify-self: center; }
+@media (max-width: 640px) {
+  .inst-desktop { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+  .inst-faq-grid { grid-template-columns: 1fr; }
+  .inst-tab span { font-size: 0.8rem; }
+}
+.install-banner {
+  display: flex; align-items: center; gap: 10px; margin: 8px 16px 6px; padding: 10px 6px 10px 12px;
+  border-radius: var(--r-lg); background: var(--card); border: 1px solid var(--primary-border); box-shadow: var(--shadow-sm);
+}
+.install-banner img { width: 36px; height: 36px; border-radius: 9px; flex: none; }
+.install-banner-text { display: grid; gap: 1px; flex: 1; min-width: 0; }
+.install-banner-text strong { font-size: 0.9rem; color: var(--text-strong); }
+.install-banner-text span { font-size: 0.74rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.install-banner .btn-sm { min-height: 36px; padding: 0 14px; }
+.install-banner .icon-btn { width: 36px; height: 36px; }
+@media (min-width: 1024px) { .install-banner { display: none !important; } }

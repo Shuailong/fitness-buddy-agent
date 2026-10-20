@@ -348,6 +348,16 @@ def test_google_sign_in_enforces_allowlist(
     assert memory_repo.waitlist["stranger@example.com"]["given_name"] == "Coach"
     assert memory_repo.waitlist["stranger@example.com"]["lang"] == "zh"
     assert memory_repo.waitlist["stranger@example.com"]["status"] == "pending"
+    first_requested = memory_repo.waitlist["stranger@example.com"]["requested_at"]
+
+    # Retrying keeps the original request time and never undoes a revocation.
+    memory_repo.waitlist["stranger@example.com"]["status"] = "revoked"
+    retry = client.post("/auth/google", json={"credential": "valid-token-value"})
+    assert retry.status_code == 403
+    entry = memory_repo.waitlist["stranger@example.com"]
+    assert entry["status"] == "revoked"
+    assert entry["requested_at"] == first_requested
+    assert entry["attempts"] == 2
 
     claims.update(email="coach.user@example.com", email_verified=False)
     assert (
