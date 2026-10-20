@@ -3903,3 +3903,8 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
 .voice-transcript .icon { width: 16px; height: 16px; flex: none; }
 .voice-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; font-weight: 600; color: var(--primary-text); margin-bottom: 2px; }
 .voice-tag .icon { width: 14px; height: 14px; }
+.voice-transcript.is-partial { display: grid; gap: 8px; justify-items: end; border-color: var(--warn); background: var(--warn-soft); }
+.voice-partial-note { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--warn-text); }
+.voice-partial-text { color: var(--text-strong); text-align: right; }
+.voice-partial-actions { display: inline-flex; gap: 8px; }
+.voice-partial-actions .btn-sm { min-height: 34px; padding: 0 14px; }

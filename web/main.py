@@ -1022,7 +1022,7 @@ def create_app(
         if mime is None:
             raise HTTPException(status_code=415, detail="Unsupported audio format.")
         try:
-            text = await transcribe_audio(data, mime, normalize_lang(lang))
+            result = await transcribe_audio(data, mime, normalize_lang(lang))
         except Exception as exc:
             raise HTTPException(
                 status_code=502, detail="Could not transcribe that recording."
@@ -1030,10 +1030,11 @@ def create_app(
         log_event(
             "voice_transcribed",
             user=_pseudonym(user.user_id),
-            chars=len(text),
+            chars=len(result["text"]),
+            status=result["status"],
             bytes=len(data),
         )
-        return JSONResponse({"text": text})
+        return JSONResponse(result)
 
     @app.post("/api/chat")
     async def chat(

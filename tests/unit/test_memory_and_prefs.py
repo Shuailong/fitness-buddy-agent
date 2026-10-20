@@ -236,7 +236,7 @@ def test_voice_transcribe_and_voice_chat_flag(
 
     async def fake_transcribe(data: bytes, mime: str, lang: str) -> str:
         assert mime == "audio/wav" and lang == "zh"
-        return "今天练腿 帮我安排一下"
+        return {"status": "ok", "text": "今天练腿 帮我安排一下"}
 
     monkeypatch.setattr(main_mod, "transcribe_audio", fake_transcribe)
     agent = FakeAgentClient(
@@ -254,7 +254,8 @@ def test_voice_transcribe_and_voice_chat_flag(
         files={"audio": ("voice.wav", _wav_bytes(), "audio/wav")},
         data={"lang": "zh"},
     )
-    assert res.status_code == 200 and res.json()["text"] == "今天练腿 帮我安排一下"
+    assert res.status_code == 200
+    assert res.json() == {"status": "ok", "text": "今天练腿 帮我安排一下"}
     bad = client.post(
         "/api/transcribe", files={"audio": ("x.txt", b"hello world", "text/plain")}
     )
@@ -275,3 +276,48 @@ def test_voice_transcribe_and_voice_chat_flag(
         "has_image": False,
         "voice": True,
     }
+
+
+def test_voice_guards_against_hallucination() -> None:
+    import asyncio as _asyncio
+    import math
+
+    from web.voice import cross_check, has_enough_speech, transcribe_audio
+
+    # Silence never reaches the model.
+    assert not has_enough_speech(_wav_bytes(2.0), "audio/wav")
+    assert _asyncio.run(transcribe_audio(_wav_bytes(2.0), "audio/wav", "zh")) == {
+        "status": "no_speech",
+        "text": "",
+    }
+
+    # A steady tone (no syllable rhythm) is rejected too.
+    import array
+    import io
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        tone = [
+            int(6000 * math.sin(2 * math.pi * 220 * i / 16000)) for i in range(48000)
+        ]
+        w.writeframes(array.array("h", tone).tobytes())
+    assert not has_enough_speech(buf.getvalue(), "audio/wav")
+
+    same = {"status": "ok", "text": "今天练腿"}
+    assert cross_check(same, {"status": "ok", "text": "今天练腿。"})["status"] == "ok"
+    # Two models inventing different sentences = not clearly heard.
+    assert (
+        cross_check(same, {"status": "ok", "text": "下班了"})["status"] == "no_speech"
+    )
+    assert (
+        cross_check(same, {"status": "no_speech", "text": ""})["status"] == "no_speech"
+    )
+    close = cross_check(
+        {"status": "ok", "text": "今天中午吃了牛肉面"},
+        {"status": "ok", "text": "今天中午吃了牛肉"},
+    )
+    assert close["status"] in ("ok", "partial") and close["text"]

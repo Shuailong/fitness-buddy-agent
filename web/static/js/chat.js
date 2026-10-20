@@ -774,6 +774,24 @@ function addUserVoiceMessage({ url, duration }) {
       transcript.replaceChildren(el("span", { text }));
       scrollToBottom();
     },
+    confirm(text, { onSend, onEdit }) {
+      transcript.classList.remove("is-pending");
+      transcript.classList.add("is-partial");
+      const sendBtn = el("button", { type: "button", class: "btn btn-primary btn-sm" }, [isZh ? "发送" : "Send"]);
+      const editBtn = el("button", { type: "button", class: "btn btn-secondary btn-sm" }, [isZh ? "编辑" : "Edit"]);
+      transcript.replaceChildren(
+        el("span", { class: "voice-partial-note" }, [icon("warning"), isZh ? "有部分没听清（…），确认后再发给教练" : "Some words were unclear (…) - confirm before sending"]),
+        el("span", { class: "voice-partial-text", text }),
+        el("span", { class: "voice-partial-actions" }, [editBtn, sendBtn]),
+      );
+      sendBtn.addEventListener("click", () => {
+        transcript.classList.remove("is-partial");
+        transcript.replaceChildren(el("span", { text }));
+        onSend(text);
+      });
+      editBtn.addEventListener("click", () => onEdit(text));
+      scrollToBottom();
+    },
     fail(message) {
       transcript.classList.remove("is-pending");
       transcript.classList.add("is-error");
@@ -788,21 +806,42 @@ async function transcribeBlob(blob) {
   form.append("lang", getLang());
   const res = await api("/api/transcribe", { method: "POST", body: form });
   const data = await res.json();
-  return String(data.text || "").trim();
+  const text = String(data.text || "").trim();
+  const status = text ? (data.status === "partial" ? "partial" : "ok") : "no_speech";
+  return { text, status };
 }
 
 async function sendVoiceMessage(blob, duration) {
   const isZh = getLang() === "zh";
   const vm = addUserVoiceMessage({ url: URL.createObjectURL(blob), duration });
   let text = "";
+  let status = "no_speech";
   try {
-    text = await transcribeBlob(blob);
+    ({ text, status } = await transcribeBlob(blob));
   } catch (err) {
     vm.fail(isRateLimited(err) ? err.message : (isZh ? "转文字失败，请重试或改用文字" : "Couldn't transcribe - try again or type instead"));
     return;
   }
   if (!text) {
     vm.fail(isZh ? "没听清，请再说一次" : "Didn't catch that - please try again");
+    return;
+  }
+  if (status === "partial") {
+    // Not fully intelligible: never send a guess - let the user confirm or fix it.
+    vm.confirm(text, {
+      onSend: async (finalText) => {
+        track("voice_message", { mode: "send_confirmed", seconds: Math.round(duration) });
+        await sendChat(finalText, null, { voiceRow: vm.row });
+      },
+      onEdit: (finalText) => {
+        vm.row.remove();
+        setVoiceMode(false);
+        const input = $("message-input");
+        input.value = finalText;
+        autosize(input);
+        input.focus();
+      },
+    });
     return;
   }
   vm.setTranscript(text);
@@ -908,9 +947,13 @@ function initVoice() {
     if (finalZone === "text") {
       overlay.setZone("working");
       try {
-        const text = await transcribeBlob(blob);
+        const { text, status } = await transcribeBlob(blob);
         close();
         if (!text) { addError(isZh ? "没听清，请再说一次" : "Didn't catch that - please try again"); return; }
+        if (status === "partial") {
+          addError(isZh ? "有部分没听清，已用「…」标出，请检查后再发送" : "Some words were unclear and marked with …, please check before sending", { cls: "voice-short" });
+          setTimeout(() => { for (const n of messagesEl().querySelectorAll(".voice-short")) n.remove(); }, 4000);
+        }
         track("voice_message", { mode: "to_text", seconds: Math.round(duration) });
         setVoiceMode(false);
         const input = $("message-input");
