@@ -4034,3 +4034,11 @@ body, button, a, label, .hold-to-talk, .composer, .tabbar { touch-action: manipu
 .clog-tag.is-improved { background: rgba(56, 189, 248, 0.14); color: light-dark(#0369A1, #38BDF8); }
 a.menu-item { text-decoration: none; color: inherit; }
 .clog-tag.is-fixed { background: var(--warn-soft); color: var(--warn-text); }
+
+/* Settings > Screen diagnostics overlay */
+.vp-debug-link { display: flex; margin: 24px auto 8px; font-size: 0.8125rem; opacity: .7; }
+.vp-debug { position: fixed; inset: 0; z-index: 2000; display: flex; flex-direction: column; justify-content: center; padding: 24px 16px; background: rgba(0,0,0,.88); color: #E5E7EB; }
+.vp-debug pre { margin: 0; font: 12px/1.6 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+.vp-debug p { margin-top: 16px; color: #A3E635; font-size: 13px; }
+/* Paint the very bottom with the tab bar color so any band below it blends in. */
+html:has(#app-view:not([hidden])), html:has(#app-view:not([hidden])) body { background: var(--card, #0F1215); }

@@ -102,6 +102,51 @@ function reportViewport() {
   window.addEventListener("resize", () => { if (resized++ < 3) setTimeout(() => send("resize"), 300); });
 }
 
+function viewportMetrics() {
+  const probe = el("div", { style: { position: "fixed", top: "0", left: "0", width: "0", height: "0", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)", visibility: "hidden" } });
+  document.body.append(probe);
+  const cs = getComputedStyle(probe);
+  const tab = document.querySelector(".tabbar");
+  const shell = $("app-view");
+  const meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+  const out = {
+    standalone: isStandalone(),
+    innerH: window.innerHeight,
+    innerW: window.innerWidth,
+    outerH: window.outerHeight,
+    screenH: screen.height,
+    screenW: screen.width,
+    vvH: window.visualViewport ? Math.round(window.visualViewport.height) : -1,
+    vvTop: window.visualViewport ? Math.round(window.visualViewport.offsetTop) : -1,
+    clientH: document.documentElement.clientHeight,
+    safeTop: parseFloat(cs.paddingTop) || 0,
+    safeBottom: parseFloat(cs.paddingBottom) || 0,
+    shellH: shell ? Math.round(shell.getBoundingClientRect().height) : -1,
+    tabBottom: tab ? Math.round(tab.getBoundingClientRect().bottom) : -1,
+    statusBar: meta ? meta.content : "",
+    dpr: window.devicePixelRatio,
+    ios: (navigator.userAgent.match(/OS (\d+[_\d]*)/) || [])[1] || "",
+  };
+  probe.remove();
+  return out;
+}
+
+/** Settings > Screen diagnostics: sizes at launch vs. now (screenshot for bug reports). */
+function showViewportDebug() {
+  const boot = window.__fbVpBoot || {};
+  const now = viewportMetrics();
+  const rows = [
+    ["boot innerH / clientH / vvH", `${boot.ih} / ${boot.ch} / ${boot.vvh}`],
+    ["boot screen", `${boot.sw} x ${boot.sh}`],
+    ...Object.entries(now).map(([k, v]) => [k, String(v)]),
+  ];
+  const overlay = el("div", { class: "vp-debug", role: "dialog", onclick: () => overlay.remove() }, [
+    el("pre", { text: rows.map(([k, v]) => `${k.padEnd(28)} ${v}`).join("\n") }),
+    el("p", { text: getLang() === "zh" ? "截图发给开发者 · 点击关闭" : "Screenshot this for the developer · tap to close" }),
+  ]);
+  document.body.append(overlay);
+}
+
 // ------------------------------------------------------------- what's new
 const WHATSNEW_TOAST_KEY = "fb.changelog_toasted";
 
@@ -282,6 +327,7 @@ function renderView(view) {
       },
       showToast,
     });
+    root.append(el("button", { type: "button", class: "link-btn vp-debug-link", onclick: showViewportDebug }, [icon("monitoring"), getLang() === "zh" ? "屏幕诊断" : "Screen diagnostics"]));
     return;
   }
   const d = state.dashboard;

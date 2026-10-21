@@ -25,6 +25,16 @@
   syncThemeColor();
   if (mq && mq.addEventListener) mq.addEventListener("change", syncThemeColor);
 
+  // Viewport sizes at the very first script run (before any resize), for the
+  // screen diagnostics in Settings.
+  try {
+    window.__fbVpBoot = {
+      ih: window.innerHeight, iw: window.innerWidth, sh: screen.height, sw: screen.width,
+      vvh: window.visualViewport ? Math.round(window.visualViewport.height) : -1,
+      ch: document.documentElement.clientHeight,
+    };
+  } catch (e) {}
+
   // Kick off early parallel API fetches in <head> while CSS & ES modules download.
   try {
     if (typeof window.fetch === "function") {
