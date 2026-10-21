@@ -1042,7 +1042,17 @@ function setAttachTray(open) {
   if (open) scrollToBottom();
 }
 
-function setVoiceMode(on) {
+/** Microphone permission without prompting ("granted" | "prompt" | "denied" | "unknown"). */
+async function micPermission() {
+  try {
+    if (!navigator.permissions || !navigator.permissions.query) return "unknown";
+    return (await navigator.permissions.query({ name: "microphone" })).state;
+  } catch (_) {
+    return "unknown";
+  }
+}
+
+function setVoiceMode(on, { restoring = false } = {}) {
   const input = $("message-input");
   const hold = $("hold-to-talk");
   const toggle = $("voice-toggle");
@@ -1056,7 +1066,13 @@ function setVoiceMode(on) {
   toggle.title = on ? (t("chat.switchToKeyboard")) : (t("chat.voiceMessage"));
   toggle.setAttribute("aria-label", toggle.title);
   try { localStorage.setItem(VOICE_MODE_KEY, on ? "1" : "0"); } catch (_) { /* ignore */ }
-  if (on) {
+  if (on && restoring) {
+    // Reopening the app in voice mode must not trigger a permission prompt
+    // (iPhone home-screen apps forget the microphone grant on every launch).
+    // Warm up only if the browser already allows it; otherwise the first
+    // press of "Hold to talk" asks, once per app session.
+    micPermission().then((state) => { if (state === "granted") warmMicrophone().catch(() => {}); });
+  } else if (on) {
     // Ask for the microphone now (on this tap), not in the middle of a hold.
     maybeShowMicTip();
     warmMicrophone().catch(() => {});
@@ -1127,7 +1143,7 @@ function initVoice() {
   if (!voiceSupported()) { toggle.hidden = true; return; }
   let saved = "0";
   try { saved = localStorage.getItem(VOICE_MODE_KEY) || "0"; } catch (_) { /* ignore */ }
-  if (saved === "1") setVoiceMode(true);
+  if (saved === "1") setVoiceMode(true, { restoring: true });
   toggle.addEventListener("click", () => setVoiceMode(hold.hidden));
 
   let rec = null;
