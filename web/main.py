@@ -268,6 +268,7 @@ TELEMETRY_EVENTS = frozenset(
         "install_banner",
         "new_chat",
         "demo",
+        "viewport",
     }
 )
 DASHBOARD_TIMEOUT_S = 15.0

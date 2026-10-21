@@ -61,6 +61,47 @@ function writeBootCache() {
   } catch (_) { /* quota or private mode */ }
 }
 
+// ------------------------------------------------------------- viewport diagnostics
+/**
+ * Sends screen / viewport sizes from phones (no personal data) so layout bugs
+ * on specific devices (e.g. an iOS home-screen app leaving a band under the
+ * tab bar) can be diagnosed from logs instead of guessed.
+ */
+function reportViewport() {
+  if (detectPlatform().os === "desktop") return;
+  const probe = el("div", { style: { position: "fixed", top: "0", left: "0", width: "0", height: "0", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)", visibility: "hidden", pointerEvents: "none" } });
+  document.body.append(probe);
+  const send = (phase) => {
+    const cs = getComputedStyle(probe);
+    const tab = document.querySelector(".tabbar");
+    const shell = $("app-view");
+    const meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+    track("viewport", {
+      phase,
+      standalone: isStandalone(),
+      ih: window.innerHeight,
+      iw: window.innerWidth,
+      oh: window.outerHeight,
+      sh: screen.height,
+      sw: screen.width,
+      vvh: window.visualViewport ? Math.round(window.visualViewport.height) : -1,
+      vvt: window.visualViewport ? Math.round(window.visualViewport.offsetTop) : -1,
+      ch: document.documentElement.clientHeight,
+      sat: parseFloat(cs.paddingTop) || 0,
+      sab: parseFloat(cs.paddingBottom) || 0,
+      shellh: shell ? Math.round(shell.getBoundingClientRect().height) : -1,
+      tabb: tab ? Math.round(tab.getBoundingClientRect().bottom) : -1,
+      sbs: meta ? meta.content : "",
+      dpr: window.devicePixelRatio,
+      ua: (navigator.userAgent.match(/OS (\d+[_\d]*)/) || [])[1] || "",
+    });
+  };
+  requestAnimationFrame(() => send("boot"));
+  setTimeout(() => send("t2s"), 2000);
+  let resized = 0;
+  window.addEventListener("resize", () => { if (resized++ < 3) setTimeout(() => send("resize"), 300); });
+}
+
 // ------------------------------------------------------------- what's new
 const WHATSNEW_TOAST_KEY = "fb.changelog_toasted";
 
@@ -727,6 +768,7 @@ async function startApp(meData = null, prefetchedDashboardPromise = null, { offl
   renderAvatar();
   renderDemoBanner();
   announceWhatsNew();
+  reportViewport();
   writeBootCache();
 
   // Unhide the app shell immediately so the user sees either cached data or
