@@ -287,7 +287,14 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .topbar {
   position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between;
   padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top));
-  background: var(--overlay); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  /* Starts with the exact status-bar color (theme-color = --surface) and
+     fades to the translucent overlay, so bar and header read as one surface. */
+  background: linear-gradient(to bottom, var(--surface) 0%, var(--overlay) 100%);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+.topbar::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 14px; pointer-events: none;
+  background: linear-gradient(to bottom, var(--overlay), transparent);
 }
 .wordmark { font-family: var(--font-head); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.02em; color: var(--primary-text); text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
 .menu-wrap { position: relative; }

@@ -18,8 +18,16 @@
   var mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
   function syncThemeColor() {
     var effective = root.getAttribute("data-theme") || (mq && mq.matches ? "light" : "dark");
+    var color = effective === "light" ? "#F8FAFC" : "#0F1215";
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", effective === "light" ? "#F8FAFC" : "#0F1215");
+    if (meta && meta.getAttribute("content") === color) return;
+    // Replace the element (not just its attribute): the iOS home-screen app
+    // only re-reads the status bar color when a theme-color meta is inserted.
+    var fresh = document.createElement("meta");
+    fresh.setAttribute("name", "theme-color");
+    fresh.setAttribute("content", color);
+    if (meta && meta.parentNode) meta.parentNode.replaceChild(fresh, meta);
+    else document.head.appendChild(fresh);
   }
   window.fbSyncThemeColor = syncThemeColor;
   syncThemeColor();
