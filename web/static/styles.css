@@ -4056,10 +4056,11 @@ html:has(#app-view:not([hidden])), html:has(#app-view:not([hidden])) body { back
   bottom: calc(env(safe-area-inset-bottom) + 76px);
   width: 58px; height: 58px; padding: 0; border-radius: 50%; border: 2px solid var(--primary);
   background: var(--card); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), 0 0 0 4px var(--primary-soft);
-  display: grid; place-items: center; cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  display: grid; place-items: center; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, left 0.35s cubic-bezier(0.22, 1, 0.36, 1), top 0.35s cubic-bezier(0.22, 1, 0.36, 1);
   animation: fab-in 0.25s ease-out;
 }
+.coach-fab.is-dragging { transition: none; transform: scale(1.08); box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45), 0 0 0 6px var(--primary-soft); }
 .coach-fab:active { transform: scale(0.94); }
 .coach-fab[hidden] { display: none; }
 .coach-fab-avatar { display: grid; place-items: center; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; }
@@ -4072,11 +4073,28 @@ html:has(#app-view:not([hidden])), html:has(#app-view:not([hidden])) body { back
 /* Coach as a full-screen sheet on phones (tab bar hidden while chatting). */
 .coach-close { flex: none; margin-left: -6px; }
 @media (max-width: 1023px) {
-  .shell[data-route="coach"] .coach { position: fixed; inset: 0; z-index: 40; animation: sheet-up 0.22s ease-out; }
-  .shell[data-route="coach"] .tabbar { display: none; }
+  /* The page stays underneath; the coach slides over it like a native sheet. */
+  .shell[data-route="coach"] .main { display: block; }
+  .shell[data-route="coach"] .coach {
+    position: fixed; inset: 0; z-index: 40;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
+    animation: sheet-up 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+    will-change: transform;
+    transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .shell[data-route="coach"] .coach.is-closing { animation: sheet-down 0.28s cubic-bezier(0.4, 0, 1, 1) both; }
   .composer { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .coach-head { touch-action: none; }
 }
-@keyframes sheet-up { from { transform: translateY(24px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+@keyframes sheet-up {
+  from { transform: translateY(70%) scale(0.96); opacity: 0; border-radius: 28px; }
+  60% { opacity: 1; }
+  to { transform: none; opacity: 1; border-radius: 0; }
+}
+@keyframes sheet-down { to { transform: translateY(100%); opacity: 0.6; } }
+@media (prefers-reduced-motion: reduce) {
+  .shell[data-route="coach"] .coach, .shell[data-route="coach"] .coach.is-closing { animation: none; }
+}
 @media (min-width: 1024px) {
   .coach-fab, .coach-close { display: none !important; }
 }
@@ -4111,3 +4129,18 @@ html:has(#app-view:not([hidden])), html:has(#app-view:not([hidden])) body { back
 }
 #new-chat-btn span { display: none; }
 #new-chat-btn { padding-inline: 10px; }
+
+/* "Back to latest" in the coach chat */
+.coach { position: relative; }
+.jump-latest {
+  position: absolute; left: 50%; bottom: var(--jump-bottom, 140px); z-index: 5; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px;
+  border: 1px solid var(--primary-border); background: var(--card); color: var(--text, inherit);
+  font: inherit; font-size: 0.8125rem; font-weight: 600; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); cursor: pointer;
+  animation: jump-in 0.2s ease-out;
+}
+.jump-latest[hidden] { display: none; }
+.jump-latest .icon { width: 16px; height: 16px; color: var(--primary-text); }
+.jump-dot { display: none; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+.jump-latest.has-new .jump-dot { display: inline-block; }
+@keyframes jump-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translateX(-50%); } }

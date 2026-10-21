@@ -29,10 +29,57 @@ let activeMsgTtsBtn = null;
 const limits = { send: 0, sendScope: null, photo: 0 };
 let limitTimer = null;
 
-function scrollToBottom() {
+// Follow new messages only while the reader is at the bottom; when they've
+// scrolled up to read, show a "Latest" button instead of yanking them down.
+let stickToBottom = true;
+let hasUnseen = false;
+
+function updateJumpButton() {
+  const btn = $("jump-latest");
+  if (!btn) return;
+  btn.hidden = stickToBottom;
+  btn.classList.toggle("has-new", hasUnseen);
+  if (!stickToBottom) {
+    const coach = $("coach-panel");
+    const composer = $("composer");
+    const suggestions = $("suggestions");
+    const offset = (composer ? composer.offsetHeight : 0) + (suggestions && suggestions.offsetParent ? suggestions.offsetHeight : 0);
+    if (coach) coach.style.setProperty("--jump-bottom", `${offset + 12}px`);
+  }
+}
+
+/** Smoothly scrolls the conversation to the newest message. */
+export function scrollChatToLatest({ smooth = true } = {}) {
+  const m = messagesEl();
+  hasUnseen = false;
+  stickToBottom = true;
+  updateJumpButton();
+  requestAnimationFrame(() => m.scrollTo({ top: m.scrollHeight, behavior: smooth ? "smooth" : "auto" }));
+}
+
+function initJumpToLatest() {
+  const m = messagesEl();
+  m.addEventListener("scroll", () => {
+    const near = m.scrollHeight - m.scrollTop - m.clientHeight < 120;
+    if (near && hasUnseen) hasUnseen = false;
+    if (near !== stickToBottom || near) {
+      stickToBottom = near;
+      updateJumpButton();
+    }
+  }, { passive: true });
+  $("jump-latest").addEventListener("click", () => scrollChatToLatest());
+}
+
+function scrollToBottom(force = false) {
   if (renderTarget) return;
   const m = messagesEl();
-  requestAnimationFrame(() => { m.scrollTop = m.scrollHeight; });
+  if (force || stickToBottom) {
+    if (force) stickToBottom = true;
+    requestAnimationFrame(() => { m.scrollTop = m.scrollHeight; });
+  } else {
+    hasUnseen = true;
+  }
+  updateJumpButton();
 }
 
 /**
@@ -76,7 +123,7 @@ export function addUserMessage(text, imageUrl, hadImage, { voice = false } = {})
   if (text) children.push(el("p", { text }));
   const row = el("div", { class: "row from-user" }, [el("div", { class: "bubble bubble-user" }, children)]);
   messagesEl().append(row);
-  scrollToBottom();
+  scrollToBottom(true);
   return row;
 }
 
@@ -619,7 +666,7 @@ export async function openSession({ fresh = false } = {}) {
     saveChatSnapshot(snapshotOwner(), history.messages);
     for (const card of history.pending_confirmations) addConfirmationCard(card);
     renderQueuedMessages();
-    scrollToBottom();
+    scrollToBottom(true);
     return session;
   } catch (err) {
     bootSk.remove();
@@ -654,7 +701,7 @@ export function renderOfflineChat() {
   if (snap) renderHistoryMessages(snap.messages);
   messagesEl().append(el("div", { class: "row system" }, [el("p", { class: "offline-note" }, [icon("cloud"), t("offline.chatNote")])]));
   renderQueuedMessages();
-  scrollToBottom();
+  scrollToBottom(true);
 }
 
 /** Sends queued messages one by one (oldest first) once the connection is back. */
@@ -1192,6 +1239,7 @@ function initVoice() {
 }
 
 export function initChat() {
+  initJumpToLatest();
   syncCoachPersonaHeader();
   onPersonaChange((id, info) => {
     syncCoachPersonaHeader();

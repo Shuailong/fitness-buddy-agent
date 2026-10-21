@@ -10,6 +10,8 @@ export const CHANGELOG = [
     items: [
       { type: "improved", zh: "底部只保留「今天 / 进展 / 计划」三个页面；教练变成右下角的悬浮头像，任何页面点一下就能聊。", en: "The bottom bar now has just Today, Progress and Plan; your coach is a floating button you can open from any page." },
       { type: "improved", zh: "点右上角头像进入设置；设置页精简为常用项，其余收进「更多」。", en: "Tap your avatar for Settings - everyday options up top, the rest under “More”." },
+      { type: "new", zh: "教练悬浮按钮可以拖到任意位置（松手后自动贴边，会记住位置）；聊天页像原生 App 一样从下方滑出，下拉顶部即可收起。", en: "Drag the coach button anywhere (it snaps to the edge and remembers its spot); the chat slides up like a native sheet - pull the header down to close." },
+      { type: "new", zh: "往上翻看历史时，新消息不会再把你拉回底部；点「回到最新」一键回到最新对话。", en: "Reading older messages? New replies no longer yank you down - tap “Latest” to jump back." },
       { type: "fixed", zh: "修复 iPhone 桌面 App 底部的黑边。", en: "Fixed the empty band at the bottom of the iPhone home-screen app." },
     ],
   },

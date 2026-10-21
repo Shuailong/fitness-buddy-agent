@@ -3,7 +3,7 @@
 import { $, el, icon } from "./js/util.js";
 import { api, getJson } from "./js/api.js";
 import { state, actions } from "./js/state.js";
-import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions, syncCoachPersonaHeader, conversationDay, renderOfflineChat, flushOutbox } from "./js/chat.js";
+import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions, syncCoachPersonaHeader, conversationDay, renderOfflineChat, flushOutbox, scrollChatToLatest } from "./js/chat.js";
 import { initOffline, onBackOnline, isOffline, clearOfflineData } from "./js/offline.js";
 import { CHANGELOG, hasUnseenChanges, initChangelogSeen } from "./js/changelog-data.js";
 import { renderToday, renderProgress, renderPlan, loadingView, errorView, setupProfileView } from "./js/views.js";
@@ -261,8 +261,10 @@ function updateTitle() {
 function applyRoute() {
   if ($("app-view").hidden) return;
   const route = currentRoute();
-  // On desktop the coach is a persistent side panel, so #coach shows Today.
-  const view = route === "coach" && desktop.matches ? "today" : route;
+  if (route !== "coach") lastPageRoute = route;
+  // On desktop the coach is a persistent side panel, so #coach shows Today;
+  // on phones the coach slides over the page it was opened from.
+  const view = route === "coach" ? (desktop.matches ? "today" : lastPageRoute) : route;
   $("app-view").dataset.route = route;
   for (const v of document.querySelectorAll(".view")) v.hidden = v.dataset.view !== view;
   const tab = desktop.matches ? view : route;
@@ -272,19 +274,20 @@ function applyRoute() {
     link.classList.toggle("active", active);
     if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current");
   }
-  if (route !== "coach") lastPageRoute = route;
   $("coach-fab").hidden = route === "coach";
   if (route === "coach") {
     $("coach-fab").querySelector(".unread").hidden = true;
     $("toast-region").replaceChildren();
-    const m = $("messages");
-    requestAnimationFrame(() => { m.scrollTop = m.scrollHeight; });
+    $("coach-panel").classList.remove("is-closing");
+    $("coach-panel").style.transform = "";
+    scrollChatToLatest({ smooth: false });
   } else {
     $("main-content").scrollTop = 0;
     renderView(view);
   }
   updateTitle();
   updateInstallBanner();
+  if (route !== "coach") requestAnimationFrame(() => placeFab());
 }
 
 // ------------------------------------------------------------- dashboard
@@ -403,9 +406,129 @@ function renderCoachFab() {
   $("coach-fab").querySelector(".coach-fab-avatar").replaceChildren(coachAvatar(getPersonaId(), { size: "md" }));
 }
 
-/** Closes the coach sheet and returns to the page it was opened from. */
+/** Closes the coach sheet (slide-down animation) and returns to the page it was opened from. */
 function closeCoach() {
-  navigate(lastPageRoute && lastPageRoute !== "coach" ? lastPageRoute : "today");
+  const panel = $("coach-panel");
+  const back = () => navigate(lastPageRoute && lastPageRoute !== "coach" ? lastPageRoute : "today");
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (desktop.matches || reduced || currentRoute() !== "coach") { back(); return; }
+  panel.classList.add("is-closing");
+  let done = false;
+  const finish = () => { if (done) return; done = true; panel.classList.remove("is-closing"); panel.style.transform = ""; back(); };
+  panel.addEventListener("animationend", finish, { once: true });
+  setTimeout(finish, 400);
+}
+
+/** Swipe the coach header down to close the sheet (phones). */
+function bindCoachSwipe() {
+  const head = document.querySelector(".coach-head");
+  const panel = $("coach-panel");
+  let startY = null;
+  let lastY = 0;
+  let lastT = 0;
+  let velocity = 0;
+  head.addEventListener("pointerdown", (e) => {
+    if (desktop.matches || e.target.closest("button, a, input")) return;
+    startY = e.clientY; lastY = e.clientY; lastT = performance.now(); velocity = 0;
+    head.setPointerCapture(e.pointerId);
+    panel.style.transition = "none";
+  });
+  head.addEventListener("pointermove", (e) => {
+    if (startY === null) return;
+    const dy = Math.max(0, e.clientY - startY);
+    const now = performance.now();
+    velocity = (e.clientY - lastY) / Math.max(1, now - lastT);
+    lastY = e.clientY; lastT = now;
+    panel.style.transform = `translateY(${dy}px)`;
+  });
+  const end = (e) => {
+    if (startY === null) return;
+    const dy = Math.max(0, e.clientY - startY);
+    startY = null;
+    panel.style.transition = "";
+    if (dy > 140 || (dy > 40 && velocity > 0.6)) closeCoach();
+    else panel.style.transform = "";
+  };
+  head.addEventListener("pointerup", end);
+  head.addEventListener("pointercancel", end);
+}
+
+// ------------------------------------------------------------- floating coach button
+const FAB_POS_KEY = "fb.fab_pos";
+let fabDragged = false;
+
+function fabBounds() {
+  const fab = $("coach-fab");
+  const size = fab.offsetWidth || 58;
+  const topbar = document.querySelector(".topbar");
+  const tabbar = document.querySelector(".tabbar");
+  const minY = (topbar ? topbar.getBoundingClientRect().bottom : 60) + 8;
+  const maxY = (tabbar && tabbar.offsetParent ? tabbar.getBoundingClientRect().top : window.innerHeight) - size - 12;
+  return { size, minY, maxY: Math.max(minY, maxY), margin: 14 };
+}
+
+function readFabPos() {
+  try { return JSON.parse(localStorage.getItem(FAB_POS_KEY)) || null; } catch (_) { return null; }
+}
+
+/** Places the button on the left or right edge at a remembered height. */
+function placeFab(pos = readFabPos()) {
+  const fab = $("coach-fab");
+  if (desktop.matches || fab.hidden) return;
+  const { size, minY, maxY, margin } = fabBounds();
+  const side = pos && pos.side === "left" ? "left" : "right";
+  const y = Math.min(maxY, Math.max(minY, pos && Number.isFinite(pos.y) ? pos.y : maxY));
+  fab.style.left = `${side === "left" ? margin : window.innerWidth - size - margin}px`;
+  fab.style.top = `${y}px`;
+  fab.style.right = "auto";
+  fab.style.bottom = "auto";
+}
+
+/** Drag the coach button anywhere; on release it snaps to the nearest side edge. */
+function bindFabDrag() {
+  const fab = $("coach-fab");
+  let start = null;
+  fab.addEventListener("pointerdown", (e) => {
+    start = { x: e.clientX, y: e.clientY, left: fab.offsetLeft, top: fab.offsetTop, dragging: false };
+    fab.setPointerCapture(e.pointerId);
+  });
+  fab.addEventListener("pointermove", (e) => {
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (!start.dragging && Math.hypot(dx, dy) > 6) {
+      start.dragging = true;
+      fab.classList.add("is-dragging");
+    }
+    if (!start.dragging) return;
+    const size = fab.offsetWidth;
+    fab.style.left = `${Math.min(window.innerWidth - size, Math.max(0, start.left + dx))}px`;
+    fab.style.top = `${Math.min(window.innerHeight - size, Math.max(0, start.top + dy))}px`;
+    fab.style.right = "auto";
+    fab.style.bottom = "auto";
+  });
+  const end = () => {
+    if (!start) return;
+    const wasDragging = start.dragging;
+    start = null;
+    if (!wasDragging) return;
+    fabDragged = true;
+    setTimeout(() => { fabDragged = false; }, 0);
+    fab.classList.remove("is-dragging");
+    const center = fab.offsetLeft + fab.offsetWidth / 2;
+    const pos = { side: center < window.innerWidth / 2 ? "left" : "right", y: fab.offsetTop };
+    try { localStorage.setItem(FAB_POS_KEY, JSON.stringify(pos)); } catch (_) { /* private mode */ }
+    placeFab(pos);
+    track("coach_fab", { action: "move", side: pos.side });
+  };
+  fab.addEventListener("pointerup", end);
+  fab.addEventListener("pointercancel", end);
+  fab.addEventListener("click", (e) => {
+    if (fabDragged) { e.preventDefault(); return; }
+    track("coach_fab");
+    navigate("coach");
+  });
+  window.addEventListener("resize", () => placeFab());
 }
 
 function showToast(message, { onClick = null, timeout = 8000, iconName = "check-circle" } = {}) {
@@ -885,7 +1008,8 @@ async function boot() {
   desktop.addEventListener("change", applyRoute);
   $("feedback-fab").addEventListener("click", () => openFeedbackDialog({ page: currentPage() }));
   $("new-chat-btn").addEventListener("click", startNewChat);
-  $("coach-fab").addEventListener("click", () => { track("coach_fab"); navigate("coach"); });
+  bindFabDrag();
+  bindCoachSwipe();
   $("coach-close").addEventListener("click", closeCoach);
   renderCoachFab();
 
