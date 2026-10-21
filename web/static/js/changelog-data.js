@@ -4,6 +4,15 @@
 // increasing: YYYY-MM-DD plus a letter when there are several in a day).
 export const CHANGELOG = [
   {
+    id: "2026-10-21d",
+    date: "2026-10-21",
+    title: { zh: "训练和饮食提醒", en: "Training & meal reminders" },
+    items: [
+      { type: "new", zh: "在「设置 → 提醒」开启通知：训练日早上 8 点提醒你今天练什么，晚上 8 点还没记录饮食时提醒你拍一张。已经完成的就不打扰。", en: "Turn on notifications in Settings → Reminders: a training-day nudge at 8:00 and a meal-logging reminder at 20:00 if nothing is logged - skipped when you've already done it." },
+      { type: "improved", zh: "iPhone 需先添加到主屏幕再开启提醒（iOS 的限制）。", en: "On iPhone, add the app to your Home Screen first (an iOS requirement)." },
+    ],
+  },
+  {
     id: "2026-10-21c",
     date: "2026-10-21",
     title: { zh: "更清爽的导航", en: "A cleaner layout" },

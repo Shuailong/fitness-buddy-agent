@@ -5,6 +5,7 @@ import { api, getJson } from "./js/api.js";
 import { state, actions } from "./js/state.js";
 import { initChat, openSession, sendChat, addError, prefillComposer, pickPhoto, renderSuggestions, syncCoachPersonaHeader, conversationDay, renderOfflineChat, flushOutbox, scrollChatToLatest } from "./js/chat.js";
 import { initOffline, onBackOnline, isOffline, clearOfflineData } from "./js/offline.js";
+import { unsubscribeThisDevice } from "./js/reminders.js";
 import { CHANGELOG, hasUnseenChanges, initChangelogSeen } from "./js/changelog-data.js";
 import { renderToday, renderProgress, renderPlan, loadingView, errorView, setupProfileView } from "./js/views.js";
 import { startOnboarding, rerenderOnboarding } from "./js/onboarding.js";
@@ -739,6 +740,7 @@ async function onGoogleCredential(response) {
 }
 
 async function signOut() {
+  await unsubscribeThisDevice();
   clearBootCache();
   state.me = null;
   state.dashboard = null;

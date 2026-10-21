@@ -27,6 +27,7 @@ import asyncio
 import base64
 import contextlib
 import hashlib
+import hmac
 import json
 import logging
 import secrets
@@ -140,6 +141,17 @@ from web.observability import (
     start_web_span,
     web_span,
 )
+from web.push import (
+    PushConfig,
+    delete_subscription,
+    delete_user_subscriptions,
+    get_subscription,
+    list_subscriptions,
+    save_subscription,
+)
+from web.push import dispatch as dispatch_push
+from web.push import message as push_message
+from web.push import send as send_push
 from web.ratelimit import RateLimiter, build_rate_limiter
 from web.user_prefs import forget_user_prefs, get_user_prefs, set_user_prefs
 from web.voice import MAX_AUDIO_BYTES, VOICE_MARKER, sniff_audio, transcribe_audio
@@ -221,6 +233,30 @@ class TtsRequest(BaseModel):
     lang: str | None = Field(default="zh", max_length=12)
 
 
+class PushKeys(BaseModel):
+    p256dh: str = Field(min_length=10, max_length=200)
+    auth: str = Field(min_length=8, max_length=100)
+
+
+class PushSubscription(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=1000, pattern=r"^https://")
+    keys: PushKeys
+
+
+class PushSubscribeRequest(BaseModel):
+    """A browser push subscription plus reminder preferences."""
+
+    subscription: PushSubscription
+    lang: str | None = None
+    timezone: str | None = Field(default=None, max_length=64)
+    prefs: dict[Literal["training", "meals"], bool] = Field(default_factory=dict)
+
+
+class PushEndpointRequest(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=1000)
+    prefs: dict[Literal["training", "meals"], bool] | None = None
+
+
 class DemoStartRequest(BaseModel):
     """Starts a no-sign-in demo account."""
 
@@ -270,6 +306,7 @@ TELEMETRY_EVENTS = frozenset(
         "demo",
         "viewport",
         "coach_fab",
+        "reminders",
     }
 )
 DASHBOARD_TIMEOUT_S = 15.0
@@ -449,6 +486,7 @@ def create_app(
     app.state.signer = CookieSigner(secret, settings.session_max_age_seconds)
     app.state.agent = agent_client or build_agent_client(settings)
     app.state.limiter = rate_limiter or build_rate_limiter()
+    app.state.push = PushConfig.from_env()
     app.add_middleware(GZipMiddleware, minimum_size=500)
 
     @app.middleware("http")
@@ -652,6 +690,7 @@ def create_app(
         result["documents"] = await repo.delete_user_data(user_id)
         forget_user_prefs(repo, user_id)
         result["telemetry_purged"] = await purge_user_telemetry(repo, user_id)
+        result["push_subscriptions"] = await delete_user_subscriptions(repo, user_id)
         errors: list[str] = []
         try:
             sessions = await asyncio.wait_for(
@@ -2125,6 +2164,108 @@ def create_app(
             payload,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+
+    # ------------------------------------------------------------ push reminders
+    @app.get("/api/push/config")
+    async def push_config(user: UserDep) -> dict[str, Any]:
+        """VAPID public key for PushManager.subscribe (reminders are off without it)."""
+        config: PushConfig = app.state.push
+        return {
+            "enabled": config.enabled and not user.is_demo,
+            "public_key": config.public_key if config.enabled else "",
+        }
+
+    @app.post("/api/push/subscribe")
+    async def push_subscribe(
+        body: PushSubscribeRequest, user: UserDep
+    ) -> dict[str, Any]:
+        """Stores this browser's push subscription for the signed-in user."""
+        if user.is_demo:
+            raise HTTPException(
+                status_code=403, detail="Reminders need a signed-in account."
+            )
+        if not app.state.push.enabled:
+            raise HTTPException(status_code=503, detail="Reminders are not configured.")
+        repo = get_repository()
+        existing = await get_subscription(repo, body.subscription.endpoint) or {}
+        prefs = {
+            "training": True,
+            "meals": True,
+            **(existing.get("prefs") or {}),
+            **body.prefs,
+        }
+        await save_subscription(
+            repo,
+            {
+                "endpoint": body.subscription.endpoint,
+                "keys": body.subscription.keys.model_dump(),
+                "user_id": user.user_id,
+                "lang": normalize_lang(body.lang),
+                "timezone": (body.timezone or "")[:64],
+                "prefs": prefs,
+                "created_at": existing.get("created_at") or utc_now().isoformat(),
+                "updated_at": utc_now().isoformat(),
+            },
+        )
+        log_event("push_subscribed", user=_pseudonym(user.user_id))
+        return {"subscribed": True, "prefs": prefs}
+
+    @app.post("/api/push/status")
+    async def push_status(body: PushEndpointRequest, user: UserDep) -> dict[str, Any]:
+        """Whether this browser's subscription is registered (and its preferences)."""
+        sub = await get_subscription(get_repository(), body.endpoint)
+        if not sub or sub.get("user_id") != user.user_id:
+            return {"subscribed": False}
+        return {"subscribed": True, "prefs": sub.get("prefs") or {}}
+
+    @app.post("/api/push/prefs")
+    async def push_prefs(body: PushEndpointRequest, user: UserDep) -> dict[str, Any]:
+        repo = get_repository()
+        sub = await get_subscription(repo, body.endpoint)
+        if not sub or sub.get("user_id") != user.user_id:
+            raise HTTPException(
+                status_code=404, detail="Not subscribed on this device."
+            )
+        prefs = {**(sub.get("prefs") or {}), **(body.prefs or {})}
+        await save_subscription(repo, {"endpoint": body.endpoint, "prefs": prefs})
+        return {"subscribed": True, "prefs": prefs}
+
+    @app.post("/api/push/unsubscribe")
+    async def push_unsubscribe(
+        body: PushEndpointRequest, user: UserDep
+    ) -> dict[str, Any]:
+        repo = get_repository()
+        sub = await get_subscription(repo, body.endpoint)
+        if sub and sub.get("user_id") == user.user_id:
+            await delete_subscription(repo, body.endpoint)
+        return {"subscribed": False}
+
+    @app.post("/api/push/test")
+    async def push_test(user: UserDep, lang: str | None = None) -> dict[str, Any]:
+        """Sends a confirmation notification to every device of the user."""
+        if not app.state.push.enabled:
+            raise HTTPException(status_code=503, detail="Reminders are not configured.")
+        repo = get_repository()
+        sent = 0
+        for sub in await list_subscriptions(repo, user.user_id):
+            payload = push_message("test", normalize_lang(lang or sub.get("lang")))
+            sent += int(await send_push(app.state.push, repo, sub, payload))
+        return {"sent": sent}
+
+    @app.post("/api/internal/push/dispatch")
+    async def push_dispatch(request: Request) -> dict[str, Any]:
+        """Hourly Cloud Scheduler job: sends the reminders that are due now."""
+        config: PushConfig = app.state.push
+        token = request.headers.get("X-Push-Token", "")
+        if not config.dispatch_token or not hmac.compare_digest(
+            token, config.dispatch_token
+        ):
+            raise HTTPException(status_code=403, detail="Forbidden")
+        if not config.enabled:
+            return {"enabled": False}
+        stats = await dispatch_push(config, get_repository())
+        log_event("push_dispatch", **stats)
+        return stats
 
     @app.post("/api/account/delete")
     async def delete_account(

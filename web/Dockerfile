@@ -37,7 +37,7 @@ COPY ./web ./web
 # by the web app, so only an empty placeholder is needed for the build.
 RUN mkdir -p app && touch app/__init__.py
 
-RUN uv sync --frozen --no-dev && uv pip install --no-cache "edge-tts>=7.0.0"
+RUN uv sync --frozen --no-dev && uv pip install --no-cache "edge-tts>=7.0.0" "pywebpush>=2.0.0"
 
 # Run as an unprivileged user.
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser /code

@@ -4147,3 +4147,9 @@ html:has(#app-view:not([hidden])), html:has(#app-view:not([hidden])) body { back
 .jump-dot { display: none; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
 .jump-latest.has-new .jump-dot { display: inline-block; }
 @keyframes jump-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translateX(-50%); } }
+
+/* Settings > Reminders */
+.reminders-note { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 10px; }
+.reminders-note .icon { width: 18px; height: 18px; flex: none; margin-top: 1px; color: var(--primary-text); }
+.reminders-kind { padding-left: 12px; border-left: 2px solid var(--primary-border); }
+.reminders-test { justify-self: start; margin-top: 4px; }

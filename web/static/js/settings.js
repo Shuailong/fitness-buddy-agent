@@ -11,6 +11,7 @@ import { initials } from "./logic.js";
 import { track, enableTelemetry } from "./telemetry.js";
 import { coachAvatar, getPersona, getPersonaId, renderPersonaSelectorGrid } from "./personas.js";
 import { coachMemoryCard } from "./memory.js";
+import { remindersCard } from "./reminders.js";
 import { hasUnseenChanges } from "./changelog-data.js";
 
 function segmented(label, options, current, onPick, cls = "") {
@@ -277,6 +278,9 @@ export function renderSettingsView(root, {
           ]),
         ]),
       ]),
+
+      // Reminders (Web Push)
+      remindersCard({ showToast }),
 
       // Coach Memory (cross-session preferences, shared by all coaches)
       coachMemoryCard({ showToast }),
