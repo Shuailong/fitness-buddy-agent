@@ -4049,3 +4049,65 @@ a.menu-item { text-decoration: none; color: inherit; }
 .vp-debug p { margin-top: 16px; color: #A3E635; font-size: 13px; }
 /* Paint the very bottom with the tab bar color so any band below it blends in. */
 html:has(#app-view:not([hidden])), html:has(#app-view:not([hidden])) body { background: var(--card, #0F1215); }
+
+/* ------------------------------------------------ floating coach (mobile) */
+.coach-fab {
+  position: fixed; z-index: 30; right: 16px;
+  bottom: calc(env(safe-area-inset-bottom) + 76px);
+  width: 58px; height: 58px; padding: 0; border-radius: 50%; border: 2px solid var(--primary);
+  background: var(--card); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), 0 0 0 4px var(--primary-soft);
+  display: grid; place-items: center; cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  animation: fab-in 0.25s ease-out;
+}
+.coach-fab:active { transform: scale(0.94); }
+.coach-fab[hidden] { display: none; }
+.coach-fab-avatar { display: grid; place-items: center; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; }
+.coach-fab-avatar .coach-svg-avatar { width: 50px; height: 50px; border: 0; }
+.coach-fab .unread { top: 2px; right: 2px; width: 12px; height: 12px; background: var(--warn); box-shadow: 0 0 0 2px var(--card); }
+.fab-busy { position: absolute; inset: -6px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--primary); border-right-color: var(--primary); animation: spin 0.9s linear infinite; pointer-events: none; }
+@keyframes fab-in { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .coach-fab, .fab-busy { animation: none; } }
+
+/* Coach as a full-screen sheet on phones (tab bar hidden while chatting). */
+.coach-close { flex: none; margin-left: -6px; }
+@media (max-width: 1023px) {
+  .shell[data-route="coach"] .coach { position: fixed; inset: 0; z-index: 40; animation: sheet-up 0.22s ease-out; }
+  .shell[data-route="coach"] .tabbar { display: none; }
+  .composer { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+}
+@keyframes sheet-up { from { transform: translateY(24px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+@media (min-width: 1024px) {
+  .coach-fab, .coach-close { display: none !important; }
+}
+
+/* ------------------------------------------------ settings page (compact) */
+.settings-head h1 { margin: 4px 0 0; }
+.settings-profile { display: flex; align-items: center; gap: 14px; padding: 16px; }
+.settings-section-title { margin: 0 0 12px; font-size: 1rem; }
+.settings-list-card { padding: 6px 0; }
+.settings-list-card .settings-section-title { padding: 10px 16px 0; margin-bottom: 4px; }
+.settings-list { display: flex; flex-direction: column; }
+.settings-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 10px 16px; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; list-style: none; }
+.settings-row::-webkit-details-marker { display: none; }
+.settings-row + .settings-row, .settings-details + .settings-row, .settings-row + .settings-details { border-top: 1px solid var(--line-soft); }
+.settings-row:active { background: var(--primary-soft); }
+.settings-row-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--primary-soft); color: var(--on-primary-soft); flex: none; }
+.settings-row-icon .icon { width: 18px; height: 18px; }
+.settings-row-label { flex: 1; min-width: 0; font-weight: 500; }
+.settings-row-chev { width: 18px; height: 18px; color: var(--muted); flex: none; transition: transform 0.15s; }
+.settings-row .news-dot { margin-left: 0; }
+.settings-row.is-danger { color: var(--warn-text); }
+.settings-row.is-danger .settings-row-icon { background: var(--warn-soft); color: var(--warn-text); }
+.settings-details[open] > summary .settings-row-chev { transform: rotate(180deg); }
+.settings-details-body { padding: 4px 16px 14px; }
+.settings-details .pdpa-status-pill { font-size: 0.6875rem; }
+@media (max-width: 1023px) {
+  /* Room to scroll the last card above the floating coach button. */
+  .main .view { padding-bottom: 84px; }
+  /* Compact coach header on phones: icon-only "new chat". */
+  #new-chat-btn span { display: none; }
+  #new-chat-btn { padding-inline: 10px; }
+}
+#new-chat-btn span { display: none; }
+#new-chat-btn { padding-inline: 10px; }

@@ -16,12 +16,13 @@ import { initLanding, localizeLandingImages } from "./js/landing.js";
 import { track, enableTelemetry } from "./js/telemetry.js";
 import { openFeedbackDialog } from "./js/feedback.js";
 import { exportData, openDeleteDialog, openPrivacySettingsModal } from "./js/account.js";
-import { onPersonaChange, applyServerPersona, getPersonaId } from "./js/personas.js";
+import { onPersonaChange, applyServerPersona, getPersonaId, coachAvatar } from "./js/personas.js";
 import { registerServiceWorker, isStandalone, detectPlatform, canPromptInstall, promptInstall, onInstallStateChange } from "./js/pwa.js";
 
 const ROUTES = ["today", "coach", "progress", "plan", "settings", "admin"];
 const desktop = window.matchMedia("(min-width: 1024px)");
-const MENUS = [["avatar-btn", "user-menu"], ["rail-avatar-btn", "rail-menu"]];
+const AVATAR_BUTTONS = ["avatar-btn", "rail-avatar-btn"];
+let lastPageRoute = "today";
 const BOOT_CACHE_KEY = "fb.boot_cache_v1";
 const BOOT_CACHE_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 let lastTab = null;
@@ -271,8 +272,10 @@ function applyRoute() {
     link.classList.toggle("active", active);
     if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current");
   }
+  if (route !== "coach") lastPageRoute = route;
+  $("coach-fab").hidden = route === "coach";
   if (route === "coach") {
-    document.querySelector(".tab[data-route='coach'] .unread").hidden = true;
+    $("coach-fab").querySelector(".unread").hidden = true;
     $("toast-region").replaceChildren();
     const m = $("messages");
     requestAnimationFrame(() => { m.scrollTop = m.scrollHeight; });
@@ -326,8 +329,8 @@ function renderView(view) {
         renderMenus();
       },
       showToast,
+      onDiagnostics: showViewportDebug,
     });
-    root.append(el("button", { type: "button", class: "link-btn vp-debug-link", onclick: showViewportDebug }, [icon("monitoring"), getLang() === "zh" ? "屏幕诊断" : "Screen diagnostics"]));
     return;
   }
   const d = state.dashboard;
@@ -388,11 +391,21 @@ function openCoach({ send = null, prefill = null, photo = null, focus = false } 
 
 /** Spinner pill on the Coach tab while a turn runs (mobile; the desktop panel is always visible). */
 function setBusy(on) {
-  const tab = document.querySelector(".tab[data-route='coach']");
-  tab.classList.toggle("busy", on);
-  tab.querySelector(".tab-busy").hidden = !on;
-  tab.querySelector(".tab-busy-label").hidden = !on;
-  if (on) tab.querySelector(".unread").hidden = true;
+  const fab = $("coach-fab");
+  fab.classList.toggle("busy", on);
+  fab.querySelector(".fab-busy").hidden = !on;
+  fab.querySelector(".fab-busy-label").hidden = !on;
+  if (on) fab.querySelector(".unread").hidden = true;
+}
+
+/** The floating coach button shows the current coach's portrait. */
+function renderCoachFab() {
+  $("coach-fab").querySelector(".coach-fab-avatar").replaceChildren(coachAvatar(getPersonaId(), { size: "md" }));
+}
+
+/** Closes the coach sheet and returns to the page it was opened from. */
+function closeCoach() {
+  navigate(lastPageRoute && lastPageRoute !== "coach" ? lastPageRoute : "today");
 }
 
 function showToast(message, { onClick = null, timeout = 8000, iconName = "check-circle" } = {}) {
@@ -423,7 +436,7 @@ function onConfirmation(card, node) {
 
 function markUnread() {
   const onCoach = desktop.matches || currentRoute() === "coach";
-  if (!onCoach) document.querySelector(".tab[data-route='coach'] .unread").hidden = false;
+  if (!onCoach) $("coach-fab").querySelector(".unread").hidden = false;
 }
 
 // ------------------------------------------------------------- language
@@ -461,51 +474,15 @@ function openPrivacy() {
 }
 
 // ------------------------------------------------------------- menus
-function renderMenus() {
-  const isAdmin = Boolean(state.me && state.me.is_admin);
-  const shareUsageData = !(state.me && state.me.privacy && state.me.privacy.share_usage_data === false);
-  const options = {
-    email: (state.me && state.me.email) || "",
-    isAdmin,
-    onAdmin: () => { closeMenus(); navigate("admin"); },
-    onSettings: () => { closeMenus(); navigate("settings"); },
-    onNewChat: startNewChat,
-    showSignOut: !(state.config && state.config.dev_auth_bypass),
-    onSignOut: signOut,
-    onFeedback: () => { closeMenus(); openFeedbackDialog({ page: currentPage() }); },
-    onPrivacy: openPrivacy,
-    shareUsageData,
-    onExport: () => { closeMenus(); runExport(); },
-    onDelete: () => { closeMenus(); openDeleteDialog({ onExport: runExport, onDeleted: afterAccountDeleted }); },
-  };
-  for (const [, menuId] of MENUS) $(menuId).replaceChildren(...settingsMenu(options).filter(Boolean));
-}
+/** The account menu was replaced by the Settings page (tap the avatar). */
+function renderMenus() {}
 
-function closeMenus() {
-  for (const [btnId, menuId] of MENUS) {
-    $(menuId).hidden = true;
-    $(btnId).setAttribute("aria-expanded", "false");
-  }
-}
+function closeMenus() {}
 
 function bindMenus() {
-  for (const [btnId, menuId] of MENUS) {
-    $(btnId).addEventListener("click", (e) => {
-      e.stopPropagation();
-      const open = $(menuId).hidden;
-      closeMenus();
-      $(menuId).hidden = !open;
-      $(btnId).setAttribute("aria-expanded", String(open));
-      if (open) $(menuId).querySelector("button")?.focus();
-    });
+  for (const id of AVATAR_BUTTONS) {
+    $(id).addEventListener("click", () => navigate("settings"));
   }
-  document.addEventListener("click", (e) => { if (!e.target.closest(".menu-wrap")) closeMenus(); });
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    for (const [btnId, menuId] of MENUS) {
-      if (!$(menuId).hidden) { closeMenus(); $(btnId).focus(); }
-    }
-  });
 }
 
 // ------------------------------------------------------------- onboarding
@@ -677,7 +654,7 @@ function renderAvatar() {
       ? el("img", { src: me.picture, alt: "", referrerpolicy: "no-referrer" })
       : el("span", { text: initials(me) }));
   }
-  for (const id of ["avatar-btn", "rail-avatar-btn"]) {
+  for (const id of AVATAR_BUTTONS) {
     const btn = $(id);
     if (btn) btn.classList.toggle("has-news", hasUnseenChanges());
   }
@@ -894,6 +871,7 @@ async function boot() {
     if (!$("landing-view").hidden) renderGisButton();
   });
   onPersonaChange((id) => {
+    renderCoachFab();
     if (state.me) {
       state.me.preferences = { ...(state.me.preferences || {}), coach_persona: id };
       writeBootCache();
@@ -907,6 +885,9 @@ async function boot() {
   desktop.addEventListener("change", applyRoute);
   $("feedback-fab").addEventListener("click", () => openFeedbackDialog({ page: currentPage() }));
   $("new-chat-btn").addEventListener("click", startNewChat);
+  $("coach-fab").addEventListener("click", () => { track("coach_fab"); navigate("coach"); });
+  $("coach-close").addEventListener("click", closeCoach);
+  renderCoachFab();
 
   // Optimistic instant render from localStorage cache for returning mobile users.
   const cached = readBootCache();

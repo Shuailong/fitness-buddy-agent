@@ -313,16 +313,14 @@
         <a href="#today" class="rail-link" data-route="today"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-calendar-today"/></svg><span data-i18n="nav.today">Today</span></a>
         <a href="#progress" class="rail-link" data-route="progress"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-monitoring"/></svg><span data-i18n="nav.progress">Progress</span></a>
         <a href="#plan" class="rail-link" data-route="plan"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-event-note"/></svg><span data-i18n="nav.plan">Plan</span></a>
-        <a href="#settings" class="rail-link" data-route="settings"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-tune"/></svg><span data-i18n="nav.settings">Settings</span></a>
         <a href="#admin" class="rail-link rail-link-admin" id="rail-admin-link" data-route="admin" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-shield"/></svg><span data-i18n="nav.admin">Admin</span></a>
       </div>
       <div class="rail-foot">
         <span class="theme-slot" id="rail-theme-slot"></span>
         <div class="menu-wrap">
-          <button type="button" class="avatar-btn" id="rail-avatar-btn" aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu" data-i18n-attr="aria-label:menu.account" aria-label="Account and settings">
+          <button type="button" class="avatar-btn" id="rail-avatar-btn" data-i18n-attr="aria-label:menu.account" aria-label="Account and settings">
             <span class="avatar" aria-hidden="true"></span>
           </button>
-          <div class="menu rail-menu" id="rail-menu" hidden></div>
         </div>
       </div>
     </nav>
@@ -333,10 +331,9 @@
         <a class="wordmark" href="#today">Fitness Buddy</a>
         <span class="theme-slot" id="topbar-theme-slot"></span>
         <div class="menu-wrap">
-          <button type="button" class="avatar-btn" id="avatar-btn" aria-haspopup="true" aria-expanded="false" aria-controls="user-menu" data-i18n-attr="aria-label:menu.account" aria-label="Account and settings">
+          <button type="button" class="avatar-btn" id="avatar-btn" data-i18n-attr="aria-label:menu.account" aria-label="Account and settings">
             <span class="avatar" aria-hidden="true"></span>
           </button>
-          <div class="menu" id="user-menu" hidden></div>
         </div>
       </header>
       <div id="demo-banner" class="demo-banner" role="status" hidden></div>
@@ -359,12 +356,13 @@
     <!-- Coach (full screen on mobile, side panel on desktop) -->
     <aside id="coach-panel" class="coach" aria-labelledby="coach-title">
       <header class="coach-head">
+        <button type="button" class="icon-btn coach-close" id="coach-close" data-i18n-attr="aria-label:coach.close" aria-label="Close"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-expand-more"/></svg></button>
         <span class="bot-avatar lg" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><use href="/static/icons.svg#i-smart-toy-fill"/></svg><i class="online"></i></span>
         <div class="coach-titles">
           <h2 id="coach-title" data-i18n="coach.title">Coach</h2>
           <p data-i18n="coach.subtitle">Your AI fitness buddy</p>
         </div>
-        <button type="button" class="btn btn-ghost btn-sm" id="new-chat-btn" hidden data-i18n-attr="title:coach.newChatTitle" title="Start a new conversation"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-edit-square"/></svg><span data-i18n="coach.newChat">New chat</span></button>
+        <button type="button" class="btn btn-ghost btn-sm" id="new-chat-btn" data-i18n-attr="title:coach.newChatTitle" title="Start a new conversation"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-edit-square"/></svg><span data-i18n="coach.newChat">New chat</span></button>
       </header>
       <div id="messages" class="messages" role="log" aria-live="polite" data-i18n-attr="aria-label:coach.conversation" aria-label="Conversation" tabindex="0"></div>
       <div id="suggestions" class="suggestions" data-i18n-attr="aria-label:coach.suggestions" aria-label="Suggestions"></div>
@@ -400,11 +398,16 @@
     <!-- Mobile tab bar -->
     <nav class="tabbar" data-i18n-attr="aria-label:nav.main" aria-label="Main">
       <a href="#today" class="tab" data-route="today"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-calendar-today"/></svg><span data-i18n="nav.today">Today</span></a>
-      <a href="#coach" class="tab" data-route="coach"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-smart-toy"/></svg><span data-i18n="nav.coach">Coach</span><i class="unread" hidden></i><i class="tab-busy" hidden aria-hidden="true"></i><span class="sr-only tab-busy-label" hidden data-i18n="coach.busy">Coach is working</span></a>
       <a href="#progress" class="tab" data-route="progress"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-monitoring"/></svg><span data-i18n="nav.progress">Progress</span></a>
       <a href="#plan" class="tab" data-route="plan"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-event-note"/></svg><span data-i18n="nav.plan">Plan</span></a>
-      <a href="#settings" class="tab" data-route="settings"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/static/icons.svg#i-tune"/></svg><span data-i18n="nav.settings">Settings</span></a>
     </nav>
+    <!-- Floating coach button: opens the coach from every page (mobile). -->
+    <button type="button" class="coach-fab" id="coach-fab" data-i18n-attr="aria-label:coach.open" aria-label="Chat with your coach">
+      <span class="coach-fab-avatar" aria-hidden="true"></span>
+      <i class="unread" hidden></i>
+      <i class="fab-busy" hidden aria-hidden="true"></i>
+      <span class="sr-only fab-busy-label" hidden data-i18n="coach.busy">Coach is working</span>
+    </button>
   </div>
 
   <div id="toast-region" class="toast-region" aria-live="polite"></div>

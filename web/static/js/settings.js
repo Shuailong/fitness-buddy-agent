@@ -143,11 +143,11 @@ export function renderSettingsView(root, {
   onFeedback = null,
   onPrivacyUpdated = null,
   showToast = null,
+  onDiagnostics = null,
 } = {}) {
   const isZh = getLang() === "zh";
   const me = state.me || {};
   const isAdmin = Boolean(me.is_admin);
-  const activePersona = getPersona(getPersonaId(), getLang());
   const currentPrivacyPref = () => !(state.me && state.me.privacy && state.me.privacy.share_usage_data === false);
 
   // PDPA inline toggle state
@@ -209,27 +209,45 @@ export function renderSettingsView(root, {
     }
   });
 
+  const row = (iconName, label, { href = null, onclick = null, danger = false, trailing = null, external = false } = {}) => {
+    const children = [
+      el("span", { class: "settings-row-icon", "aria-hidden": "true" }, [icon(iconName)]),
+      el("span", { class: "settings-row-label", text: label }),
+      trailing,
+      icon(external ? "open-in-new" : "chevron-right", { cls: "settings-row-chev" }),
+    ];
+    const cls = `settings-row${danger ? " is-danger" : ""}`;
+    return href
+      ? el("a", { class: cls, href, ...(external ? { target: "_blank", rel: "noopener" } : {}) }, children)
+      : el("button", { type: "button", class: cls, onclick }, children);
+  };
+  const rerender = () => renderSettingsView(root, {
+    onExport, onDelete, onSignOut, showSignOut, onAdmin, onFeedback, onPrivacyUpdated, showToast, onDiagnostics,
+  });
+
   root.replaceChildren(
-    el("header", { class: "greeting settings-header" }, [
-      el("div", { class: "greeting-row" }, [
-        el("div", {}, [
-          el("p", { class: "eyebrow accent", text: isZh ? "偏好与隐私中心 · SETTINGS" : "PREFERENCES & PRIVACY · SETTINGS" }),
-          el("h1", { text: isZh ? "设置与教练中心" : "Settings & Coach Studio" }),
-        ]),
-        el("span", { class: "chip" }, [
-          coachAvatar(activePersona.id, { size: "sm" }),
-          el("span", { text: isZh ? `当前教练：${activePersona.copy.shortName}` : `Active: ${activePersona.copy.shortName}` }),
-        ]),
-      ]),
-      el("p", {
-        class: "muted settings-sub",
-        text: isZh
-          ? "集中管理你的 AI 教练人设与声音、主题外观、界面语言、PDPA 隐私权限与个人数据。"
-          : "Manage your AI coach persona & voice, appearance, language, PDPA privacy controls, and account data in one place.",
-      }),
-    ]),
+    el("header", { class: "page-head settings-head" }, [el("h1", { text: isZh ? "设置" : "Settings" })]),
 
     el("div", { class: "settings-stack" }, [
+      // Account summary (the avatar in the header opens this page).
+      el("section", { class: "card settings-profile" }, [
+        el("span", { class: "avatar settings-user-avatar" }, [
+          me.picture
+            ? el("img", { src: me.picture, alt: "", referrerpolicy: "no-referrer" })
+            : el("span", { text: initials(me) }),
+        ]),
+        el("div", { class: "settings-user-meta" }, [
+          el("div", { class: "settings-user-name-row" }, [
+            el("strong", { text: me.name || me.given_name || (isZh ? "当前登录用户" : "Signed-in User") }),
+            el("span", {
+              class: `pill ${isAdmin ? "pill-primary" : "pill-outline"}`,
+              text: me.is_demo ? t("demo.bannerTitle") : isAdmin ? (isZh ? "管理员" : "Admin") : (isZh ? "内测成员" : "Beta Member"),
+            }),
+          ]),
+          el("span", { class: "muted small", text: me.is_demo ? t("demo.badge") : me.email || "" }),
+        ]),
+      ]),
+
       // 1. AI Coach Persona & Voice Studio
       el("section", { class: "card settings-card", "aria-labelledby": "settings-coach-heading" }, [
         el("div", { class: "settings-card-head" }, [
@@ -247,87 +265,46 @@ export function renderSettingsView(root, {
           ]),
         ]),
         renderPersonaSelectorGrid({
-          onSwitched: () => renderSettingsView(root, {
-            onExport, onDelete, onSignOut, showSignOut, onAdmin, onFeedback, onPrivacyUpdated, showToast,
-          }),
+          onSwitched: rerender,
         }),
       ]),
 
-      // 1b. Coach Memory (cross-session preferences, shared by all coaches)
-      coachMemoryCard({ showToast }),
-
-      // 2. Appearance, Language & Product Feedback
+      // Everyday preferences: theme and language.
       el("section", { class: "card settings-card", "aria-labelledby": "settings-pref-heading" }, [
-        el("div", { class: "settings-card-head" }, [
-          el("div", { class: "settings-card-title-group" }, [
-            el("span", { class: "round-icon", "aria-hidden": "true" }, [icon("tune")]),
-            el("div", {}, [
-              el("h2", { id: "settings-pref-heading", text: isZh ? "外观、语言与反馈" : "Appearance, Language & Feedback" }),
-              el("p", {
-                class: "muted small",
-                text: isZh ? "自定义深浅色主题、中英文界面与产品建议反馈。" : "Customize theme mode, display language, and send product feedback.",
-              }),
-            ]),
-          ]),
-        ]),
+        el("h2", { id: "settings-pref-heading", class: "settings-section-title", text: isZh ? "外观与语言" : "Appearance & language" }),
         el("div", { class: "settings-pref-grid" }, [
           el("div", { class: "settings-pref-item" }, [
-            el("div", { class: "settings-pref-copy" }, [
-              el("strong", { text: t("menu.theme") }),
-              el("span", { class: "muted small", text: isZh ? "跟随系统自动切换或固定深色/浅色模式" : "Follow system appearance or lock light/dark mode" }),
-            ]),
+            el("div", { class: "settings-pref-copy" }, [el("strong", { text: t("menu.theme") })]),
             themeSwitch(),
           ]),
           el("div", { class: "settings-pref-item" }, [
-            el("div", { class: "settings-pref-copy" }, [
-              el("strong", { text: t("menu.language") }),
-              el("span", { class: "muted small", text: isZh ? "切换界面与教练默认回复语言 (中文 / English)" : "Switch UI and default coach response language" }),
-            ]),
+            el("div", { class: "settings-pref-copy" }, [el("strong", { text: t("menu.language") })]),
             langSwitch(),
           ]),
-          el("div", { class: "settings-pref-item" }, [
-            el("div", { class: "settings-pref-copy" }, [
-              el("strong", { text: isZh ? "安装到手机桌面" : "Install on your phone" }),
-              el("span", { class: "muted small", text: isZh ? "像 App 一样全屏打开，iPhone / 安卓约 10 秒完成" : "Opens full-screen like an app - about 10 seconds on iPhone or Android" }),
-            ]),
-            el("a", { class: "btn btn-secondary btn-sm", href: "/install" }, [
-              icon("install-mobile"),
-              el("span", { text: isZh ? "安装指南" : "Install guide" }),
-            ]),
-          ]),
-          onFeedback
-            ? el("div", { class: "settings-pref-item" }, [
-                el("div", { class: "settings-pref-copy" }, [
-                  el("strong", { text: isZh ? "产品体验反馈" : "Product Feedback" }),
-                  el("span", { class: "muted small", text: isZh ? "遇到 Bug 或有新功能建议？直接发给开发团队" : "Found a bug or have a feature idea? Tell the team" }),
-                ]),
-                el("button", { type: "button", class: "btn btn-secondary btn-sm", onclick: onFeedback }, [
-                  icon("rate-review"),
-                  el("span", { text: t("fb.menu") }),
-                ]),
-              ])
-            : null,
-        ].filter(Boolean)),
+        ]),
       ]),
 
-      // 3. PDPA Privacy & Usage Data Controls
-      el("section", { class: "card settings-card", "aria-labelledby": "settings-privacy-heading" }, [
-        el("div", { class: "settings-card-head" }, [
-          el("div", { class: "settings-card-title-group" }, [
-            el("span", { class: "round-icon", "aria-hidden": "true" }, [icon("shield")]),
-            el("div", {}, [
-              el("h2", { id: "settings-privacy-heading", text: isZh ? "隐私保护与数据共享控制 (PDPA)" : "Privacy & Data Controls (PDPA)" }),
-              el("p", {
-                class: "muted small",
-                text: isZh
-                  ? "遵循个人数据保护法（PDPA）：你的教练对话内容严格私密，管理员绝不可见。"
-                  : "Aligned with PDPA: your Coach conversations and health logs are strictly confidential and never visible to admins.",
-              }),
-            ]),
-          ]),
-          pdpaStatusBadge,
-        ]),
+      // Coach Memory (cross-session preferences, shared by all coaches)
+      coachMemoryCard({ showToast }),
 
+      // Less frequent: one compact list.
+      el("section", { class: "card settings-card settings-list-card", "aria-labelledby": "settings-more-heading" }, [
+        el("h2", { id: "settings-more-heading", class: "settings-section-title", text: isZh ? "更多" : "More" }),
+        el("div", { class: "settings-list" }, [
+          row("auto-awesome", t("menu.changelog"), {
+            href: "/changelog",
+            trailing: hasUnseenChanges() ? el("span", { class: "news-dot", "aria-label": t("menu.changelogNew") }) : null,
+          }),
+          row("install-mobile", isZh ? "安装到手机桌面" : "Install on your phone", { href: "/install" }),
+          onFeedback ? row("rate-review", t("fb.menu"), { onclick: onFeedback }) : null,
+          el("details", { class: "settings-details" }, [
+            el("summary", { class: "settings-row" }, [
+              el("span", { class: "settings-row-icon", "aria-hidden": "true" }, [icon("shield")]),
+              el("span", { class: "settings-row-label", text: isZh ? "隐私与数据共享" : "Privacy & data sharing" }),
+              pdpaStatusBadge,
+              icon("expand-more", { cls: "settings-row-chev" }),
+            ]),
+            el("div", { class: "settings-details-body" }, [
         el("div", { class: "pdpa-boundary-grid settings-pdpa-grid" }, [
           el("div", { class: "pdpa-boundary-col is-private" }, [
             el("div", { class: "pdpa-boundary-head" }, [
@@ -374,78 +351,21 @@ export function renderSettingsView(root, {
           ]),
           pdpaNote,
         ]),
+            ]),
+          ]),
+          onExport ? row("download", t("menu.export"), { onclick: onExport }) : null,
+          row("privacy-tip", t("menu.privacy"), { href: "/privacy", external: true }),
+          isAdmin && onAdmin ? row("shield", t("menu.admin"), { onclick: onAdmin }) : null,
+          onDiagnostics ? row("monitoring", isZh ? "屏幕诊断" : "Screen diagnostics", { onclick: onDiagnostics }) : null,
+        ].filter(Boolean)),
       ]),
 
-      // 4. Account & Data Management
-      el("section", { class: "card settings-card", "aria-labelledby": "settings-account-heading" }, [
-        el("div", { class: "settings-card-head" }, [
-          el("div", { class: "settings-card-title-group" }, [
-            el("span", { class: "round-icon", "aria-hidden": "true" }, [icon("verified-user")]),
-            el("div", {}, [
-              el("h2", { id: "settings-account-heading", text: isZh ? "账户与数据管理" : "Account & Data Management" }),
-              el("p", {
-                class: "muted small",
-                text: isZh ? "随时导出你在 Fitness Buddy 中的全部个人数据，或彻底注销账户。" : "Export a full copy of your Fitness Buddy data anytime or permanently delete your account.",
-              }),
-            ]),
-          ]),
-        ]),
-
-        el("div", { class: "settings-account-row" }, [
-          el("div", { class: "settings-user-card" }, [
-            el("span", { class: "avatar settings-user-avatar" }, [
-              me.picture
-                ? el("img", { src: me.picture, alt: "", referrerpolicy: "no-referrer" })
-                : el("span", { text: initials(me) }),
-            ]),
-            el("div", { class: "settings-user-meta" }, [
-              el("div", { class: "settings-user-name-row" }, [
-                el("strong", { text: me.name || me.given_name || (isZh ? "当前登录用户" : "Signed-in User") }),
-                el("span", {
-                  class: `pill ${isAdmin ? "pill-primary" : "pill-outline"}`,
-                  text: isAdmin ? (isZh ? "管理员 · Admin" : "Admin") : (isZh ? "内测成员 · Member" : "Beta Member"),
-                }),
-              ]),
-              el("span", { class: "muted small", text: me.is_demo ? t("demo.badge") : me.email || "" }),
-            ]),
-          ]),
-
-          el("div", { class: "settings-account-actions" }, [
-            isAdmin && onAdmin
-              ? el("button", { type: "button", class: "btn btn-secondary btn-sm", onclick: onAdmin }, [
-                  icon("shield"),
-                  el("span", { text: t("menu.admin") }),
-                ])
-              : null,
-            onExport
-              ? el("button", { type: "button", class: "btn btn-secondary btn-sm", onclick: onExport }, [
-                  icon("download"),
-                  el("span", { text: t("menu.export") }),
-                ])
-              : null,
-            el("a", { class: "btn btn-secondary btn-sm", href: "/changelog" }, [
-              icon("auto-awesome"),
-              el("span", { text: t("menu.changelog") }),
-            ]),
-            el("a", { class: "btn btn-secondary btn-sm", href: "/privacy", target: "_blank", rel: "noopener" }, [
-              icon("privacy-tip"),
-              el("span", { text: t("menu.privacy") }),
-              icon("open-in-new"),
-            ]),
-            showSignOut && onSignOut
-              ? el("button", { type: "button", class: "btn btn-secondary btn-sm", onclick: onSignOut }, [
-                  icon("logout"),
-                  el("span", { text: t(state.me && state.me.is_demo ? "demo.leave" : "menu.signOut") }),
-                ])
-              : null,
-            onDelete
-              ? el("button", { type: "button", class: "btn btn-secondary btn-sm pdpa-del-btn", onclick: onDelete }, [
-                  icon("delete-forever"),
-                  el("span", { text: t("menu.delete") }),
-                ])
-              : null,
-          ].filter(Boolean)),
-        ]),
+      // Account actions.
+      el("section", { class: "card settings-card settings-list-card" }, [
+        el("div", { class: "settings-list" }, [
+          showSignOut && onSignOut ? row("logout", t(me.is_demo ? "demo.leave" : "menu.signOut"), { onclick: onSignOut }) : null,
+          onDelete ? row("delete-forever", t("menu.delete"), { onclick: onDelete, danger: true }) : null,
+        ].filter(Boolean)),
       ]),
     ]),
   );

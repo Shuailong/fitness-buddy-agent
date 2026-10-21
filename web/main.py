@@ -269,6 +269,7 @@ TELEMETRY_EVENTS = frozenset(
         "new_chat",
         "demo",
         "viewport",
+        "coach_fab",
     }
 )
 DASHBOARD_TIMEOUT_S = 15.0

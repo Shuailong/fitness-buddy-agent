@@ -4,6 +4,16 @@
 // increasing: YYYY-MM-DD plus a letter when there are several in a day).
 export const CHANGELOG = [
   {
+    id: "2026-10-21c",
+    date: "2026-10-21",
+    title: { zh: "更清爽的导航", en: "A cleaner layout" },
+    items: [
+      { type: "improved", zh: "底部只保留「今天 / 进展 / 计划」三个页面；教练变成右下角的悬浮头像，任何页面点一下就能聊。", en: "The bottom bar now has just Today, Progress and Plan; your coach is a floating button you can open from any page." },
+      { type: "improved", zh: "点右上角头像进入设置；设置页精简为常用项，其余收进「更多」。", en: "Tap your avatar for Settings - everyday options up top, the rest under “More”." },
+      { type: "fixed", zh: "修复 iPhone 桌面 App 底部的黑边。", en: "Fixed the empty band at the bottom of the iPhone home-screen app." },
+    ],
+  },
+  {
     id: "2026-10-21b",
     date: "2026-10-21",
     title: { zh: "免登录体验 & 离线可用", en: "Try without signing in & works offline" },
