@@ -332,7 +332,7 @@ class TelemetryRequest(BaseModel):
 
     name: str = Field(max_length=40)
     props: dict[str, str | int | float | bool] = Field(
-        default_factory=dict, max_length=10
+        default_factory=dict, max_length=20
     )
 
 
