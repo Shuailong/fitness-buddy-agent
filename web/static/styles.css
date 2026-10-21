@@ -3922,7 +3922,10 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
    ============================================================================ */
 /* Mobile: no accidental page zoom (double-tap, input focus) */
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-body, button, a, label, .hold-to-talk, .composer, .tabbar { touch-action: manipulation; }
+body, button, a, label, .composer, .tabbar { touch-action: manipulation; }
+/* Hold-to-talk must own the whole gesture: with "manipulation" iOS treats the
+   slide (to cancel / to text) as a scroll and cancels the press. */
+.hold-to-talk, .composer .hold-to-talk { touch-action: none !important; }
 @media (pointer: coarse) {
   input, textarea, select, .text-input, #message-input { font-size: 16px !important; }
 }

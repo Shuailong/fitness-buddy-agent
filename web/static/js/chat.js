@@ -1190,6 +1190,8 @@ function initVoice() {
   }
 
   hold.addEventListener("contextmenu", (e) => e.preventDefault());
+  // iOS: keep the page from scrolling or rubber-banding while sliding the finger.
+  hold.addEventListener("touchmove", (e) => { if (pressing) e.preventDefault(); }, { passive: false });
   hold.addEventListener("pointerdown", async (e) => {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
