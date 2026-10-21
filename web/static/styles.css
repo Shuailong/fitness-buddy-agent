@@ -273,7 +273,10 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 
 /* ------------------------------------------------------------ app shell */
 .shell {
-  height: 100vh; height: 100dvh; display: grid;
+  /* Pinned to the viewport edges instead of height: 100dvh. On a cold start of
+     the iOS home-screen app, dvh is computed too short (minus the safe areas)
+     until the next resize, leaving an empty band under the tab bar. */
+  position: fixed; inset: 0; display: grid;
   grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
   background: var(--surface);
 }
