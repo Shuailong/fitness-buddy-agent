@@ -20,6 +20,19 @@ if (typeof window !== "undefined") {
 
 export function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
+  // The app shell opens from the cache, so the first launch after a deploy
+  // shows the previous version while the new worker installs. When the new
+  // worker takes over within a few seconds of launch, reload once so you get
+  // the latest version right away (never mid-reply or later in the session).
+  const bootAt = Date.now();
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloaded || !hadController || Date.now() - bootAt > 15000) return;
+    if (document.body.classList.contains("is-streaming")) return;
+    reloaded = true;
+    location.reload();
+  });
   navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => { /* optional */ });
 }
 

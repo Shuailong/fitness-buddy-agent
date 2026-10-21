@@ -25,6 +25,23 @@
   syncThemeColor();
   if (mq && mq.addEventListener) mq.addEventListener("change", syncThemeColor);
 
+  // iOS home-screen app cold start: WebKit reports a viewport that is short by
+  // the status-bar height until the next resize, so a full-height layout ends
+  // above the bottom of the screen. In standalone portrait the app always owns
+  // the whole screen, so use the screen height when the viewport is shorter.
+  function syncAppHeight() {
+    var standalone = window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+    var portrait = window.matchMedia && window.matchMedia("(orientation: portrait)").matches;
+    var h = window.innerHeight;
+    if (standalone && portrait && window.screen && screen.width === window.innerWidth && screen.height > h) h = screen.height;
+    root.style.setProperty("--app-h", h + "px");
+  }
+  syncAppHeight();
+  window.addEventListener("resize", syncAppHeight);
+  window.addEventListener("orientationchange", function () { setTimeout(syncAppHeight, 250); });
+  window.addEventListener("pageshow", syncAppHeight);
+
   // Kick off early parallel API fetches in <head> while CSS & ES modules download.
   try {
     if (typeof window.fetch === "function") {
