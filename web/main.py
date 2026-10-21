@@ -33,6 +33,7 @@ import logging
 import secrets
 import time
 from collections.abc import AsyncIterator
+from datetime import date
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
@@ -103,6 +104,7 @@ from web.config import (
 )
 from web.dashboard import (
     build_dashboard,
+    build_workout_history,
     get_meal_photo,
     get_pending_meal_photo,
     save_meal_photo,
@@ -1836,6 +1838,20 @@ def create_app(
             content=raw_bytes,
             media_type=mime,
             headers={"Cache-Control": "private, max-age=86400"},
+        )
+
+    @app.get("/api/workouts")
+    async def workout_history(
+        user: UserDep,
+        before: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+        days: int = Query(default=30, ge=1, le=120),
+    ) -> dict[str, Any]:
+        """Logged workouts with sets, reps, loads, effort and notes, vs. the plan."""
+        return await build_workout_history(
+            get_repository(),
+            user.user_id,
+            before=date.fromisoformat(before) if before else None,
+            days=days,
         )
 
     @app.get("/api/dashboard")

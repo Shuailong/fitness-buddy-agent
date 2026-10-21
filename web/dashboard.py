@@ -322,3 +322,112 @@ async def build_dashboard(
         "today_session_done": today.isoformat() in workout_dates,
         "latest_review": review.model_dump(mode="json") if review else None,
     }
+
+
+def _norm_name(name: str) -> str:
+    return "".join(ch for ch in name.lower() if ch.isalnum())
+
+
+def compare_to_plan(workout: Any, planned: Any) -> dict[str, Any]:
+    """How a logged workout relates to the session planned for that date.
+
+    Exercise names are matched loosely (case/punctuation-insensitive, either
+    name containing the other), since logs come from free-text sentences.
+    """
+    if planned is None:
+        return {
+            "status": "unplanned",
+            "planned_focus": None,
+            "matched": 0,
+            "planned_count": 0,
+        }
+    planned_names = [
+        (_norm_name(e.name), _norm_name(e.exercise_id.replace("_", " ")))
+        for e in planned.exercises
+    ]
+    done = [_norm_name(e.exercise_name) for e in workout.exercises]
+    matched = sum(
+        1
+        for names in planned_names
+        if any(d and any(n and (n in d or d in n) for n in names) for d in done)
+    )
+    ratio = matched / max(1, len(planned_names))
+    return {
+        "status": "as_planned"
+        if ratio >= 0.7
+        else "partial"
+        if matched
+        else "different",
+        "planned_focus": planned.focus,
+        "planned_exercises": [
+            {
+                "name": e.name,
+                "sets": e.sets,
+                "reps": e.reps,
+                "duration_seconds": e.duration_seconds,
+            }
+            for e in planned.exercises
+        ],
+        "matched": matched,
+        "planned_count": len(planned_names),
+    }
+
+
+async def build_workout_history(
+    repo: FitnessRepository,
+    user_id: str,
+    *,
+    before: date | None = None,
+    days: int = 30,
+) -> dict[str, Any]:
+    """Logged workouts (newest first) for ``days`` days ending before ``before``.
+
+    Each session carries what was planned for that date (current weekly plan
+    plus one-off adjustments) so the UI can show actual vs. planned.
+    """
+    profile = await repo.get_profile(user_id)
+    if profile is None:
+        return {"sessions": [], "next_before": None}
+    today = user_local_date(profile.timezone)
+    end = min(before - timedelta(days=1), today) if before else today
+    start = end - timedelta(days=max(1, min(days, 120)) - 1)
+    workouts, plan, adjustments, older = await asyncio.gather(
+        repo.list_workouts(user_id, start=start.isoformat(), end=end.isoformat()),
+        repo.get_current_plan(user_id),
+        repo.list_plan_adjustments(
+            user_id, start=start.isoformat(), end=end.isoformat()
+        ),
+        repo.list_workouts(user_id, end=(start - timedelta(days=1)).isoformat()),
+    )
+    sessions = []
+    for w in sorted(
+        workouts, key=lambda w: (w.local_date, w.performed_at), reverse=True
+    ):
+        planned, _ = effective_session(
+            plan, adjustments, date.fromisoformat(w.local_date)
+        )
+        sessions.append(
+            {
+                "entry_id": w.entry_id,
+                "local_date": w.local_date,
+                "performed_at": w.performed_at.isoformat(),
+                "exercises": [
+                    e.model_dump(mode="json", exclude_none=True) for e in w.exercises
+                ],
+                "total_sets": sum(e.sets for e in w.exercises),
+                "volume_kg": round(
+                    sum(
+                        e.sets * (e.reps or 0) * (e.weight_kg or 0) for e in w.exercises
+                    ),
+                    1,
+                ),
+                "perceived_effort": w.perceived_effort,
+                "notes": w.notes,
+                "plan": compare_to_plan(w, planned),
+            }
+        )
+    return {
+        "sessions": sessions,
+        "range": {"start": start.isoformat(), "end": end.isoformat()},
+        "next_before": start.isoformat() if older else None,
+    }

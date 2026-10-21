@@ -11,6 +11,7 @@ import { state, actions } from "./state.js";
 import { track } from "./telemetry.js";
 import { openModal, openPhotoLightbox } from "./modal.js";
 import { dailyScienceCard } from "./tips.js";
+import { workoutHistoryCard, openWorkoutForDate } from "./workouts.js";
 import { openExerciseDetailModal, openLiveFormCoachModal, getExerciseGuide } from "./exercises.js";
 import { coachAvatar, getPersona, getPersonaId } from "./personas.js";
 
@@ -756,6 +757,7 @@ export function renderProgress(root, d, onRange) {
       proteinCard(d),
       workoutsCard(d),
       reviewCard(d),
+      workoutHistoryCard(),
     ]),
   );
 }
@@ -798,7 +800,7 @@ function adjustedLine(day, { reason, replaces }) {
   ]);
 }
 
-function sessionCard(s, { isToday, isDone, open }) {
+function sessionCard(s, { isToday, isDone, open, iso = null }) {
   const status = t(isDone ? "plan.status.done" : isToday ? "plan.status.today" : "plan.status.scheduled");
   const isZh = getLang() === "zh";
   return el("details", { class: `card session-card${isToday ? " is-today" : ""}${s._adjusted ? " is-adjusted" : ""}`, open, id: `session-${s.day_of_week}` }, [
@@ -859,6 +861,7 @@ function sessionCard(s, { isToday, isDone, open }) {
       ]);
     })),
     el("div", { class: "session-actions" }, [
+      isDone && iso ? secondaryBtn(t("workouts.viewActual"), "check-circle", () => openWorkoutForDate(iso), "btn-block") : null,
       primaryBtn(t("today.start"), "play-arrow", () => startSession(s, isToday), "btn-block"),
       secondaryBtn(t("plan.swap"), "swap-horiz", () => actions.openCoach({ prefill: t("send.swap", { day: dayLong(s.day_of_week), focus: s.focus }) }), "btn-block"),
     ]),
@@ -897,7 +900,7 @@ export function renderPlan(root, d) {
     .map((s) => {
       if (!s.exercises) return restCard(s);
       const iso = isoDate(addDays(monday, weekdayIndex(s.day_of_week)));
-      return sessionCard(s, { isToday: s.day_of_week === d.weekday, isDone: done.has(iso), open: s.day_of_week === openDay });
+      return sessionCard(s, { isToday: s.day_of_week === d.weekday, isDone: done.has(iso), open: s.day_of_week === openDay, iso });
     });
   const pick = (day) => {
     const target = document.getElementById(`session-${day}`);

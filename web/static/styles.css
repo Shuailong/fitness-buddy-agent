@@ -4153,3 +4153,35 @@ html:has(#app-view:not([hidden])), html:has(#app-view:not([hidden])) body { back
 .reminders-note .icon { width: 18px; height: 18px; flex: none; margin-top: 1px; color: var(--primary-text); }
 .reminders-kind { padding-left: 12px; border-left: 2px solid var(--primary-border); }
 .reminders-test { justify-self: start; margin-top: 4px; }
+
+/* Workout log (Progress page) */
+.wk-card .card-header { margin-bottom: 8px; }
+.wk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.wk-item { padding: 12px 14px; border-radius: var(--r); background: var(--surface); border: 1px solid var(--line-soft); cursor: pointer; }
+.wk-item:active { background: var(--primary-soft); }
+.wk-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.wk-date { margin-right: auto; }
+.wk-plan-line { margin: 4px 0 0; }
+.wk-ex-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.wk-ex-list li { display: flex; justify-content: space-between; gap: 10px; font-size: 0.9rem; }
+.wk-ex-list.compact li { font-size: 0.85rem; }
+.wk-ex-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wk-ex-spec { flex: none; font-variant-numeric: tabular-nums; color: var(--primary-text); font-weight: 600; }
+.wk-notes { display: flex; gap: 6px; align-items: flex-start; margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--card); font-size: 0.85rem; color: var(--muted); }
+.wk-notes .icon { width: 15px; height: 15px; flex: none; margin-top: 2px; }
+.wk-status { font-size: 0.7rem; padding: 2px 8px; }
+.wk-status .icon { width: 13px; height: 13px; }
+.wk-status.is-as_planned { background: var(--primary-soft); color: var(--on-primary-soft); border: 1px solid var(--primary-border); }
+.wk-status.is-partial, .wk-status.is-different { background: var(--warn-soft); color: var(--warn-text); border: 1px solid transparent; }
+.wk-status.is-unplanned { background: rgba(56, 189, 248, 0.14); color: light-dark(#0369A1, #38BDF8); border: 1px solid transparent; }
+.wk-effort { font-size: 0.7rem; padding: 2px 8px; background: var(--card); border: 1px solid var(--line-soft); }
+.wk-effort.is-hard, .wk-effort.is-very_hard { color: var(--warn-text); }
+.wk-more { margin-top: 12px; }
+.wk-status-line { margin: 4px 0; }
+.wk-detail-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.wk-compare { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 640px) { .wk-compare { grid-template-columns: 1fr 1fr; } }
+.wk-col { padding: 12px; border-radius: var(--r); background: var(--surface); border: 1px solid var(--line-soft); }
+.wk-col.is-plan { opacity: 0.85; border-style: dashed; }
+.wk-col .eyebrow { margin: 0; }
+.wk-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 14px; }

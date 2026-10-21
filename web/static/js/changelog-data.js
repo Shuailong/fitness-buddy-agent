@@ -4,6 +4,16 @@
 // increasing: YYYY-MM-DD plus a letter when there are several in a day).
 export const CHANGELOG = [
   {
+    id: "2026-10-21e",
+    date: "2026-10-21",
+    title: { zh: "训练记录回看", en: "Workout log" },
+    items: [
+      { type: "new", zh: "「进展」页新增训练记录：每次实际练了哪些动作、几组几次、重量、感受和备注，一目了然；还会标出是否按计划完成。", en: "New workout log on Progress: every session's exercises, sets × reps, loads, effort and notes - marked as planned, partly planned or extra." },
+      { type: "new", zh: "点开一次训练可以和当天计划逐项对比，也能一键让教练点评或修改记录；计划页已完成的日子可直接「查看实际训练」。", en: "Open a session to compare it with that day's plan, ask the coach for feedback or a correction; on Plan, completed days have “See what I did”." },
+      { type: "improved", zh: "打开 App 时不再自动请求麦克风权限，第一次按住说话时才会询问。", en: "The app no longer asks for the microphone on launch - only on your first hold-to-talk." },
+    ],
+  },
+  {
     id: "2026-10-21d",
     date: "2026-10-21",
     title: { zh: "训练和饮食提醒", en: "Training & meal reminders" },

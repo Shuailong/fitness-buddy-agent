@@ -2039,3 +2039,110 @@ def test_changelog_page_is_public_and_versioned() -> None:
     data = client.get("/static/js/changelog-data.js").text
     ids = re.findall(r'id: "(\d{4}-\d{2}-\d{2}[a-z]?)"', data)
     assert ids and ids == sorted(ids, reverse=True) and len(ids) == len(set(ids))
+
+
+def test_workout_history_compares_with_the_plan(memory_repo) -> None:
+    uid = "dev-user"
+    today = user_local_date("UTC")
+    weekday = WEEKDAYS[today.weekday()]
+    yesterday = today - timedelta(days=1)
+
+    def ex(eid, name):
+        return PlannedExercise(exercise_id=eid, name=name, sets=3, reps=10)
+
+    async def seed() -> None:
+        await memory_repo.save_profile(
+            FitnessProfile(
+                user_id=uid,
+                goal="recomposition",
+                sex="male",
+                age=30,
+                height_cm=175,
+                starting_weight_kg=72,
+                training_days_per_week=7,
+                minutes_per_session=45,
+                equipment=["dumbbells"],
+                timezone="UTC",
+            )
+        )
+        await memory_repo.save_current_plan(
+            uid,
+            TrainingPlan(
+                title="P",
+                goal="recomposition",
+                sessions=[
+                    PlannedSession(
+                        day_of_week=weekday,
+                        focus="Legs",
+                        estimated_minutes=40,
+                        exercises=[
+                            ex("goblet_squat", "Goblet Squat"),
+                            ex("glute_bridge", "Glute Bridge"),
+                        ],
+                    )
+                ],
+            ),
+        )
+        workouts = [
+            (
+                "w1",
+                today,
+                [
+                    WorkoutSet(
+                        exercise_name="goblet squat", sets=4, reps=12, weight_kg=16
+                    ),
+                    WorkoutSet(exercise_name="Glute bridge", sets=3, reps=15),
+                ],
+                "hard",
+                "knee felt fine",
+            ),
+            (
+                "w2",
+                yesterday,
+                [WorkoutSet(exercise_name="Running", sets=1, duration_seconds=1800)],
+                "easy",
+                None,
+            ),
+            (
+                "w3",
+                today - timedelta(days=45),
+                [WorkoutSet(exercise_name="Push-up", sets=3, reps=10)],
+                None,
+                None,
+            ),
+        ]
+        for eid, day, sets, effort, notes in workouts:
+            await memory_repo.add_entry(
+                uid,
+                "workout",
+                WorkoutSession(
+                    entry_id=eid,
+                    user_id=uid,
+                    local_date=day.isoformat(),
+                    performed_at=datetime.now(UTC),
+                    exercises=sets,
+                    perceived_effort=effort,
+                    notes=notes,
+                ),
+            )
+
+    asyncio.run(seed())
+    client, _ = _dev_client()
+    data = client.get("/api/workouts?days=30").json()
+    ids = [s["entry_id"] for s in data["sessions"]]
+    assert ids == ["w1", "w2"]  # newest first; day -45 is outside the window
+    first = data["sessions"][0]
+    assert (
+        first["plan"]["status"] == "as_planned"
+        and first["plan"]["planned_focus"] == "Legs"
+    )
+    assert first["perceived_effort"] == "hard" and first["notes"] == "knee felt fine"
+    assert first["total_sets"] == 7 and first["volume_kg"] == 4 * 12 * 16
+    assert (
+        data["sessions"][1]["plan"]["status"] == "unplanned"
+    )  # nothing planned yesterday
+    assert data["next_before"] is not None
+    older = client.get(f"/api/workouts?days=30&before={data['next_before']}").json()
+    assert [s["entry_id"] for s in older["sessions"]] == ["w3"]
+    assert older["next_before"] is None
+    assert client.get("/api/workouts?before=nope").status_code == 422
