@@ -84,8 +84,8 @@ export function settingsMenu({
   return [
     email ? el("p", { class: "menu-email", text: email }) : null,
     el("div", { class: "menu-group menu-group-top" }, [
-      onSettings ? item("tune", isZh ? "全部设置与教练中心" : "All Settings & Coach Studio", onSettings, "settings-primary-item") : null,
-      onNewChat ? item("edit-square", isZh ? "开始新对话" : "Start a new chat", onNewChat) : null,
+      onSettings ? item("tune", t("settings.allSettingsCoachStudio"), onSettings, "settings-primary-item") : null,
+      onNewChat ? item("edit-square", t("settings.startANewChat"), onNewChat) : null,
       el("a", { class: "menu-item", href: "/changelog" }, [
         icon("auto-awesome"),
         el("span", { text: t("menu.changelog") }),
@@ -101,19 +101,19 @@ export function settingsMenu({
       onSettings
         ? el("button", { type: "button", class: "menu-item", onclick: onSettings }, [
             coachAvatar(currentPersona.id, { size: "sm" }),
-            el("span", { text: isZh ? `当前教练：${currentPersona.copy.shortName}` : `Coach: ${currentPersona.copy.shortName}` }),
+            el("span", { text: t("settings.coachP0", { p0: currentPersona.copy.shortName }) }),
           ])
         : null,
       onPrivacy
         ? el("button", { type: "button", class: "menu-item menu-privacy-btn", onclick: onPrivacy }, [
             icon("shield"),
-            el("span", { text: isZh ? "隐私与数据共享 (PDPA)" : "Privacy & Data Controls" }),
+            el("span", { text: t("settings.privacyDataControls") }),
             el("span", {
               class: `menu-pdpa-dot ${shareUsageData ? "is-on" : "is-off"}`,
               title: shareUsageData
-                ? (isZh ? "已开启诊断共享" : "Usage sharing on")
-                : (isZh ? "已关闭诊断共享（严格隐私模式）" : "Opted out of usage sharing"),
-              text: shareUsageData ? (isZh ? "共享中" : "Shared") : (isZh ? "已关闭" : "Private"),
+                ? (t("settings.usageSharingOn"))
+                : (t("settings.optedOutOfUsageSharing")),
+              text: shareUsageData ? (t("settings.shared")) : (t("settings.private")),
             }),
           ])
         : null,
@@ -164,8 +164,8 @@ export function renderSettingsView(root, {
     pdpaToggleInput.checked = Boolean(enabled);
     pdpaStatusBadge.className = `pdpa-status-pill ${enabled ? "is-on" : "is-off"}`;
     pdpaStatusBadge.textContent = enabled
-      ? (isZh ? "已开启诊断共享" : "Sharing Enabled")
-      : (isZh ? "已关闭 · 严格隐私模式" : "Opted Out · Private Mode");
+      ? (t("account.sharingEnabled"))
+      : (t("settings.optedOutPrivateMode"));
   }
   syncPdpaUi(currentPrivacyPref());
 
@@ -182,19 +182,15 @@ export function renderSettingsView(root, {
       syncPdpaUi(Boolean(pref.share_usage_data));
       pdpaNote.className = "pdpa-feedback-note is-ok";
       pdpaNote.textContent = pref.share_usage_data
-        ? (isZh
-            ? "已更新偏好：允许记录匿名运行统计数据。"
-            : "Preference saved: anonymous operational usage sharing is enabled.")
-        : (isZh
-            ? "已撤回授权：已停止发送使用统计，并已从管理后台抹除你的在线状态与历史访问记录。"
-            : "Consent withdrawn: usage telemetry is disabled and your historical operational records have been purged.");
+        ? (t("account.preferenceSavedAnonymousOperationalUsage"))
+        : (t("account.consentWithdrawnUsageTelemetryIs"));
       pdpaNote.hidden = false;
       if (onPrivacyUpdated) onPrivacyUpdated(pref);
       if (showToast) {
         showToast(
           pref.share_usage_data
-            ? (isZh ? "已开启使用数据共享" : "Usage data sharing enabled")
-            : (isZh ? "已关闭使用数据共享并清理后台记录" : "Usage data sharing disabled & records purged"),
+            ? (t("account.usageDataSharingEnabled"))
+            : (t("account.usageDataSharingDisabledRecords")),
           { timeout: 4500 }
         );
       }
@@ -202,7 +198,7 @@ export function renderSettingsView(root, {
       pdpaToggleInput.checked = !nextVal;
       syncPdpaUi(!nextVal);
       pdpaNote.className = "pdpa-feedback-note is-err";
-      pdpaNote.textContent = isZh ? `保存失败：${err.message}` : `Could not update preference: ${err.message}`;
+      pdpaNote.textContent = t("account.couldNotUpdatePreferenceP0", { p0: err.message });
       pdpaNote.hidden = false;
     } finally {
       pdpaToggleInput.disabled = false;
@@ -226,7 +222,7 @@ export function renderSettingsView(root, {
   });
 
   root.replaceChildren(
-    el("header", { class: "page-head settings-head" }, [el("h1", { text: isZh ? "设置" : "Settings" })]),
+    el("header", { class: "page-head settings-head" }, [el("h1", { text: t("settings.settings") })]),
 
     el("div", { class: "settings-stack" }, [
       // Account summary (the avatar in the header opens this page).
@@ -238,10 +234,10 @@ export function renderSettingsView(root, {
         ]),
         el("div", { class: "settings-user-meta" }, [
           el("div", { class: "settings-user-name-row" }, [
-            el("strong", { text: me.name || me.given_name || (isZh ? "当前登录用户" : "Signed-in User") }),
+            el("strong", { text: me.name || me.given_name || (t("settings.signedInUser")) }),
             el("span", {
               class: `pill ${isAdmin ? "pill-primary" : "pill-outline"}`,
-              text: me.is_demo ? t("demo.bannerTitle") : isAdmin ? (isZh ? "管理员" : "Admin") : (isZh ? "内测成员" : "Beta Member"),
+              text: me.is_demo ? t("demo.bannerTitle") : isAdmin ? (t("settings.admin")) : (t("settings.betaMember")),
             }),
           ]),
           el("span", { class: "muted small", text: me.is_demo ? t("demo.badge") : me.email || "" }),
@@ -254,12 +250,10 @@ export function renderSettingsView(root, {
           el("div", { class: "settings-card-title-group" }, [
             el("span", { class: "round-icon", "aria-hidden": "true" }, [icon("smart-toy")]),
             el("div", {}, [
-              el("h2", { id: "settings-coach-heading", text: isZh ? "AI 教练人设与语音试听" : "AI Coach Persona & Voice" }),
+              el("h2", { id: "settings-coach-heading", text: t("settings.aiCoachPersonaVoice") }),
               el("p", {
                 class: "muted small",
-                text: isZh
-                  ? "选择最能激励你的教练风格并试听专属语音。切换教练不会丢失任何训练计划、饮食记录或教练记忆。"
-                  : "Pick the coaching style that motivates you most and preview their voice. Switching keeps all your plans, logs, and memories.",
+                text: t("settings.pickTheCoachingStyleThat"),
               }),
             ]),
           ]),
@@ -271,7 +265,7 @@ export function renderSettingsView(root, {
 
       // Everyday preferences: theme and language.
       el("section", { class: "card settings-card", "aria-labelledby": "settings-pref-heading" }, [
-        el("h2", { id: "settings-pref-heading", class: "settings-section-title", text: isZh ? "外观与语言" : "Appearance & language" }),
+        el("h2", { id: "settings-pref-heading", class: "settings-section-title", text: t("settings.appearanceLanguage") }),
         el("div", { class: "settings-pref-grid" }, [
           el("div", { class: "settings-pref-item" }, [
             el("div", { class: "settings-pref-copy" }, [el("strong", { text: t("menu.theme") })]),
@@ -289,18 +283,18 @@ export function renderSettingsView(root, {
 
       // Less frequent: one compact list.
       el("section", { class: "card settings-card settings-list-card", "aria-labelledby": "settings-more-heading" }, [
-        el("h2", { id: "settings-more-heading", class: "settings-section-title", text: isZh ? "更多" : "More" }),
+        el("h2", { id: "settings-more-heading", class: "settings-section-title", text: t("settings.more") }),
         el("div", { class: "settings-list" }, [
           row("auto-awesome", t("menu.changelog"), {
             href: "/changelog",
             trailing: hasUnseenChanges() ? el("span", { class: "news-dot", "aria-label": t("menu.changelogNew") }) : null,
           }),
-          row("install-mobile", isZh ? "安装到手机桌面" : "Install on your phone", { href: "/install" }),
+          row("install-mobile", t("settings.installOnYourPhone"), { href: "/install" }),
           onFeedback ? row("rate-review", t("fb.menu"), { onclick: onFeedback }) : null,
           el("details", { class: "settings-details" }, [
             el("summary", { class: "settings-row" }, [
               el("span", { class: "settings-row-icon", "aria-hidden": "true" }, [icon("shield")]),
-              el("span", { class: "settings-row-label", text: isZh ? "隐私与数据共享" : "Privacy & data sharing" }),
+              el("span", { class: "settings-row-label", text: t("settings.privacyDataSharing") }),
               pdpaStatusBadge,
               icon("expand-more", { cls: "settings-row-chev" }),
             ]),
@@ -309,22 +303,22 @@ export function renderSettingsView(root, {
           el("div", { class: "pdpa-boundary-col is-private" }, [
             el("div", { class: "pdpa-boundary-head" }, [
               icon("check-circle"),
-              el("strong", { text: isZh ? "绝对私密（后台管理员永远不可见）" : "Strictly Private (Never visible to admins)" }),
+              el("strong", { text: t("settings.strictlyPrivateNeverVisibleTo") }),
             ]),
             el("ul", { class: "pdpa-boundary-list" }, [
-              el("li", { text: isZh ? "与 AI 教练的所有文字/语音聊天记录与长期记忆" : "All AI Coach text/voice chat messages & memories" }),
-              el("li", { text: isZh ? "三餐饮食照片、营养分析与每日体重数据" : "Meal photos, nutrition logs & body weight entries" }),
-              el("li", { text: isZh ? "实时动作指导摄像头画面（浏览器本地提取姿态关键点）" : "Live camera form-check video (processed locally in browser)" }),
+              el("li", { text: t("settings.allAiCoachTextVoice") }),
+              el("li", { text: t("settings.mealPhotosNutritionLogsBody") }),
+              el("li", { text: t("settings.liveCameraFormCheckVideo") }),
             ]),
           ]),
           el("div", { class: "pdpa-boundary-col is-ops" }, [
             el("div", { class: "pdpa-boundary-head" }, [
               icon("privacy-tip"),
-              el("strong", { text: isZh ? "可选运行诊断（由下方开关随时控制）" : "Optional Diagnostics (Controlled below)" }),
+              el("strong", { text: t("settings.optionalDiagnosticsControlledBelow") }),
             ]),
             el("ul", { class: "pdpa-boundary-list" }, [
-              el("li", { text: isZh ? "页面访问频次与功能点击计数（不含任何聊天正文）" : "Screen views & feature click counts (never chat text)" }),
-              el("li", { text: isZh ? "AI 响应耗时与内测在线活跃状态" : "AI response latency & active beta presence indicator" }),
+              el("li", { text: t("settings.screenViewsFeatureClickCounts") }),
+              el("li", { text: t("settings.aiResponseLatencyActiveBeta") }),
             ]),
           ]),
         ]),
@@ -335,16 +329,14 @@ export function renderSettingsView(root, {
               el("label", {
                 class: "pdpa-toggle-label",
                 for: "settings-pdpa-share-toggle",
-                text: isZh ? "允许共享匿名使用情况与运行诊断数据" : "Share Anonymous Usage & Operational Diagnostics Data",
+                text: t("settings.shareAnonymousUsageOperationalDiagnostics"),
               }),
               el("p", {
                 class: "pdpa-toggle-desc",
-                text: isZh
-                  ? "你可以随时关闭此开关（PDPA 第 13–16 条同意与撤回权）。关闭后完全不影响 AI 教练功能，并会立即停止采集、同时从管理后台清空你的在线与历史访问统计。"
-                  : "Turn this off anytime under PDPA Sections 13–16 without affecting any Coach features. Turning it off stops telemetry and purges your historical usage & presence records.",
+                text: t("settings.turnThisOffAnytimeUnder"),
               }),
             ]),
-            el("label", { class: "pdpa-switch", for: "settings-pdpa-share-toggle", "aria-label": isZh ? "切换是否共享使用数据" : "Toggle usage data sharing" }, [
+            el("label", { class: "pdpa-switch", for: "settings-pdpa-share-toggle", "aria-label": t("account.toggleUsageDataSharing") }, [
               pdpaToggleInput,
               el("span", { class: "pdpa-switch-slider" }),
             ]),
@@ -356,7 +348,7 @@ export function renderSettingsView(root, {
           onExport ? row("download", t("menu.export"), { onclick: onExport }) : null,
           row("privacy-tip", t("menu.privacy"), { href: "/privacy", external: true }),
           isAdmin && onAdmin ? row("shield", t("menu.admin"), { onclick: onAdmin }) : null,
-          onDiagnostics ? row("monitoring", isZh ? "屏幕诊断" : "Screen diagnostics", { onclick: onDiagnostics }) : null,
+          onDiagnostics ? row("monitoring", t("settings.screenDiagnostics"), { onclick: onDiagnostics }) : null,
         ].filter(Boolean)),
       ]),
 

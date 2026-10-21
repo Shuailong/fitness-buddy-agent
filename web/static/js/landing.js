@@ -9,7 +9,7 @@ let initialized = false;
 
 /** Points every product screenshot at the current language (1x/2x WebP) with localized alt text. */
 export function updateLandingImages() {
-  const lang = getLang() === "zh" ? "zh" : "en";
+  const lang = t("meta.langCode");
   for (const img of document.querySelectorAll("#landing-view img.lp-shot")) {
     const name = img.dataset.shot;
     const src1 = `${IMG_BASE}/${name}-${lang}@1x.webp`;

@@ -131,7 +131,7 @@ export function exerciseSpec(ex, lang = "en") {
   if (!ex) return "";
   if (ex.reps) return `${ex.sets} × ${ex.reps}`;
   if (ex.duration_seconds) return `${ex.sets} × ${translate(lang, "unit.sec", { n: ex.duration_seconds })}`;
-  return lang === "zh" ? `${ex.sets} 组` : `${ex.sets} sets`;
+  return translate(lang, "logic.p0Sets", { p0: ex.sets });
 }
 
 /** Short label for a session focus in a week strip ("Upper Body Push" -> "Upper"). */

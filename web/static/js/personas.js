@@ -1,7 +1,7 @@
 // Coach Persona system: 3 selectable coaching personalities with distinct
 // gender, tone, visual identity, and Neural AI TTS voice synthesis.
 import { el, icon } from "./util.js";
-import { getLang } from "./i18n.js";
+import { getLang, translate } from "./i18n.js";
 import { openModal, closeModal, showToast } from "./modal.js";
 import { track } from "./telemetry.js";
 
@@ -141,7 +141,7 @@ export function getPersonaId() {
 
 export function getPersona(id = getPersonaId(), lang = getLang()) {
   const found = PERSONAS.find((p) => p.id === id) || PERSONAS[0];
-  const l = lang === "zh" ? "zh" : "en";
+  const l = translate(lang, "meta.langCode");
   return { ...found, copy: found[l] };
 }
 
@@ -338,7 +338,7 @@ export function normalizeSpeechText(text, lang = "zh") {
 
 function pickBestSpeechVoice(voices, persona, lang) {
   const isZh = lang === "zh";
-  const prefix = isZh ? "zh" : "en";
+  const prefix = translate(lang, "meta.langCode");
   const langVoices = (voices || []).filter((v) => {
     const l = String(v.lang || "").toLowerCase();
     return l.startsWith(prefix) || (isZh && l.includes("cmn"));
@@ -526,9 +526,9 @@ function speakSingleWebSpeechUtterance(spokenText, { persona, lang, token, onSta
       const picked = pickBestSpeechVoice(voices, persona, lang);
       if (picked) {
         utter.voice = picked;
-        utter.lang = picked.lang || (lang === "zh" ? "zh-CN" : "en-US");
+        utter.lang = picked.lang || (translate(lang, "meta.speechLang"));
       } else {
-        utter.lang = lang === "zh" ? "zh-CN" : "en-US";
+        utter.lang = translate(lang, "meta.speechLang");
       }
       utter.pitch = (persona && persona.voice && persona.voice.pitch) || 1.0;
       utter.rate = (persona && persona.voice && persona.voice.rate) || 1.0;
@@ -815,7 +815,7 @@ export function personaSwitchPill({ onSwitched, compact = false } = {}) {
   return el("button", {
     type: "button",
     class: `persona-pill ${p.accentClass}${compact ? " is-compact" : ""}`,
-    title: lang === "zh" ? "点击切换 AI 教练性格与风格" : "Switch AI Coach Persona",
+    title: translate(lang, "personas.switchAiCoachPersona"),
     onmouseenter: () => prefetchPersonaSamples(lang),
     onclick: () => {
       unlockCoachAudio();
@@ -873,15 +873,15 @@ export function renderPersonaSelectorGrid({ onSwitched } = {}) {
       }, [
         icon(isPlaying ? "pause" : "volume-up"),
         isPlaying
-          ? (isZh ? "正在播报语音… (点击停止)" : "Playing Voice… (Tap to Stop)")
-          : (isZh ? "试听教练语音" : "Preview Voice"),
+          ? (translate(lang, "personas.playingVoiceTapToStop"))
+          : (translate(lang, "personas.previewVoice")),
       ]);
 
       const selectCard = () => {
         unlockCoachAudio();
         currentId = setPersonaId(p.id);
         renderCards();
-        showToast(isZh ? `已切换为「${p.copy.name}」` : `Switched to ${p.copy.name}`);
+        showToast(translate(lang, "personas.switchedToP0", { p0: p.copy.name }));
         if (onSwitched) onSwitched(currentId);
       };
 
@@ -906,8 +906,8 @@ export function renderPersonaSelectorGrid({ onSwitched } = {}) {
             el("div", { class: "persona-title-row" }, [
               el("h4", { text: p.copy.name }),
               active
-                ? el("span", { class: "pill pill-primary persona-active-tag" }, [icon("check"), isZh ? "当前使用" : "Active"])
-                : el("span", { class: "pill pill-outline persona-select-tag", text: isZh ? "点击启用" : "Select" }),
+                ? el("span", { class: "pill pill-primary persona-active-tag" }, [icon("check"), translate(lang, "personas.active")])
+                : el("span", { class: "pill pill-outline persona-select-tag", text: translate(lang, "personas.select") }),
             ]),
             el("p", { class: "persona-gender muted small", text: p.copy.genderTag }),
           ]),
@@ -944,22 +944,20 @@ export function openPersonaSelectorModal({ onSwitched } = {}) {
   }, [
     el("header", { class: "modal-head" }, [
       el("div", {}, [
-        el("p", { class: "eyebrow accent", text: isZh ? "个性化 AI 教练" : "PERSONALIZED AI COACH" }),
-        el("h3", { id: "persona-modal-title", text: isZh ? "选择你的专属教练风格 (Persona)" : "Choose Your Coach Persona" }),
+        el("p", { class: "eyebrow accent", text: translate(lang, "personas.personalizedAiCoach") }),
+        el("h3", { id: "persona-modal-title", text: translate(lang, "personas.chooseYourCoachPersona") }),
       ]),
       el("button", {
         type: "button",
         class: "icon-btn",
-        "aria-label": isZh ? "关闭" : "Close",
+        "aria-label": translate(lang, "exercises.close"),
         onclick: () => { stopCoachSpeech(); closeModal(); },
       }, [icon("close")]),
     ]),
     el("div", { class: "persona-modal-body" }, [
       el("p", {
         class: "muted small",
-        text: isZh
-          ? "不同教练拥有截然不同的性格、性别、沟通语气与高拟真神经网络语音声线。切换后将在「教练对话」、「每日微课堂」和「摄像头实时动作伴练」中全局生效。"
-          : "Each coach brings a distinct personality, gender, communication tone, and neural voice coaching style across Chat, Daily Science Tips, and Live Form Coach.",
+        text: translate(lang, "personas.eachCoachBringsADistinct"),
       }),
       listWrap,
     ]),

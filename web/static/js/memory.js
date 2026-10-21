@@ -2,7 +2,7 @@
 // conversations and coach personas. Users can view, add, and delete them.
 import { el, icon } from "./util.js";
 import { api, getJson, postJson } from "./api.js";
-import { getLang } from "./i18n.js";
+import { getLang, t } from "./i18n.js";
 
 const CAT_LABELS = {
   preference: { zh: "偏好", en: "Preference", icon: "favorite" },
@@ -23,21 +23,21 @@ function catLabel(cat, isZh) {
 export function coachMemoryCard({ showToast = null } = {}) {
   const isZh = getLang() === "zh";
   const list = el("ul", { class: "memory-list", "aria-live": "polite" }, [
-    el("li", { class: "memory-empty muted small", text: isZh ? "加载中…" : "Loading…" }),
+    el("li", { class: "memory-empty muted small", text: t("chat.loading") }),
   ]);
   const counter = el("span", { class: "pill pill-outline memory-count", text: "–" });
   const input = el("input", {
     type: "text",
     class: "text-input memory-input",
     maxlength: "240",
-    placeholder: isZh ? "例如：不吃香菜；工作日只能早上 7 点前训练" : "e.g. No cilantro; can only train before 7am on weekdays",
-    "aria-label": isZh ? "新增一条记忆" : "Add a memory",
+    placeholder: t("memory.eGNoCilantroCan"),
+    "aria-label": t("memory.addAMemory"),
   });
-  const catSelect = el("select", { class: "text-input memory-cat", "aria-label": isZh ? "分类" : "Category" },
+  const catSelect = el("select", { class: "text-input memory-cat", "aria-label": t("memory.category") },
     Object.keys(CAT_LABELS).map((k) => el("option", { value: k, text: catLabel(k, isZh) })));
   catSelect.value = "preference";
   const clearBtn = el("button", { type: "button", class: "btn btn-secondary btn-sm pdpa-del-btn", hidden: true }, [
-    icon("delete-forever"), el("span", { text: isZh ? "清空全部" : "Clear all" }),
+    icon("delete-forever"), el("span", { text: t("memory.clearAll") }),
   ]);
   let maxItems = 40;
 
@@ -47,9 +47,7 @@ export function coachMemoryCard({ showToast = null } = {}) {
     if (!memories.length) {
       list.replaceChildren(el("li", {
         class: "memory-empty muted small",
-        text: isZh
-          ? "还没有记忆。和教练聊天时提到你的偏好（例如“我不喜欢跑步”或“记住我膝盖不好”），教练会自动记下来；你也可以在下方手动添加。"
-          : "Nothing yet. Mention preferences in chat (e.g. \"I hate running\" or \"remember my knee is sensitive\") and your coach saves them, or add one below.",
+        text: t("memory.nothingYetMentionPreferencesIn"),
       }));
       return;
     }
@@ -58,8 +56,8 @@ export function coachMemoryCard({ showToast = null } = {}) {
       const del = el("button", {
         type: "button",
         class: "icon-btn memory-del",
-        title: isZh ? "忘记这条" : "Forget this",
-        "aria-label": isZh ? `忘记：${m.text}` : `Forget: ${m.text}`,
+        title: t("memory.forgetThis"),
+        "aria-label": t("memory.forgetP0", { p0: m.text }),
         onclick: async () => {
           del.disabled = true;
           try {
@@ -77,7 +75,7 @@ export function coachMemoryCard({ showToast = null } = {}) {
           el("p", { class: "memory-text", text: m.text }),
           el("span", {
             class: "muted small",
-            text: `${catLabel(m.category, isZh)} · ${m.source === "user" ? (isZh ? "你添加" : "Added by you") : (isZh ? "教练记录" : "Saved by coach")} · ${String(m.updated_at || m.created_at || "").slice(0, 10)}`,
+            text: `${catLabel(m.category, isZh)} · ${m.source === "user" ? (t("memory.addedByYou")) : (t("memory.savedByCoach"))} · ${String(m.updated_at || m.created_at || "").slice(0, 10)}`,
           }),
         ]),
         del,
@@ -107,8 +105,8 @@ export function coachMemoryCard({ showToast = null } = {}) {
         input.value = "";
         if (showToast) {
           showToast(res.status === "duplicate"
-            ? (isZh ? "这条已经记住了" : "Already remembered")
-            : (isZh ? "已记住，所有教练都会参考" : "Saved, every coach will use it"), { timeout: 3500 });
+            ? (t("memory.alreadyRemembered"))
+            : (t("memory.savedEveryCoachWillUse")), { timeout: 3500 });
         }
         await load();
       } catch (err) {
@@ -121,11 +119,11 @@ export function coachMemoryCard({ showToast = null } = {}) {
   }, [
     catSelect,
     input,
-    el("button", { type: "submit", class: "btn btn-primary btn-sm" }, [icon("add"), el("span", { text: isZh ? "添加" : "Add" })]),
+    el("button", { type: "submit", class: "btn btn-primary btn-sm" }, [icon("add"), el("span", { text: t("memory.add") })]),
   ]);
 
   clearBtn.addEventListener("click", async () => {
-    const ok = window.confirm(isZh ? "确定清空全部教练记忆？此操作不可撤销。" : "Forget every Coach Memory entry? This cannot be undone.");
+    const ok = window.confirm(t("memory.forgetEveryCoachMemoryEntry"));
     if (!ok) return;
     try {
       await api("/api/memories", { method: "DELETE" });
@@ -140,12 +138,10 @@ export function coachMemoryCard({ showToast = null } = {}) {
       el("div", { class: "settings-card-title-group" }, [
         el("span", { class: "round-icon", "aria-hidden": "true" }, [icon("psychology")]),
         el("div", {}, [
-          el("h2", { id: "settings-memory-heading", text: isZh ? "教练记忆" : "Coach Memory" }),
+          el("h2", { id: "settings-memory-heading", text: t("memory.coachMemory") }),
           el("p", {
             class: "muted small",
-            text: isZh
-              ? "教练跨对话记住的偏好与信息，三位教练共享。仅你和教练可见，管理员无法查看；导出数据时包含、注销账户时一并删除。"
-              : "Preferences and facts your coach keeps across conversations, shared by all three coaches. Only you and your coach can see them (never admins); included in exports and deleted with your account.",
+            text: t("memory.preferencesAndFactsYourCoach"),
           }),
         ]),
       ]),

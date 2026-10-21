@@ -105,7 +105,7 @@ function coachRow(children, { avatar = true, indent = false, personaId = getPers
 export function addUserMessage(text, imageUrl, hadImage, { voice = false } = {}) {
   const children = [];
   if (voice) {
-    children.push(el("span", { class: "voice-tag" }, [icon("mic"), getLang() === "zh" ? "语音" : "Voice"]));
+    children.push(el("span", { class: "voice-tag" }, [icon("mic"), t("chat.voice")]));
   }
   if (imageUrl) {
     children.push(
@@ -131,7 +131,7 @@ function resetTtsBtn(btn) {
   if (!btn) return;
   const isZh = getLang() === "zh";
   btn.classList.remove("is-loading", "is-playing");
-  btn.replaceChildren(icon("volume-up"), el("span", { text: isZh ? "朗读" : "Listen" }));
+  btn.replaceChildren(icon("volume-up"), el("span", { text: t("chat.listen") }));
 }
 
 /**
@@ -155,7 +155,7 @@ function addCoachMessage(text, author, eventId = null, personaId = null) {
   const ttsBtn = el("button", {
     type: "button",
     class: "msg-tts-btn",
-    title: isZh ? "语音播报此回复" : "Read aloud",
+    title: t("chat.readAloud"),
     onclick: async () => {
       const zhNow = getLang() === "zh";
       if (activeMsgTtsBtn === ttsBtn) {
@@ -183,7 +183,7 @@ function addCoachMessage(text, author, eventId = null, personaId = null) {
           ttsBtn.classList.add("is-playing");
           ttsBtn.replaceChildren(
             icon("pause"),
-            el("span", { text: getLang() === "zh" ? "停止播报" : "Stop" }),
+            el("span", { text: t("chat.stop") }),
           );
         },
         onEnd: () => {
@@ -194,7 +194,7 @@ function addCoachMessage(text, author, eventId = null, personaId = null) {
         },
       });
     },
-  }, [icon("volume-up"), el("span", { text: isZh ? "朗读" : "Listen" })]);
+  }, [icon("volume-up"), el("span", { text: t("chat.listen") })]);
 
   const footRow = el("div", { class: "coach-msg-foot" }, [
     feedbackThumbs({ eventId }),
@@ -523,7 +523,7 @@ function sessionLoadingSkeleton() {
   return el("div", { class: "chat-boot-skeleton", role: "status", "aria-live": "polite" }, [
     el("div", { class: "loading-banner" }, [
       el("span", { class: "spinner", "aria-hidden": "true" }),
-      el("span", { text: isZh ? "正在连接 AI 教练并同步近期对话…" : "Connecting to your AI coach…" }),
+      el("span", { text: t("chat.connectingToYourAiCoach") }),
     ]),
     el("div", { class: "row from-coach", "aria-hidden": "true" }, [
       coachAvatar(getPersonaId()),
@@ -572,7 +572,7 @@ function historyLoader() {
     type: "button",
     class: "history-loader-btn",
     onclick: () => loadOlderHistory(),
-  }, [icon("schedule"), el("span", { text: isZh ? "查看更早的聊天" : "Earlier messages" })]);
+  }, [icon("schedule"), el("span", { text: t("chat.earlierMessages") })]);
   return el("div", { class: "row system history-loader", id: "history-loader" }, [btn]);
 }
 
@@ -582,13 +582,13 @@ function setLoaderState(stateName) {
   const isZh = getLang() === "zh";
   const btn = loader.querySelector("button");
   if (stateName === "end") {
-    loader.replaceChildren(el("p", { class: "history-end muted small", text: isZh ? "已经到最早的聊天记录了" : "This is the beginning of your chat history" }));
+    loader.replaceChildren(el("p", { class: "history-end muted small", text: t("chat.thisIsTheBeginningOf") }));
     if (timeline.observer) timeline.observer.disconnect();
   } else if (btn) {
     btn.disabled = stateName === "loading";
     btn.lastElementChild.textContent = stateName === "loading"
-      ? (isZh ? "加载中…" : "Loading…")
-      : (isZh ? "查看更早的聊天" : "Earlier messages");
+      ? (t("chat.loading"))
+      : (t("chat.earlierMessages"));
   }
 }
 
@@ -830,12 +830,12 @@ export function syncCoachPersonaHeader() {
       {
         type: "button",
         class: "coach-switch-chip",
-        title: isZh ? "切换 AI 教练人设或试听语音" : "Switch AI coach persona or preview voice",
+        title: t("chat.switchAiCoachPersonaOr"),
         onclick: () => openPersonaSelectorModal({ onSwitched: () => syncCoachPersonaHeader() }),
       },
       [
         icon("swap-horiz"),
-        el("span", { text: isZh ? "切换" : "Switch" }),
+        el("span", { text: t("chat.switch") }),
       ]
     );
     const privacyBtn = el(
@@ -843,16 +843,14 @@ export function syncCoachPersonaHeader() {
       {
         type: "button",
         class: "coach-privacy-pill",
-        title: isZh
-          ? "PDPA 隐私保护：聊天内容仅你本人可见，点击管理数据共享权限"
-          : "PDPA Protected: Coach chat is strictly private. Click for privacy controls.",
+        title: t("chat.pdpaProtectedCoachChatIs"),
         onclick: () => {
           if (actions.openPrivacy) actions.openPrivacy();
         },
       },
       [
         icon("shield"),
-        el("span", { text: isZh ? "私密" : "Private" }),
+        el("span", { text: t("chat.private") }),
       ]
     );
     titlesWrap.replaceChildren(
@@ -881,9 +879,7 @@ function markPersonaSwitch(id, { previous, fromServer } = {}) {
     el("p", { class: "persona-switch-divider" }, [
       coachAvatar(p.id, { size: "sm" }),
       el("span", {
-        text: isZh
-          ? `${fromServer ? "已同步其他设备的选择：" : ""}${p.copy.shortName} 接手对话 · 聊天记录与教练记忆保留`
-          : `${fromServer ? "Synced from another device: " : ""}${p.copy.shortName} takes over · history & memories kept`,
+        text: `${fromServer ? t("chat.syncedFromDevice") : ""}${t("chat.coachTakesOver", { name: p.copy.shortName })}`,
       }),
     ]),
   ]));
@@ -911,7 +907,7 @@ function addUserVoiceMessage({ url, duration }) {
     type: "button",
     class: "bubble bubble-user voice-bubble",
     style: { width: `${width}px` },
-    "aria-label": isZh ? `播放语音 ${Math.round(duration)} 秒` : `Play voice message, ${Math.round(duration)} seconds`,
+    "aria-label": t("chat.playVoiceMessageP0Seconds", { p0: Math.round(duration) }),
     onclick: () => {
       if (audio.paused) { audio.currentTime = 0; audio.play().catch(() => {}); } else { audio.pause(); }
     },
@@ -920,7 +916,7 @@ function addUserVoiceMessage({ url, duration }) {
   for (const ev of ["pause", "ended"]) audio.addEventListener(ev, () => bubble.classList.remove("is-playing"));
   const transcript = el("p", { class: "voice-transcript is-pending" }, [
     el("span", { class: "pc-spinner", "aria-hidden": "true" }),
-    el("span", { text: isZh ? "转文字中…" : "Transcribing…" }),
+    el("span", { text: t("chat.transcribing") }),
   ]);
   const row = el("div", { class: "row from-user voice-row" }, [el("div", { class: "voice-stack" }, [bubble, transcript])]);
   messagesEl().append(row);
@@ -935,10 +931,10 @@ function addUserVoiceMessage({ url, duration }) {
     confirm(text, { onSend, onEdit }) {
       transcript.classList.remove("is-pending");
       transcript.classList.add("is-partial");
-      const sendBtn = el("button", { type: "button", class: "btn btn-primary btn-sm" }, [isZh ? "发送" : "Send"]);
-      const editBtn = el("button", { type: "button", class: "btn btn-secondary btn-sm" }, [isZh ? "编辑" : "Edit"]);
+      const sendBtn = el("button", { type: "button", class: "btn btn-primary btn-sm" }, [t("chat.send")]);
+      const editBtn = el("button", { type: "button", class: "btn btn-secondary btn-sm" }, [t("chat.edit")]);
       transcript.replaceChildren(
-        el("span", { class: "voice-partial-note" }, [icon("warning"), isZh ? "有部分没听清（…），确认后再发给教练" : "Some words were unclear (…) - confirm before sending"]),
+        el("span", { class: "voice-partial-note" }, [icon("warning"), t("chat.someWordsWereUnclearConfirm")]),
         el("span", { class: "voice-partial-text", text }),
         el("span", { class: "voice-partial-actions" }, [editBtn, sendBtn]),
       );
@@ -977,11 +973,11 @@ async function sendVoiceMessage(blob, duration) {
   try {
     ({ text, status } = await transcribeBlob(blob));
   } catch (err) {
-    vm.fail(isRateLimited(err) ? err.message : (isZh ? "转文字失败，请重试或改用文字" : "Couldn't transcribe - try again or type instead"));
+    vm.fail(isRateLimited(err) ? err.message : (t("chat.couldnTTranscribeTryAgain")));
     return;
   }
   if (!text) {
-    vm.fail(isZh ? "没听清，请再说一次" : "Didn't catch that - please try again");
+    vm.fail(t("chat.didnTCatchThatPlease"));
     return;
   }
   if (status === "partial") {
@@ -1023,8 +1019,8 @@ async function maybeShowMicTip() {
     const isZh = getLang() === "zh";
     const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
     const tip = ios
-      ? (isZh ? "不想每次都授权麦克风？在 iPhone「设置 › App › Safari › 麦克风」中选择「允许」即可。" : "Tired of the microphone prompt? On iPhone open Settings › Apps › Safari › Microphone and choose Allow.")
-      : (isZh ? "不想每次都授权麦克风？点击地址栏左侧的站点设置，把麦克风设为「允许」。" : "Tired of the microphone prompt? Open site settings next to the address bar and set Microphone to Allow.");
+      ? (t("chat.tiredOfTheMicrophonePrompt"))
+      : (t("chat.tiredOfTheMicrophonePrompt2"));
     addError(tip, { cls: "mic-tip" });
   } catch (_) { /* Permissions API unsupported */ }
 }
@@ -1057,7 +1053,7 @@ function setVoiceMode(on) {
   toggle.setAttribute("aria-pressed", String(on));
   toggle.replaceChildren(icon(on ? "keyboard" : "mic"));
   const isZh = getLang() === "zh";
-  toggle.title = on ? (isZh ? "切换到键盘" : "Switch to keyboard") : (isZh ? "语音消息" : "Voice message");
+  toggle.title = on ? (t("chat.switchToKeyboard")) : (t("chat.voiceMessage"));
   toggle.setAttribute("aria-label", toggle.title);
   try { localStorage.setItem(VOICE_MODE_KEY, on ? "1" : "0"); } catch (_) { /* ignore */ }
   if (on) {
@@ -1074,12 +1070,12 @@ function voiceOverlay() {
   const bars = el("div", { class: "vo-bars", "aria-hidden": "true" }, Array.from({ length: 22 }, () => el("i")));
   const time = el("span", { class: "vo-time", text: "" });
   const cancelZone = el("div", { class: "vo-zone vo-cancel" }, [
-    el("span", { class: "vo-zone-label", text: isZh ? "松开 取消" : "Release to cancel" }),
+    el("span", { class: "vo-zone-label", text: t("chat.releaseToCancel") }),
     el("span", { class: "vo-zone-ic", "aria-hidden": "true" }, [icon("close")]),
   ]);
   const textZone = el("div", { class: "vo-zone vo-text" }, [
-    el("span", { class: "vo-zone-label", text: isZh ? "松开 转文字" : "Release for text" }),
-    el("span", { class: "vo-zone-ic vo-zone-ic-text", "aria-hidden": "true", text: isZh ? "文" : "Aa" }),
+    el("span", { class: "vo-zone-label", text: t("chat.releaseForText") }),
+    el("span", { class: "vo-zone-ic vo-zone-ic-text", "aria-hidden": "true", text: t("chat.aa") }),
   ]);
   const arcLabel = el("span", { class: "vo-arc-label" });
   const node = el("div", { class: "voice-overlay", role: "dialog", "aria-live": "polite" }, [
@@ -1089,11 +1085,11 @@ function voiceOverlay() {
   ]);
   const levels = new Array(22).fill(0.1);
   const labels = {
-    starting: isZh ? "正在打开麦克风…" : "Opening microphone…",
-    send: isZh ? "松开 发送" : "Release to send",
-    cancel: isZh ? "松开 取消" : "Release to cancel",
-    text: isZh ? "松开 转文字" : "Release for text",
-    working: isZh ? "正在转文字…" : "Transcribing…",
+    starting: t("chat.openingMicrophone"),
+    send: t("chat.releaseToSend"),
+    cancel: t("chat.releaseToCancel"),
+    text: t("chat.releaseForText"),
+    working: t("chat.transcribing2"),
   };
   return {
     node,
@@ -1107,7 +1103,7 @@ function voiceOverlay() {
     },
     time(secs) {
       const left = MAX_VOICE_S - secs;
-      time.textContent = left <= 10 ? (isZh ? `${Math.ceil(left)} 秒后自动发送` : `Sending in ${Math.ceil(left)}s`) : `${Math.floor(secs)}″`;
+      time.textContent = left <= 10 ? (t("chat.sendingInP0S", { p0: Math.ceil(left) })) : `${Math.floor(secs)}″`;
     },
     zoneAt(x, y) {
       const hit = (z) => { const rc = z.querySelector(".vo-zone-ic").getBoundingClientRect(); return x >= rc.left - 28 && x <= rc.right + 28 && y >= rc.top - 60 && y <= rc.bottom + 24; };
@@ -1158,7 +1154,7 @@ function initVoice() {
     const isZh = getLang() === "zh";
     if (duration < MIN_VOICE_S) {
       close();
-      addError(isZh ? "说话时间太短" : "Too short - hold while you speak", { cls: "voice-short" });
+      addError(t("chat.tooShortHoldWhileYou"), { cls: "voice-short" });
       setTimeout(() => { for (const n of messagesEl().querySelectorAll(".voice-short")) n.remove(); }, 2500);
       return;
     }
@@ -1167,9 +1163,9 @@ function initVoice() {
       try {
         const { text, status } = await transcribeBlob(blob);
         close();
-        if (!text) { addError(isZh ? "没听清，请再说一次" : "Didn't catch that - please try again"); return; }
+        if (!text) { addError(t("chat.didnTCatchThatPlease")); return; }
         if (status === "partial") {
-          addError(isZh ? "有部分没听清，已用「…」标出，请检查后再发送" : "Some words were unclear and marked with …, please check before sending", { cls: "voice-short" });
+          addError(t("chat.someWordsWereUnclearAnd"), { cls: "voice-short" });
           setTimeout(() => { for (const n of messagesEl().querySelectorAll(".voice-short")) n.remove(); }, 4000);
         }
         track("voice_message", { mode: "to_text", seconds: Math.round(duration) });
@@ -1181,7 +1177,7 @@ function initVoice() {
         input.setSelectionRange(input.value.length, input.value.length);
       } catch (err) {
         close();
-        addError(isRateLimited(err) ? err.message : (isZh ? "转文字失败，请重试" : "Couldn't transcribe - please try again"));
+        addError(isRateLimited(err) ? err.message : (t("chat.couldnTTranscribePleaseTry")));
       }
       return;
     }
@@ -1196,7 +1192,7 @@ function initVoice() {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
     const isZh = getLang() === "zh";
-    if (state.streaming) { addError(isZh ? "教练正在回复，请稍等" : "Your coach is still replying - one moment"); return; }
+    if (state.streaming) { addError(t("chat.yourCoachIsStillReplying")); return; }
     if (isOffline()) { addError(t("offline.noVoice")); return; }
     if (sendBlocked()) { showLimitError(limits.sendScope); return; }
     try { hold.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
@@ -1213,13 +1209,13 @@ function initVoice() {
     } catch (err) {
       close();
       pressing = false;
-      addError(isZh ? "无法使用麦克风：请在浏览器设置中允许麦克风权限" : "Microphone unavailable - allow microphone access in your browser settings");
+      addError(t("chat.microphoneUnavailableAllowMicrophoneAccess"));
       return;
     }
     if (!pressing) {
       // Released while the permission prompt was open: don't send a stray clip.
       rec.cancel(); rec = null; close();
-      if (performance.now() - asked > 600) addError(isZh ? "已开启麦克风，请再次按住说话" : "Microphone ready - press and hold again to talk");
+      if (performance.now() - asked > 600) addError(t("chat.microphoneReadyPressAndHold"));
       return;
     }
     if (navigator.vibrate) navigator.vibrate(15);

@@ -52,7 +52,7 @@ export function loadingView() {
   return el("div", { class: "loading dash-loading-wrap", role: "status", "aria-busy": "true" }, [
     el("div", { class: "loading-banner" }, [
       el("span", { class: "spinner", "aria-hidden": "true" }),
-      el("span", { text: isZh ? "正在同步你的今日热量、课表与科学锦囊…" : t("loading") }),
+      el("span", { text: t("views.syncingToday") }),
     ]),
     el("div", { class: "dash-skeleton", "aria-hidden": "true" }, [
       el("div", { class: "dsk-head" }, [
@@ -226,7 +226,7 @@ function workoutCard(d) {
       el("span", { class: "sep", "aria-hidden": "true", text: "•" }),
       el("span", {}, [icon("fitness-center", { cls: "accent" }), t("today.exercises", { n: s.exercises.length })]),
       el("span", { class: "sep", "aria-hidden": "true", text: "•" }),
-      el("span", { class: "accent small", text: isZh ? "点击动作查看演示与 AI 摄像指导" : "Tap exercise for form & live AI camera" }),
+      el("span", { class: "accent small", text: t("views.tapExerciseForFormLive") }),
     ]),
     el("ol", { class: "ex-preview" }, preview.map((ex, i) => {
       const guide = getExerciseGuide(ex, getLang());
@@ -248,14 +248,14 @@ function workoutCard(d) {
         el("span", { class: "num", text: String(i + 1) }),
         el("div", { class: "ex-row-main" }, [
           el("span", { class: "ex-name", text: guide.displayName }),
-          el("span", { class: "ex-row-sub muted small", text: `${guide.muscles.slice(0, 2).join(" · ")} · ${isZh ? "动作要点" : "Form Guide"}` }),
+          el("span", { class: "ex-row-sub muted small", text: `${guide.muscles.slice(0, 2).join(" · ")} · ${t("views.formGuide")}` }),
         ]),
         el("div", { class: "ex-row-right" }, [
           el("span", { class: "ex-spec", text: exerciseSpec(ex, getLang()) }),
           el("button", {
             type: "button",
             class: "icon-btn ex-cam-mini-btn",
-            title: isZh ? "开启摄像头 AI 实时动作与语音指导" : "Live Camera AI Form Coach",
+            title: t("views.liveCameraAiFormCoach"),
             onclick: (e) => {
               e.stopPropagation();
               openLiveFormCoachModal(ex, actions);
@@ -279,7 +279,7 @@ function openMealDetailModal(m, d) {
     : (m.items || []).map((name) => (typeof name === "object" && name !== null ? name : { name: String(name) }));
   const titleText = (m.items || [])
     .map((x) => (typeof x === "object" && x !== null ? x.name : x))
-    .join(isZh ? "、" : ", ") || mealName(m.meal_type);
+    .join(t("punct.listSep")) || mealName(m.meal_type);
   const timeStr = clock(m.logged_at, d.timezone);
   const modalTitle = timeStr ? `${mealName(m.meal_type)} · ${timeStr}` : mealName(m.meal_type);
 
@@ -352,13 +352,11 @@ function openMealDetailModal(m, d) {
       onclick: () => {
         modalRef.close();
         actions.openCoach({
-          send: isZh
-            ? `帮我点评一下这顿${mealName(m.meal_type)}（${titleText}，共 ${num(totals.calories_kcal || 0)} kcal，蛋白质 ${num(totals.protein_g || 0)}g）：营养搭配合理吗？下一餐怎么吃更好？`
-            : `Can you review my ${mealLower(m.meal_type)} (${titleText}, ${num(totals.calories_kcal || 0)} kcal, ${num(totals.protein_g || 0)}g protein) and suggest how to balance my next meal?`,
+          send: t("views.reviewMeal", { meal: isZh ? mealName(m.meal_type) : mealLower(m.meal_type), items: titleText, kcal: num(totals.calories_kcal || 0), protein: num(totals.protein_g || 0) }),
         });
       },
     },
-    [icon("smart-toy"), isZh ? "让教练点评这餐" : "Ask Coach to Review"],
+    [icon("smart-toy"), t("views.askCoachToReview")],
   );
   const fixBtn = el(
     "button",
@@ -395,7 +393,7 @@ function openMealDetailModal(m, d) {
         targetPct !== null
           ? el("span", {
               class: "tag-muted",
-              text: isZh ? `占今日目标 ${targetPct}%` : `${targetPct}% of daily goal`,
+              text: t("views.p0OfDailyGoal", { p0: targetPct }),
             })
           : el("span", { class: "tag-muted", text: t("mealDetail.conf.medium") }),
       ]),
@@ -427,7 +425,7 @@ function openMealDetailModal(m, d) {
       ? el("div", { class: "meal-detail-items-sec" }, [
           el("div", { class: "meal-detail-section-head" }, [
             el("p", { class: "eyebrow", text: t("mealDetail.itemsTitle", { n: itemDetails.length }) }),
-            el("span", { class: "muted small", text: isZh ? "估算克重与热量明细" : "Estimated portion & macros" }),
+            el("span", { class: "muted small", text: t("views.estimatedPortionMacros") }),
           ]),
           el(
             "ul",
@@ -473,7 +471,7 @@ function openMealDetailModal(m, d) {
   ]);
 
   const opened = openModal({
-    subtitle: isZh ? "今日饮食营养档案" : "MEAL NUTRITION LOG",
+    subtitle: t("views.mealNutritionLog"),
     title: modalTitle,
     body,
     cls: "meal-detail-modal",
@@ -501,7 +499,7 @@ function mealsCard(d) {
             const titleText =
               (m.items || [])
                 .map((x) => (typeof x === "object" && x !== null ? x.name : x))
-                .join(isZh ? "、" : ", ") || mealName(m.meal_type);
+                .join(t("punct.listSep")) || mealName(m.meal_type);
             const tot = m.totals || {};
             const timeStr = clock(m.logged_at, d.timezone);
             const iconSlot = el("span", { class: `meal-icon ${m.meal_type}`, "aria-hidden": "true" }, [
@@ -561,7 +559,7 @@ function mealsCard(d) {
         )
       : el("div", { class: "meals-empty-box" }, [
           icon("photo-camera", { cls: "accent" }),
-          el("p", { class: "muted small", text: isZh ? "今天还没有记录饮食，拍照或发文字即可自动估算热量与三大营养素。" : "No meals logged today yet. Snap a photo or message your coach to log." }),
+          el("p", { class: "muted small", text: t("views.noMealsLoggedTodayYet") }),
         ]),
     el("button", { type: "button", class: "add-row", onclick: () => actions.openCoach({ photo: "camera" }) }, [
       icon("add-circle"),
@@ -843,7 +841,7 @@ function sessionCard(s, { isToday, isDone, open }) {
             ex.rest_seconds ? el("span", { text: t("plan.restSec", { n: ex.rest_seconds }) }) : null,
             ex.target_rpe ? el("span", { text: t("plan.rpe", { n: ex.target_rpe }) }) : null,
             ex.notes ? el("span", { class: "tag", text: ex.notes }) : null,
-            el("span", { class: "accent small", text: isZh ? "动作演示 ›" : "Form Guide ›" }),
+            el("span", { class: "accent small", text: t("views.formGuide2") }),
           ]),
         ]),
         el("div", { class: "ex-row-right" }, [
@@ -851,7 +849,7 @@ function sessionCard(s, { isToday, isDone, open }) {
           el("button", {
             type: "button",
             class: "icon-btn ex-cam-mini-btn",
-            title: isZh ? "开启摄像头 AI 实时动作与语音指导" : "Live Camera AI Form Coach",
+            title: t("views.liveCameraAiFormCoach"),
             onclick: (e) => {
               e.stopPropagation();
               openLiveFormCoachModal(ex, actions);

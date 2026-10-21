@@ -32,7 +32,7 @@ export function mealLoggedCard(card, ctx) {
 
   let photoBanner = null;
   if (card.photo_url) {
-    const caption = items.map((i) => i.name).join(getLang() === "zh" ? "、" : ", ") || mealName(mealType);
+    const caption = items.map((i) => i.name).join(t("punct.listSep")) || mealName(mealType);
     const img = el("img", { class: "meal-card-photo", src: card.photo_url, alt: caption });
     const wrap = el(
       "button",
@@ -163,7 +163,7 @@ function planCard(card, onDecide) {
       el("summary", {}, [
         el("span", { class: "dot", "aria-hidden": "true" }),
         el("span", { class: "session-text" }, [
-          el("span", { class: "session-title", text: `${dayName}${getLang() === "zh" ? "：" : ": "}${s.focus || t("card.session")}` }),
+          el("span", { class: "session-title", text: `${dayName}${t("punct.colon")}${s.focus || t("card.session")}` }),
           el("span", { class: "session-meta", text: meta }),
         ]),
         icon("expand-more", { cls: "chev" }),

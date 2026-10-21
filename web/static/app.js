@@ -143,7 +143,7 @@ function showViewportDebug() {
   ];
   const overlay = el("div", { class: "vp-debug", role: "dialog", onclick: () => overlay.remove() }, [
     el("pre", { text: rows.map(([k, v]) => `${k.padEnd(28)} ${v}`).join("\n") }),
-    el("p", { text: getLang() === "zh" ? "截图发给开发者 · 点击关闭" : "Screenshot this for the developer · tap to close" }),
+    el("p", { text: t("app.screenshotThisForTheDeveloper") }),
   ]);
   document.body.append(overlay);
 }
@@ -158,7 +158,7 @@ function announceWhatsNew() {
     if (localStorage.getItem(WHATSNEW_TOAST_KEY) === CHANGELOG[0].id) return;
     localStorage.setItem(WHATSNEW_TOAST_KEY, CHANGELOG[0].id);
   } catch (_) { return; }
-  const title = CHANGELOG[0].title[getLang() === "zh" ? "zh" : "en"];
+  const title = CHANGELOG[0].title[t("meta.langCode")];
   setTimeout(() => showToast(t("whatsnew.toast", { title }), {
     iconName: "auto-awesome",
     timeout: 9000,
@@ -659,7 +659,7 @@ function renderGisButton() {
     nav.append(host);
     window.google.accounts.id.renderButton(host, {
       type: "standard", theme: "outline", size: "medium", shape: "pill", text: "signin",
-      locale: getLang() === "zh" ? "zh_CN" : "en",
+      locale: t("meta.gisLocale"),
     });
     nav.classList.add("gis-ready");
   }
@@ -671,7 +671,7 @@ function renderGisButton() {
     const width = Math.round(Math.max(200, Math.min(360, slot.getBoundingClientRect().width || 280)));
     window.google.accounts.id.renderButton(host, {
       theme: "outline", size: "large", shape: "pill", text: "signin_with", logo_alignment: "left", width,
-      locale: getLang() === "zh" ? "zh_CN" : "en",
+      locale: t("meta.gisLocale"),
     });
     slot.classList.add("gis-ready");
   }

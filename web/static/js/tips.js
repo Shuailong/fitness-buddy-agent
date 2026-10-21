@@ -2,7 +2,7 @@
 // Bite-sized, evidence-based daily lessons across Training, Nutrition,
 // Recovery, and Metabolism with streak/mastery tracking and persona commentary.
 import { el, icon } from "./util.js";
-import { getLang } from "./i18n.js";
+import { getLang, translate } from "./i18n.js";
 import { showToast } from "./modal.js";
 import { coachAvatar, getPersona, getPersonaId, speakCoachText, stopCoachSpeech, unlockCoachAudio } from "./personas.js";
 import { track } from "./telemetry.js";
@@ -349,7 +349,7 @@ export function dailyScienceCard(d, actions) {
 
   const container = el("section", {
     class: "card science-tip-card",
-    "aria-label": isZh ? "每日科学微课堂" : "Daily Science Tip",
+    "aria-label": translate(lang, "tips.dailyScienceTip"),
   });
 
   const paint = () => {
@@ -365,7 +365,7 @@ export function dailyScienceCard(d, actions) {
       : ((dayNumber(todayIso) % pool.length) + pool.length) % pool.length;
     const baseIdx = startIdx;
     const currentTip = pool[(baseIdx + offset) % pool.length];
-    const copy = currentTip[isZh ? "zh" : "en"];
+    const copy = currentTip[translate(lang, "meta.langCode")];
     const catMeta = TIP_CATEGORIES.find((c) => c.id === currentTip.category) || TIP_CATEGORIES[0];
 
     const personaId = getPersonaId();
@@ -384,7 +384,7 @@ export function dailyScienceCard(d, actions) {
             el("div", { class: "science-eyebrow-row" }, [
               el("span", { class: "eyebrow accent", text: (() => {
                 const [, mm, dd] = todayIso.split("-").map(Number);
-                return isZh ? `每日科学微课堂 · ${mm}月${dd}日` : `DAILY SCIENCE · ${new Date(todayIso + "T00:00:00").toLocaleDateString("en", { month: "short", day: "numeric" })}`;
+                return translate(lang, "tips.dailyScienceDate", { date: isZh ? `${mm}月${dd}日` : new Date(todayIso + "T00:00:00").toLocaleDateString("en", { month: "short", day: "numeric" }) });
               })() }),
               el("span", {
                 class: "pill pill-outline science-cat-pill",
@@ -397,7 +397,7 @@ export function dailyScienceCard(d, actions) {
         el("div", { class: "science-head-right" }, [
           el("span", {
             class: "pill pill-primary science-streak-pill",
-            title: isZh ? "累计已学知识卡片与连续打卡天数" : "Mastered tips & learning streak",
+            title: translate(lang, "tips.masteredTipsLearningStreak"),
             text: isZh
               ? `已学 ${learnedState.ids.length}/${DAILY_TIPS.length}${learnedState.streak ? ` · 🔥${learnedState.streak}天` : ""}`
               : `${learnedState.ids.length}/${DAILY_TIPS.length} Learned${learnedState.streak ? ` · 🔥${learnedState.streak}d` : ""}`,
@@ -424,16 +424,16 @@ export function dailyScienceCard(d, actions) {
       // 3-part micro-lesson body
       el("div", { class: "science-tip-body" }, [
         el("div", { class: "science-takeaway-box" }, [
-          el("span", { class: "science-box-label", text: isZh ? "💡 核心结论" : "💡 Key Takeaway" }),
+          el("span", { class: "science-box-label", text: translate(lang, "tips.keyTakeaway") }),
           el("p", { class: "science-takeaway-text", text: copy.takeaway }),
         ]),
         el("div", { class: "science-grid-2" }, [
           el("div", { class: "science-subbox" }, [
-            el("span", { class: "science-box-label muted", text: isZh ? "🔬 科学原理 (Why It Works)" : "🔬 Why It Works" }),
+            el("span", { class: "science-box-label muted", text: translate(lang, "tips.whyItWorks") }),
             el("p", { class: "muted small", text: copy.science }),
           ]),
           el("div", { class: "science-subbox action-highlight" }, [
-            el("span", { class: "science-box-label accent", text: isZh ? "🎯 今日微行动 (Action Step)" : "🎯 Today's Micro-Action" }),
+            el("span", { class: "science-box-label accent", text: translate(lang, "tips.todaySMicroAction") }),
             el("p", { class: "small", text: copy.action }),
           ]),
         ]),
@@ -451,7 +451,7 @@ export function dailyScienceCard(d, actions) {
               const ttsBtn = el("button", {
                 type: "button",
                 class: "icon-btn science-tts-btn",
-                title: isZh ? "语音朗读本条微课堂" : "Listen to this tip",
+                title: translate(lang, "tips.listenToThisTip"),
                 onclick: async () => {
                   unlockCoachAudio();
                   if (tipPlaying) {
@@ -491,15 +491,13 @@ export function dailyScienceCard(d, actions) {
               paint();
               if (res.isNew) {
                 showToast(
-                  isZh
-                    ? `🎉 已打卡学习！累计掌握 ${res.ids.length}/${DAILY_TIPS.length} 条科学锦囊`
-                    : `🎉 Marked as learned! (${res.ids.length}/${DAILY_TIPS.length} mastered)`
+                  translate(lang, "tips.markedAsLearnedP0P1", { p0: res.ids.length, p1: DAILY_TIPS.length })
                 );
               }
             },
           }, [
             icon(isLearned ? "check-circle" : "check"),
-            isZh ? (isLearned ? "今日已学 ✓" : "打卡已学") : (isLearned ? "Learned ✓" : "Mark Learned"),
+            translate(lang, isLearned ? "tips.learned" : "tips.markLearned"),
           ]),
           el("button", {
             type: "button",
@@ -509,7 +507,7 @@ export function dailyScienceCard(d, actions) {
               track("tip_interact", { action: "next_tip", tip_id: pool[(baseIdx + offset) % pool.length].id });
               paint();
             },
-          }, [icon("refresh"), isZh ? "换一条学学" : "Next Tip"]),
+          }, [icon("refresh"), translate(lang, "tips.nextTip")]),
         ]),
         el("button", {
           type: "button",
@@ -520,7 +518,7 @@ export function dailyScienceCard(d, actions) {
               actions.openCoach({ send: copy.askPrompt });
             }
           },
-        }, [isZh ? "结合我的情况问教练" : "Ask Coach How to Apply", icon("arrow-forward")]),
+        }, [translate(lang, "tips.askCoachHowToApply"), icon("arrow-forward")]),
       ]),
     );
   };
