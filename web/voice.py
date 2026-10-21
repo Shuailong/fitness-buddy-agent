@@ -14,8 +14,11 @@ import re
 
 from web.observability import log_event
 
-_TRANSCRIBE_MODELS = ("gemini-3.8-flash", "gemini-2.5-flash")
-TRANSCRIBE_TIMEOUT_S = 25.0
+# Two independent fast models for the cross-check (anti-hallucination). Audio
+# transcription with gemini-3.8-flash measured 15-18 s per clip; these two with
+# thinking off take ~1.4 s each (they run in parallel).
+_TRANSCRIBE_MODELS = ("gemini-2.5-flash", "gemini-2.5-flash-lite")
+TRANSCRIBE_TIMEOUT_S = 15.0
 MAX_AUDIO_BYTES = 4 * 1024 * 1024  # ~2 minutes of 16 kHz mono WAV
 ALLOWED_AUDIO_TYPES = {
     "audio/wav",
@@ -151,8 +154,21 @@ def _parse(raw: str) -> dict[str, str]:
     return {"status": status, "text": text}
 
 
-def _transcribe_with(model: str, data: bytes, mime: str, lang: str) -> dict[str, str]:
+_CLIENTS: dict[str, object] = {}
+
+
+def _client(project: str):
+    """One reusable Gemini client per project (avoids per-request auth setup)."""
     from google import genai
+
+    if project not in _CLIENTS:
+        _CLIENTS[project] = genai.Client(
+            vertexai=True, project=project, location="global"
+        )
+    return _CLIENTS[project]
+
+
+def _transcribe_with(model: str, data: bytes, mime: str, lang: str) -> dict[str, str]:
     from google.genai import types
 
     from web.form_coach import _gemini_project_candidates
@@ -163,7 +179,7 @@ def _transcribe_with(model: str, data: bytes, mime: str, lang: str) -> dict[str,
     last_exc: Exception | None = None
     for project in _gemini_project_candidates():
         try:
-            client = genai.Client(vertexai=True, project=project, location="global")
+            client = _client(project)
             resp = client.models.generate_content(
                 model=model,
                 contents=[
@@ -175,6 +191,8 @@ def _transcribe_with(model: str, data: bytes, mime: str, lang: str) -> dict[str,
                     max_output_tokens=1024,
                     response_mime_type="application/json",
                     response_schema=_SCHEMA,
+                    # Verbatim transcription needs no reasoning; thinking only adds latency.
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
                 ),
             )
             return _parse(resp.text or "")
