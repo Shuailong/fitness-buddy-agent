@@ -174,8 +174,9 @@ function addCoachMessage(text, author, eventId = null, personaId = null) {
         el("span", { text: t("chat.ttsLoading") }),
       );
       unlockCoachAudio();
+      // Read aloud in the coach selected now (not whoever wrote the message).
       await speakCoachText(text, {
-        personaId: p.id,
+        personaId: getPersonaId(),
         lang: getLang(),
         onStart: () => {
           if (activeMsgTtsBtn !== ttsBtn) return;

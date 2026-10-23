@@ -883,7 +883,15 @@ async def synthesize_coach_speech(
         _TTS_CACHE[cache_key] = stub
         return stub
 
-    # 1. Optional Gemini 2.5 Native Audio / Cloud TTS Chirp3-HD (when explicitly enabled)
+    def _remember(res: dict[str, str]) -> dict[str, str]:
+        _TTS_CACHE[cache_key] = res
+        if len(_TTS_CACHE) > _TTS_CACHE_MAX:
+            _TTS_CACHE.popitem(last=False)
+        return res
+
+    # Every engine below maps each coach to its own voice, so a fallback never
+    # swaps the coach's voice for a generic one.
+    # 1. Optional Gemini native-audio TTS (when explicitly enabled).
     if os.environ.get("FORM_COACH_GEMINI_TTS") == "1":
         try:
             res = await asyncio.wait_for(
@@ -893,49 +901,41 @@ async def synthesize_coach_speech(
                 timeout=2.2,
             )
             if res and res.get("audio_b64"):
-                _TTS_CACHE[cache_key] = res
-                if len(_TTS_CACHE) > _TTS_CACHE_MAX:
-                    _TTS_CACHE.popitem(last=False)
-                return res
+                return _remember(res)
         except Exception:
             pass
 
-        try:
-            res = await asyncio.wait_for(
-                asyncio.to_thread(
-                    _call_cloud_tts_sync, clean_text, norm_persona, norm_lang
-                ),
-                timeout=2.0,
-            )
-            if res and res.get("audio_b64"):
-                _TTS_CACHE[cache_key] = res
-                if len(_TTS_CACHE) > _TTS_CACHE_MAX:
-                    _TTS_CACHE.popitem(last=False)
-                return res
-        except Exception:
-            pass
-
-    # 2. Scheme B primary: Studio-grade multi-gender neural voice (Yunjian / Xiaoxiao / Yunxi)
+    # 2. Cloud Text-to-Speech (Chirp3-HD per coach): official API, ~1 s.
     try:
         res = await asyncio.wait_for(
-            _call_edge_neural_tts(clean_text, norm_persona, norm_lang),
-            timeout=6.0,
+            asyncio.to_thread(
+                _call_cloud_tts_sync, clean_text, norm_persona, norm_lang
+            ),
+            timeout=4.0,
         )
         if res and res.get("audio_b64"):
-            _TTS_CACHE[cache_key] = res
-            if len(_TTS_CACHE) > _TTS_CACHE_MAX:
-                _TTS_CACHE.popitem(last=False)
-            return res
+            return _remember(res)
     except Exception:
         pass
 
-    # 3. Fallback: Fast low-latency Google neural MP3 TTS
+    # 3. Edge neural voices (Yunjian / Xiaoxiao / Yunxi), best effort.
+    try:
+        res = await asyncio.wait_for(
+            _call_edge_neural_tts(clean_text, norm_persona, norm_lang),
+            timeout=4.0,
+        )
+        if res and res.get("audio_b64"):
+            return _remember(res)
+    except Exception:
+        pass
+
+    # 4. Last resort (one generic voice per language): Google MP3 TTS.
     try:
         res = await asyncio.wait_for(
             asyncio.to_thread(
                 _call_neural_http_tts_sync, clean_text, norm_lang, norm_persona
             ),
-            timeout=6.0,
+            timeout=3.0,
         )
         if res and res.get("audio_b64"):
             _TTS_CACHE[cache_key] = res
