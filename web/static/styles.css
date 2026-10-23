@@ -2674,12 +2674,13 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
   padding: 14px;
   overflow: hidden;
 }
+/* Phase pill and tempo each get their own row: the pill's text changes every
+   phase, and a shared wrapping row made the whole card jump up and down. */
 .ex-anim-top-hud {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   margin-bottom: 6px;
 }
 .ex-anim-phase-pill {
@@ -2690,6 +2691,7 @@ html[lang="zh-CN"] .priv-doc[data-lang="en"], html:not([lang="zh-CN"]) .priv-doc
   color: #C6F432;
   font-size: 0.74rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 .ex-anim-tempo-tag {
   font-size: 0.74rem;
