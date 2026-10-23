@@ -125,11 +125,21 @@ def _function_response(part: dict[str, Any]) -> dict[str, Any] | None:
     return _get(part, "functionResponse", "function_response")
 
 
+UI_LANG_MARKER = "[UI language: "
+
+
+def ui_language_part(lang: str) -> dict[str, str]:
+    """Hidden first part of every chat turn: tells all agents the UI language."""
+    return {"text": f"{UI_LANG_MARKER}{'zh-CN' if lang == 'zh' else 'en'}]"}
+
+
 def _visible_text(part: dict[str, Any]) -> str | None:
     text = part.get("text")
     if not text or part.get("thought"):
         return None
     text = text.strip()
+    if text.startswith(UI_LANG_MARKER) and text.endswith("]"):
+        return None
     return text or None
 
 

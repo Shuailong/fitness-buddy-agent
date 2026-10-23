@@ -759,6 +759,7 @@ const en = {
   "mealDetail.conf.low": "Rough estimate",
   "mealDetail.macroShare": "{pct}% kcal",
   // ---- UI strings moved out of the components (i18n codemod) ----
+  "chat.ttsLoading": "Loading…",
   "workouts.setsMin": "{sets}×{min} min",
   "workouts.title": "Workout log",
   "workouts.loading": "Loading your workouts…",
@@ -1762,6 +1763,7 @@ const zh = {
   "mealDetail.conf.low": "粗略估算",
   "mealDetail.macroShare": "占热量 {pct}%",
   // ---- UI strings moved out of the components (i18n codemod) ----
+  "chat.ttsLoading": "合成中…",
   "workouts.setsMin": "{sets}×{min}分钟",
   "workouts.title": "训练记录",
   "workouts.loading": "正在加载训练记录…",

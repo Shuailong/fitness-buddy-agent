@@ -171,7 +171,7 @@ function addCoachMessage(text, author, eventId = null, personaId = null) {
       ttsBtn.classList.add("is-loading");
       ttsBtn.replaceChildren(
         el("span", { class: "pc-spinner", "aria-hidden": "true" }),
-        el("span", { text: zhNow ? "合成中…" : "Loading…" }),
+        el("span", { text: t("chat.ttsLoading") }),
       );
       unlockCoachAudio();
       await speakCoachText(text, {

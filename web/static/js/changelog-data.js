@@ -4,6 +4,15 @@
 // increasing: YYYY-MM-DD plus a letter when there are several in a day).
 export const CHANGELOG = [
   {
+    id: "2026-10-23a",
+    date: "2026-10-23",
+    title: { zh: "语言更一致", en: "Consistent language" },
+    items: [
+      { type: "improved", zh: "新记录的饮食食物名、训练计划标题和备注会跟随 App 语言（只拍照不打字也一样）；之前已保存的记录保持原样。", en: "New meal item names, plan titles and notes now follow the app language - even for photo-only logs. Existing records stay as they were." },
+      { type: "improved", zh: "出错提示也会按当前语言显示。", en: "Error messages now appear in your chosen language." },
+    ],
+  },
+  {
     id: "2026-10-21e",
     date: "2026-10-21",
     title: { zh: "训练记录回看", en: "Workout log" },

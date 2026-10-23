@@ -129,12 +129,14 @@ from web.events import (
     session_last_update,
     session_started_at,
     simplify_event,
+    ui_language_part,
 )
 from web.form_coach import (
     analyze_exercise_form,
     build_persona_prefix,
     synthesize_coach_speech,
 )
+from web.messages import localize
 from web.observability import (
     log_event,
     redact_text,
@@ -489,6 +491,19 @@ def create_app(
     app.state.agent = agent_client or build_agent_client(settings)
     app.state.limiter = rate_limiter or build_rate_limiter()
     app.state.push = PushConfig.from_env()
+
+    @app.exception_handler(HTTPException)
+    async def localized_http_error(
+        request: Request, exc: HTTPException
+    ) -> JSONResponse:
+        """API errors in the UI language (X-UI-Lang header) - no English in a Chinese UI."""
+        detail = exc.detail
+        if isinstance(detail, str):
+            detail = localize(detail, request.headers.get("x-ui-lang"))
+        return JSONResponse(
+            {"detail": detail}, status_code=exc.status_code, headers=exc.headers
+        )
+
     app.add_middleware(GZipMiddleware, minimum_size=500)
 
     @app.middleware("http")
@@ -1294,7 +1309,7 @@ def create_app(
             outcome = "agent_error"
             error_detail = str(exc)[:160]
             counts["error"] += 1
-            yield _sse({"type": "error", "message": str(exc)})
+            yield _sse({"type": "error", "message": localize(str(exc), lang)})
         except Exception as exc:  # never leak internals to the browser
             outcome = "error"
             error_detail = type(exc).__name__
@@ -1306,7 +1321,9 @@ def create_app(
             yield _sse(
                 {
                     "type": "error",
-                    "message": "The coach is unavailable right now. Please try again.",
+                    "message": localize(
+                        "The coach is unavailable right now. Please try again.", lang
+                    ),
                 }
             )
         finally:
@@ -1479,9 +1496,12 @@ def create_app(
             )
         if not parts:
             raise HTTPException(status_code=400, detail="Send a message or a photo.")
+        # The UI language travels with every turn (also photo-only ones), so
+        # replies and names the agents create (foods, plans) match the UI.
+        parts.append(ui_language_part(norm_lang))
         if text in GREETING_TEXTS.values():
             intent = "greeting"
-        elif len(parts) > 1 or "inlineData" in parts[0]:
+        elif any("inlineData" in p for p in parts):
             intent = "photo"
         else:
             intent = "message"

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Per-turn context for the model: the user's local date and weekday.
+"""Per-turn context for the model: the user's local date, weekday and UI language.
 
 Without it the model guesses "today" (it once called a Tuesday "Wednesday"),
 which breaks anything tied to the weekly plan ("change today's workout").
@@ -47,10 +47,44 @@ def local_date_prompt(timezone: str, now: datetime | None = None) -> str:
     )
 
 
+_UI_LANG_MARKER = "[UI language: "
+_UI_LANG_STATE_KEY = "ui_lang"
+_LANGUAGE_NAMES = {"zh": "Simplified Chinese (简体中文)", "en": "English"}
+
+
+def ui_language(callback_context: CallbackContext) -> str | None:
+    """The web UI language sent with the current turn (remembered for the session).
+
+    The web app adds a hidden ``[UI language: zh-CN]`` part to every user turn,
+    including photo-only ones; resumed turns (confirmations) reuse the last one.
+    """
+    content = getattr(callback_context, "user_content", None)
+    for part in getattr(content, "parts", None) or []:
+        text = (getattr(part, "text", None) or "").strip()
+        if text.startswith(_UI_LANG_MARKER):
+            lang = (
+                "zh" if text[len(_UI_LANG_MARKER) :].lower().startswith("zh") else "en"
+            )
+            if callback_context.state.get(_UI_LANG_STATE_KEY) != lang:
+                callback_context.state[_UI_LANG_STATE_KEY] = lang
+            return lang
+    return callback_context.state.get(_UI_LANG_STATE_KEY)
+
+
+def language_prompt(lang: str) -> str:
+    name = _LANGUAGE_NAMES.get(lang, "English")
+    return (
+        f"[Language] The user's app is in {name}. Write every user-visible text in "
+        f"{name}: replies, food and dish names, meal and plan titles, session focus, "
+        "exercise notes, reasons and summaries (proper nouns may keep their original "
+        "form). Only switch if the user writes to you in another language."
+    )
+
+
 async def inject_local_date(
     callback_context: CallbackContext, llm_request: LlmRequest
 ) -> None:
-    """``before_model_callback``: adds today's local date to the system instruction."""
+    """``before_model_callback``: adds today's local date and the UI language."""
     prompt = callback_context.state.get(_DATE_STATE_KEY)
     if prompt is None:
         try:
@@ -59,5 +93,9 @@ async def inject_local_date(
             profile = None
         prompt = local_date_prompt(profile.timezone if profile else "UTC")
         callback_context.state[_DATE_STATE_KEY] = prompt
-    llm_request.append_instructions([prompt])
+    prompts = [prompt]
+    lang = ui_language(callback_context)
+    if lang:
+        prompts.append(language_prompt(lang))
+    llm_request.append_instructions(prompts)
     return None

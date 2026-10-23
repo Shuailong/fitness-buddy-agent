@@ -175,5 +175,6 @@ weekly_reviewer = Agent(
         get_weekly_progress_snapshot,
         get_body_measurement_trend,
     ],
+    before_model_callback=inject_local_date,
     after_agent_callback=persist_weekly_review,
 )

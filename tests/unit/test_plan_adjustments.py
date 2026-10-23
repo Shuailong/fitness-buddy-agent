@@ -269,3 +269,25 @@ def test_local_date_prompt_names_the_weekday() -> None:
     late = datetime(2026, 10, 20, 17, 0, tzinfo=UTC)  # already Wednesday there
     assert "Wednesday, 2026-10-21" in local_date_prompt("Asia/Shanghai", late)
     assert "UTC" in local_date_prompt("Not/AZone", now)
+
+
+def test_ui_language_marker_reaches_every_agent() -> None:
+    from app.tools.context_tools import language_prompt, ui_language
+
+    class Ctx:
+        def __init__(self, parts, state=None):
+            self.user_content = SimpleNamespace(
+                parts=[SimpleNamespace(text=p) for p in parts]
+            )
+            self.state = state if state is not None else {}
+
+    state: dict = {}
+    # Photo-only turn: the only text part is the hidden marker.
+    assert ui_language(Ctx([None, "[UI language: zh-CN]"], state)) == "zh"
+    assert state["ui_lang"] == "zh"
+    # A resumed turn (confirmation) has no marker: the session remembers it.
+    assert ui_language(Ctx([None], state)) == "zh"
+    assert ui_language(Ctx(["hello", "[UI language: en]"], state)) == "en"
+    assert "Simplified Chinese" in language_prompt("zh") and "food" in language_prompt(
+        "zh"
+    )

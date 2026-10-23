@@ -1,6 +1,6 @@
 // Network helpers: JSON/fetch wrapper and the SSE-over-fetch reader.
 import { actions } from "./state.js";
-import { t } from "./i18n.js";
+import { t, getLang } from "./i18n.js";
 
 /** Error with the HTTP status and, for 429s, { code, scope, retryAfter (seconds) }. */
 export class ApiError extends Error {
@@ -18,7 +18,9 @@ export class ApiError extends Error {
 export const isRateLimited = (err) => Boolean(err && (err.code === "rate_limited" || err.status === 429));
 
 export async function api(path, options = {}) {
-  const res = await fetch(path, { credentials: "same-origin", ...options });
+  // The server localizes error messages to the UI language.
+  const headers = { ...(options.headers || {}), "X-UI-Lang": getLang() };
+  const res = await fetch(path, { credentials: "same-origin", ...options, headers });
   if (res.status === 401) {
     actions.showSignIn();
     throw new ApiError(t("error.signIn"), { status: 401 });

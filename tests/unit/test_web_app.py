@@ -490,7 +490,10 @@ def test_chat_streams_simplified_events() -> None:
     )  # thoughts are hidden
     assert agent.messages[-1] == {
         "role": "user",
-        "parts": [{"text": "Make me a plan for this week."}],
+        "parts": [
+            {"text": "Make me a plan for this week."},
+            {"text": "[UI language: en]"},
+        ],
     }
 
 
@@ -512,6 +515,13 @@ def test_chat_requires_session_and_validates_input() -> None:
         },
     )
     assert big.status_code == 413
+    # Error details follow the UI language sent by the client.
+    empty_en = client.post("/api/chat", data={"text": "  "})
+    assert empty_en.json()["detail"] == "Send a message or a photo."
+    empty_zh = client.post(
+        "/api/chat", data={"text": "  "}, headers={"X-UI-Lang": "zh"}
+    )
+    assert empty_zh.json()["detail"] == "请输入消息或选择照片。"
 
 
 def test_chat_sends_photo_as_inline_data() -> None:
