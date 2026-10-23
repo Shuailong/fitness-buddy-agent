@@ -4,6 +4,15 @@
 // increasing: YYYY-MM-DD plus a letter when there are several in a day).
 export const CHANGELOG = [
   {
+    id: "2026-10-23d",
+    date: "2026-10-23",
+    title: { zh: "全屏实时纠错", en: "Full-screen live coaching" },
+    items: [
+      { type: "improved", zh: "实时摄像头纠错改为全屏：画面铺满屏幕，次数和评分大字显示，教练提示放在底部、读起来更清楚；常用按钮集中在拇指可及的位置，横屏也能用。", en: "The live camera coach is now full screen: the camera fills the display, reps and score are big and clear, coach cues sit at the bottom, and the main controls are within thumb reach - in portrait or landscape." },
+      { type: "improved", zh: "看不到全身时会显示取景框提示你站到合适的位置；训练时屏幕保持常亮。", en: "A framing guide shows where to stand until your whole body is in view, and the screen stays awake while you train." },
+    ],
+  },
+  {
     id: "2026-10-23c",
     date: "2026-10-23",
     title: { zh: "实时纠错更省电", en: "Lighter live coaching" },

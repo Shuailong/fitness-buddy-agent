@@ -540,14 +540,16 @@ export function openLiveFormCoachModal(exOrId, actions) {
     class: "live-hud-status waiting",
     text: translate(lang, "exercises.startingCameraStepBackInto"),
   });
-  const scoreBadge = el("span", {
-    class: "live-hud-score",
-    text: translate(lang, "exercises.formScore"),
-  });
-  const repBadge = el("span", {
-    class: "live-hud-reps",
-    text: translate(lang, "exercises.reps0"),
-  });
+  const scoreNum = el("strong", { class: "live-metric-num", text: "--" });
+  const repNum = el("strong", { class: "live-metric-num", text: "0" });
+  const scoreBadge = el("div", { class: "live-metric" }, [
+    scoreNum,
+    el("span", { class: "live-metric-label", text: translate(lang, "live.score") }),
+  ]);
+  const repBadge = el("div", { class: "live-metric" }, [
+    repNum,
+    el("span", { class: "live-metric-label", text: translate(lang, "live.reps") }),
+  ]);
 
   const observedSceneBar = el("div", {
     class: "live-observed-scene",
@@ -561,7 +563,7 @@ export function openLiveFormCoachModal(exOrId, actions) {
 
   const replayVoiceBtn = el("button", {
     type: "button",
-    class: "btn btn-outline btn-sm live-replay-btn",
+    class: "live-replay-btn",
     title: translate(lang, "exercises.replayCurrentVoiceCue"),
     onclick: async () => {
       unlockCoachAudio();
@@ -576,7 +578,8 @@ export function openLiveFormCoachModal(exOrId, actions) {
       });
       voiceCueBanner.classList.remove("is-speaking");
     },
-  }, [icon("volume-up"), translate(lang, "exercises.speak")]);
+    "aria-label": translate(lang, "live.replay"),
+  }, [icon("volume-up")]);
 
   const voiceCueBanner = el("div", { class: "live-voice-banner" }, [
     icon("volume-up", { cls: "accent live-voice-icon" }),
@@ -602,6 +605,25 @@ export function openLiveFormCoachModal(exOrId, actions) {
   const simStageWrap = el("div", { class: "live-sim-fallback", hidden: true }, [
     createExerciseAnimStage(guide, { lang }),
   ]);
+
+  function setFsButton(btn, iconName, label) {
+    btn.replaceChildren(icon(iconName), el("span", { class: "live-fs-cap", text: label }));
+    btn.setAttribute("aria-label", label);
+  }
+
+  // Keep the screen awake while the camera coach is open (best effort).
+  let wakeLock = null;
+  const requestWakeLock = async () => {
+    try {
+      if ("wakeLock" in navigator && document.visibilityState === "visible") {
+        wakeLock = await navigator.wakeLock.request("screen");
+      }
+    } catch { /* not supported or denied */ }
+  };
+  const onVisibility = () => {
+    if (document.visibilityState === "visible" && stream) requestWakeLock();
+  };
+  document.addEventListener("visibilitychange", onVisibility);
 
   const clearLoopTimer = () => {
     if (loopTimerId) {
@@ -685,6 +707,11 @@ export function openLiveFormCoachModal(exOrId, actions) {
       stream = null;
     }
     stopCoachSpeech();
+    document.removeEventListener("visibilitychange", onVisibility);
+    if (wakeLock) {
+      wakeLock.release().catch(() => {});
+      wakeLock = null;
+    }
   };
 
   const startCamera = async () => {
@@ -705,6 +732,7 @@ export function openLiveFormCoachModal(exOrId, actions) {
       simStageWrap.hidden = true;
       simulationMode = false;
       await videoEl.play().catch(() => {});
+      requestWakeLock();
       return true;
     } catch {
       // Do NOT silently fake scores when camera fails; inform user honestly!
@@ -713,7 +741,7 @@ export function openLiveFormCoachModal(exOrId, actions) {
       simStageWrap.hidden = false;
       statusBadge.className = "live-hud-status insufficient";
       statusBadge.textContent = translate(lang, "exercises.cameraUnavailableAllowCameraOr");
-      scoreBadge.textContent = translate(lang, "exercises.scoreNoVideo");
+      scoreNum.textContent = "--";
       observedSceneBar.textContent = translate(lang, "exercises.cameraPermissionDeniedOrUnavailable");
       return false;
     }
@@ -764,11 +792,13 @@ export function openLiveFormCoachModal(exOrId, actions) {
       return status;
     }
     const hasValidScore = typeof res.score === "number" && res.evidence_ok !== false && status !== "insufficient_evidence";
+    // Show the framing guide only while the coach cannot see the body.
+    dialog.classList.toggle("is-framing", !hasValidScore);
 
     if (!hasValidScore) {
       statusBadge.className = "live-hud-status insufficient";
       statusBadge.textContent = translate(lang, "exercises.insufficientViewAdjustCamera");
-      scoreBadge.textContent = translate(lang, "exercises.scoreNotInFrame");
+      scoreNum.textContent = "--";
     } else {
       lastScore = res.score;
       if (res.rep_increment && Number(res.rep_increment) > 0) {
@@ -782,9 +812,9 @@ export function openLiveFormCoachModal(exOrId, actions) {
       } else {
         statusBadge.textContent = translate(lang, "exercises.formAdjustmentCue");
       }
-      scoreBadge.textContent = translate(lang, "exercises.scoreP0", { p0: lastScore });
+      scoreNum.textContent = String(lastScore);
     }
-    repBadge.textContent = translate(lang, "exercises.repsP0", { p0: repCount });
+    repNum.textContent = String(repCount);
 
     if (res.observed_scene) {
       observedSceneBar.textContent = translate(lang, "exercises.aiObservedP0", { p0: res.observed_scene });
@@ -906,7 +936,7 @@ export function openLiveFormCoachModal(exOrId, actions) {
       if (!blob) {
         statusBadge.className = "live-hud-status insufficient";
         statusBadge.textContent = translate(lang, "exercises.waitingForCameraVideo");
-        scoreBadge.textContent = translate(lang, "exercises.scoreNoVideo2");
+        scoreNum.textContent = "--";
         return;
       }
       const fIdx = frameIndex++;
@@ -962,12 +992,12 @@ export function openLiveFormCoachModal(exOrId, actions) {
       clearLoopTimer();
       stopCoachSpeech();
       voiceCueBanner.classList.remove("is-speaking");
-      toggleBtn.replaceChildren(icon("play-arrow"), translate(lang, "exercises.resumeLiveCoach"));
+      setFsButton(toggleBtn, "play-arrow", translate(lang, "live.resume"));
       statusBadge.textContent = translate(lang, "exercises.liveCoachPaused");
       return;
     }
     isCoaching = true;
-    toggleBtn.replaceChildren(icon("pause"), translate(lang, "exercises.pauseLiveCoach"));
+    setFsButton(toggleBtn, "pause", translate(lang, "live.pause"));
     if (speakIntro && voiceEnabled) {
       const persona = getPersona(getPersonaId(), lang);
       const intro = translate(lang, "exercises.liveCoachReady", { coach: persona.copy.shortName, name: isZh ? guide.zhName : guide.rawName });
@@ -981,49 +1011,67 @@ export function openLiveFormCoachModal(exOrId, actions) {
     }
   };
 
-  const toggleBtn = el("button", {
-    type: "button",
-    class: "btn btn-primary live-toggle-btn",
-    onclick: () => setCoachingState(!isCoaching, { speakIntro: !isCoaching }),
-  }, [icon("pause"), translate(lang, "exercises.pauseLiveCoach")]);
+  // Full-screen controls: round icon buttons with a short caption.
+  const fsButton = (cls, iconName, label, onclick) => {
+    const btn = el("button", { type: "button", class: `live-fs-btn ${cls}`.trim(), onclick });
+    setFsButton(btn, iconName, label);
+    return btn;
+  };
 
-  const voiceToggleBtn = el("button", {
-    type: "button",
-    class: "btn btn-outline btn-sm",
-    onclick: () => {
-      unlockCoachAudio();
-      voiceEnabled = !voiceEnabled;
-      if (!voiceEnabled) {
-        stopCoachSpeech();
-        voiceCueBanner.classList.remove("is-speaking");
-      }
-      voiceToggleBtn.replaceChildren(
-        icon(voiceEnabled ? "volume-up" : "close"),
-        translate(lang, voiceEnabled ? "exercises.voiceOn" : "exercises.voiceMuted"),
-      );
-    },
-  }, [icon("volume-up"), translate(lang, "exercises.voiceOn")]);
+  const toggleBtn = fsButton("is-main", "pause", translate(lang, "live.pause"),
+    () => setCoachingState(!isCoaching, { speakIntro: !isCoaching }));
 
-  const flipCamBtn = el("button", {
-    type: "button",
-    class: "btn btn-outline btn-sm",
-    onclick: async () => {
-      unlockCoachAudio();
-      facingMode = facingMode === "user" ? "environment" : "user";
-      await startCamera();
-    },
-  }, [icon("flip-camera-ios"), translate(lang, "exercises.flipCamera")]);
+  const voiceToggleBtn = fsButton("", "volume-up", translate(lang, "live.voice"), () => {
+    unlockCoachAudio();
+    voiceEnabled = !voiceEnabled;
+    if (!voiceEnabled) {
+      stopCoachSpeech();
+      voiceCueBanner.classList.remove("is-speaking");
+    }
+    voiceToggleBtn.classList.toggle("is-off", !voiceEnabled);
+    setFsButton(voiceToggleBtn, voiceEnabled ? "volume-up" : "close", translate(lang, voiceEnabled ? "live.voice" : "live.muted"));
+  });
 
+  const flipCamBtn = fsButton("", "flip-camera-ios", translate(lang, "live.flip"), async () => {
+    unlockCoachAudio();
+    facingMode = facingMode === "user" ? "environment" : "user";
+    await startCamera();
+  });
+
+  const snapNowBtn = fsButton("", "photo-camera", translate(lang, "live.check"), () => {
+    unlockCoachAudio();
+    lastSpokenCue = "";
+    analyzeSingleFrame();
+  });
+
+  const finishSet = () => {
+    const scoreStr = lastScore ? `（AI 动作评分 ${lastScore} 分）` : "";
+    const repStr = repCount > 0 ? `${repCount} 次` : "";
+    stopAll();
+    closeModal();
+    if (actions && actions.openCoach) {
+      actions.openCoach({
+        send: isZh
+          ? (repCount > 0
+              ? `我刚刚跟着实时语音伴练完成了 1 组「${guide.zhName}」${repStr}${scoreStr}，帮我记录并给点建议！`
+              : `我刚打开了「${guide.zhName}」实时伴练，请告诉我做这个动作最需要注意的机位角度和发力要点，并帮我记录今天这组训练！`)
+          : (repCount > 0
+              ? `I just finished a set of ${guide.rawName} for ${repCount} reps with the Live Form Coach${lastScore ? ` (Form Score: ${lastScore})` : ""}. Please log it!`
+              : `I just practiced ${guide.rawName} with the Live Form Coach. Can you share key form tips and help me log my set?`),
+      });
+    }
+  };
+  const finishBtn = fsButton("is-finish", "check", translate(lang, "live.finish"), finishSet);
+
+  // "More" menu: less frequent actions stay out of the way.
   const demoModeBtn = el("button", {
     type: "button",
-    class: "btn btn-outline btn-sm",
+    class: "live-fs-menu-item",
     onclick: async () => {
       unlockCoachAudio();
+      moreMenu.hidden = true;
       simulationMode = !simulationMode;
-      demoModeBtn.replaceChildren(
-        icon("auto-awesome"),
-        translate(lang, simulationMode ? "exercises.exitDemo" : "exercises.demoMode"),
-      );
+      demoModeBtn.replaceChildren(icon("auto-awesome"), translate(lang, simulationMode ? "live.exitDemo" : "live.demo"));
       if (simulationMode) {
         videoEl.hidden = true;
         simStageWrap.hidden = false;
@@ -1034,30 +1082,45 @@ export function openLiveFormCoachModal(exOrId, actions) {
         await analyzeSingleFrame();
       }
     },
-  }, [icon("auto-awesome"), translate(lang, "exercises.demoMode")]);
-
-  const snapNowBtn = el("button", {
+  }, [icon("auto-awesome"), translate(lang, "live.demo")]);
+  const guideBtn = el("button", {
     type: "button",
-    class: "btn btn-outline btn-sm",
+    class: "live-fs-menu-item",
     onclick: () => {
-      unlockCoachAudio();
-      lastSpokenCue = "";
-      analyzeSingleFrame();
+      stopAll();
+      closeModal();
+      openExerciseDetailModal(exOrId, actions);
     },
-  }, [icon("photo-camera"), translate(lang, "exercises.checkNow")]);
+  }, [icon("info"), translate(lang, "live.guide")]);
+  const moreMenu = el("div", { class: "live-fs-menu", hidden: true }, [guideBtn, demoModeBtn]);
+  const moreBtn = fsButton("", "more-vert", translate(lang, "live.more"), () => {
+    moreMenu.hidden = !moreMenu.hidden;
+  });
 
   const dialog = el("div", {
-    class: "modal-card live-coach-modal",
+    class: "modal-card live-coach-modal live-fs is-framing",
     role: "dialog",
     "aria-modal": "true",
     "aria-labelledby": "live-coach-title",
   }, [
-    el("header", { class: "modal-head" }, [
-      el("div", {}, [
-        el("p", { class: "eyebrow accent", text: translate(lang, "exercises.liveAiVisionVoiceForm") }),
-        el("h3", { id: "live-coach-title", text: guide.displayName }),
-      ]),
-      el("div", { class: "live-head-actions" }, [
+    // Camera fills the whole screen; everything else floats on top of it.
+    el("div", { class: "live-fs-stage" }, [videoEl, simStageWrap]),
+    el("div", { class: "live-fs-frame", "aria-hidden": "true" }, [
+      el("span", { class: "live-fs-frame-hint", text: translate(lang, "live.frameHint") }),
+    ]),
+
+    el("header", { class: "live-fs-top" }, [
+      el("div", { class: "live-fs-topbar" }, [
+        el("button", {
+          type: "button",
+          class: "live-fs-icon modal-close",
+          "aria-label": translate(lang, "exercises.close"),
+          onclick: () => { stopAll(); closeModal(); },
+        }, [icon("close")]),
+        el("div", { class: "live-fs-title" }, [
+          el("h3", { id: "live-coach-title", text: guide.displayName }),
+          el("span", { class: "live-fs-tempo", text: `⏱ ${guide.tempo}` }),
+        ]),
         personaSwitchPill({
           compact: true,
           onSwitched: () => {
@@ -1066,87 +1129,30 @@ export function openLiveFormCoachModal(exOrId, actions) {
             if (isCoaching) analyzeSingleFrame();
           },
         }),
-        el("button", {
-          type: "button",
-          class: "icon-btn",
-          "aria-label": translate(lang, "exercises.close"),
-          onclick: () => { stopAll(); closeModal(); },
-        }, [icon("close")]),
+      ]),
+      el("div", { class: "live-fs-statusrow" }, [
+        el("div", { class: "live-fs-status" }, [statusBadge, observedSceneBar]),
+        el("div", { class: "live-fs-metrics" }, [repBadge, scoreBadge]),
       ]),
     ]),
-    el("div", { class: "live-coach-body" }, [
-      // Camera viewport + alignment overlay
-      el("div", { class: "live-video-stage" }, [
-        videoEl,
-        simStageWrap,
-        // Alignment framing HUD
-        el("div", { class: "live-hud-overlay" }, [
-          el("div", { class: "live-hud-top" }, [
-            statusBadge,
-            el("div", { class: "live-hud-metrics" }, [scoreBadge, repBadge]),
-          ]),
-          el("div", { class: "live-hud-reticle", "aria-hidden": "true" }),
-          el("div", { class: "live-hud-bottom" }, [
-            el("span", { class: "live-tempo-hint", text: `⏱ ${guide.tempo}` }),
-          ]),
-        ]),
-      ]),
 
-      // Transparent AI scene observation bar
-      observedSceneBar,
-
-      // Live voice coaching transcript banner
+    el("footer", { class: "live-fs-bottom" }, [
       voiceCueBanner,
-
-      // 3 biomechanical checkpoints
       checksWrap,
-
-      // Control buttons
-      el("div", { class: "live-controls-bar" }, [
-        toggleBtn,
-        snapNowBtn,
+      moreMenu,
+      el("div", { class: "live-fs-controls" }, [
         voiceToggleBtn,
         flipCamBtn,
-        demoModeBtn,
+        toggleBtn,
+        snapNowBtn,
+        moreBtn,
       ]),
-
-      // Finish set & send to coach
-      el("div", { class: "live-coach-foot" }, [
-        el("button", {
-          type: "button",
-          class: "btn btn-outline btn-sm",
-          onclick: () => {
-            stopAll();
-            closeModal();
-            openExerciseDetailModal(exOrId, actions);
-          },
-        }, [icon("info"), translate(lang, "exercises.viewFormGuide")]),
-        el("button", {
-          type: "button",
-          class: "btn btn-primary btn-sm",
-          onclick: () => {
-            const scoreStr = lastScore ? `（AI 动作评分 ${lastScore} 分）` : "";
-            const repStr = repCount > 0 ? `${repCount} 次` : "";
-            stopAll();
-            closeModal();
-            if (actions && actions.openCoach) {
-              actions.openCoach({
-                send: isZh
-                  ? (repCount > 0
-                      ? `我刚刚跟着实时语音伴练完成了 1 组「${guide.zhName}」${repStr}${scoreStr}，帮我记录并给点建议！`
-                      : `我刚打开了「${guide.zhName}」实时伴练，请告诉我做这个动作最需要注意的机位角度和发力要点，并帮我记录今天这组训练！`)
-                  : (repCount > 0
-                      ? `I just finished a set of ${guide.rawName} for ${repCount} reps with the Live Form Coach${lastScore ? ` (Form Score: ${lastScore})` : ""}. Please log it!`
-                      : `I just practiced ${guide.rawName} with the Live Form Coach. Can you share key form tips and help me log my set?`),
-              });
-            }
-          },
-        }, [icon("check"), translate(lang, "exercises.finishSetLog")]),
-      ]),
+      finishBtn,
     ]),
   ]);
 
-  openModal(dialog);
+  const { dialog: dialogEl } = openModal(dialog) || {};
+  if (dialogEl) dialogEl.classList.add("modal-fullscreen");
   // Automatically stop camera if backdrop is clicked or Escape is pressed
   const obs = new MutationObserver(() => {
     if (!document.body.contains(dialog)) {
@@ -1167,7 +1173,7 @@ export function openLiveFormCoachModal(exOrId, actions) {
       }, 450);
     } else {
       isCoaching = false;
-      toggleBtn.replaceChildren(icon("play-arrow"), translate(lang, "exercises.startLiveVoiceCoach"));
+      setFsButton(toggleBtn, "play-arrow", translate(lang, "live.start"));
     }
   });
 }
