@@ -21,10 +21,18 @@ class _Verdict(BaseModel):
     explanation: str
 
 
+# A stalled judge request must not hang the eval gate forever (it did, twice):
+# time out each call and retry transient failures.
+_HTTP_OPTIONS = types.HttpOptions(
+    timeout=90_000,
+    retry_options=types.HttpRetryOptions(attempts=4, initial_delay=2.0),
+)
+
+
 def _client() -> genai.Client:
     client = getattr(_local, "client", None)
     if client is None:
-        client = _local.client = genai.Client()
+        client = _local.client = genai.Client(http_options=_HTTP_OPTIONS)
     return client
 
 
