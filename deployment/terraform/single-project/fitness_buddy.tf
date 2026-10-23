@@ -58,6 +58,7 @@ locals {
     "sts.googleapis.com",
     "monitoring.googleapis.com",     # alerting, uptime checks, dashboards
     "billingbudgets.googleapis.com", # budget alerts (docs/OPERATIONS.md)
+    "texttospeech.googleapis.com",   # coach voices (Chirp3-HD per coach)
   ]
   web_sa_roles = [
     "roles/datastore.user",         # read dashboard data

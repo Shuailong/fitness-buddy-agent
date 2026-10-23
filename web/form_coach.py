@@ -671,25 +671,24 @@ def _call_cloud_tts_sync(
     )
 
     try:
-        creds, default_proj = google.auth.default(
+        creds, _ = google.auth.default(
             scopes=["https://www.googleapis.com/auth/cloud-platform"]
         )
         creds.refresh(GoogleAuthRequest())
         token = creds.token
         if not token:
             return None
-        quota_proj = (
-            os.environ.get("GEMINI_PROJECT", "").strip()
-            or default_proj
-            or _DEFAULT_GEMINI_PROJECT
-        )
+        # Bill TTS to the service's own project: a service account's calls go
+        # there by default (the web SA has no access to the Gemini project).
+        # Set TTS_QUOTA_PROJECT to override, e.g. with user creds locally.
+        headers = {"Authorization": f"Bearer {token}"}
+        quota_proj = os.environ.get("TTS_QUOTA_PROJECT", "").strip()
+        if quota_proj:
+            headers["x-goog-user-project"] = quota_proj
         for v_name in voice_candidates:
             r = httpx.post(
                 "https://texttospeech.googleapis.com/v1/text:synthesize",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "x-goog-user-project": quota_proj,
-                },
+                headers=headers,
                 json={
                     "input": {"text": clean_text},
                     "voice": {"languageCode": lang_code, "name": v_name},
