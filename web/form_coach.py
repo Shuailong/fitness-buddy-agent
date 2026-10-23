@@ -42,6 +42,7 @@ from typing import Any
 
 import httpx
 
+from web.exercise_guides import get_guide
 from web.observability import log_event
 
 _VISION_MODELS: tuple[str, ...] = (
@@ -166,143 +167,42 @@ def persona_from_directive(text: str | None) -> str | None:
     return None
 
 
-# Archetype classification by exercise_id / keywords
-_ARCHETYPES: dict[str, tuple[str, ...]] = {
-    "squat": (
-        "bodyweight_squat",
-        "goblet_squat",
-        "barbell_back_squat",
-        "box_squat_to_bench",
-        "kettlebell_goblet_squat",
-        "leg_press",
-    ),
-    "hinge": (
-        "dumbbell_romanian_deadlift",
-        "barbell_deadlift",
-        "kettlebell_swing",
-    ),
-    "bridge": (
-        "glute_bridge",
-        "dumbbell_hip_thrust",
-        "single_leg_glute_bridge",
-    ),
-    "lunge": (
-        "reverse_lunge",
-        "dumbbell_step_up",
-        "standing_calf_raise",
-        "hamstring_curl_machine",
-    ),
-    "push_horizontal": (
-        "push_up",
-        "incline_push_up",
-        "dumbbell_bench_press",
-        "dumbbell_floor_press",
-        "barbell_bench_press",
-    ),
-    "push_vertical": (
-        "dumbbell_shoulder_press",
-        "dumbbell_lateral_raise",
-        "dumbbell_triceps_extension",
-    ),
-    "pull_vertical": (
-        "pull_up",
-        "band_assisted_pull_up",
-        "dead_hang",
-        "lat_pulldown",
-        "hanging_knee_raise",
-    ),
-    "pull_horizontal": (
-        "one_arm_dumbbell_row",
-        "chest_supported_dumbbell_row",
-        "barbell_bent_over_row",
-        "seated_cable_row",
-        "band_row",
-        "band_pull_apart",
-        "dumbbell_biceps_curl",
-    ),
-    "core": (
-        "plank",
-        "side_plank",
-        "dead_bug",
-        "bird_dog",
-    ),
-}
-
-# Mandatory visual landmarks per archetype so Gemini never guesses from a face/desk webcam
-_ARCHETYPE_REQUIRED_VIEW_ZH: dict[str, str] = {
-    "squat": (
-        "必须同时在画面中清晰看到：躯干、髋关节（臀部）、大腿、膝关节与小腿/脚踝，"
-        "且用户处于站立准备下蹲或正在下蹲姿态。如果画面只拍到头部、脸部、肩膀或坐姿（例如坐在电脑/桌子前），"
-        "required_joints_visible 和 performing_exercise 必须设为 false！"
-    ),
-    "hinge": (
-        "必须同时清晰看到：肩部、整个背部脊柱、髋关节（臀部）、膝关节与小腿，"
-        "且用户正在站立做屈髋硬拉/摆荡动作。如果只拍到脸部、上半身或坐在椅子上，必须设为 false！"
-    ),
-    "bridge": (
-        "必须从侧面清晰看到：肩背支撑点、躯干、骨盆/髋部与膝关节，且用户处于仰卧/靠凳臀桥姿态。"
-        "如果用户正坐着或站着看镜头，必须设为 false！"
-    ),
-    "lunge": (
-        "必须同时清晰看到：躯干、髋部以及前后双腿的膝关节与脚踝，且用户正在执行弓步蹲/登阶/提踵动作。"
-        "如果画面缺失下半身腿部视野，必须设为 false！"
-    ),
-    "push_horizontal": (
-        "必须同时清晰看到：头颈、双肩、双侧手肘、手腕支撑位置以及躯干连线，"
-        "且用户正处于俯卧撑支撑或卧推姿态。如果用户只是普通坐着看电脑/拿手机，必须设为 false！"
-    ),
-    "push_vertical": (
-        "必须同时清晰看到：头颈、双肩、双侧手肘、双手/哑铃器械以及上半身躯干，"
-        "且用户双手正在做推举、侧平举或臂屈伸动作。如果用户只是静态坐着看屏幕、双手未做训练动作，必须设为 false！"
-    ),
-    "pull_vertical": (
-        "必须同时清晰看到：双手抓握横杆/弹力带、双肩、双侧手肘与上半身躯干，"
-        "且用户正在做引体向上、高位下拉或悬垂举膝。如果用户没有抓杠或只是普通坐姿/站姿，必须设为 false！"
-    ),
-    "pull_horizontal": (
-        "必须同时清晰看到：上半身躯干姿态、双肩、双侧手肘轨迹与双手器械，"
-        "且用户正在执行划船、弯举或弹力带对拉动作。如果用户只是坐在桌前看屏幕，必须设为 false！"
-    ),
-    "core": (
-        "必须清晰看到：从肩部、躯干脊柱、骨盆到膝盖的完整平板支撑/死虫式/鸟狗式身体连线。"
-        "如果用户只是坐在椅子上或仅拍到头肩部，必须设为 false！"
-    ),
-    "mobility": (
-        "必须清晰看到执行该训练动作所需的全身或主要关节部位，且用户正在实际做该动作。"
-        "如果用户只是静止坐在屏幕前未开始运动，必须设为 false！"
-    ),
+# Movement pattern + camera requirements come from the per-exercise guides
+# (web/data/exercise_guides.json), the same data the in-app form guide shows.
+_GENERIC_VIEW = {
+    "zh": "必须清晰看到执行该训练动作所需的全身或主要关节部位，且用户正在实际做该动作",
+    "en": "The whole body (or every joint the exercise moves) must be clearly visible while the user is actually doing the exercise",
 }
 
 
 def resolve_archetype(exercise_id: str, exercise_name: str = "") -> str:
-    """Maps an exercise ID or free-text name to a biomechanical archetype."""
-    eid = (exercise_id or "").strip().lower()
-    for arch, ids in _ARCHETYPES.items():
-        if eid in ids:
-            return arch
-    probe = f"{eid} {(exercise_name or '').lower()}"
-    if any(k in probe for k in ("squat", "深蹲", "leg_press", "蹬腿")):
-        return "squat"
-    if any(k in probe for k in ("deadlift", "swing", "硬拉", "摆荡")):
-        return "hinge"
-    if any(k in probe for k in ("bridge", "thrust", "臀桥", "臀推")):
-        return "bridge"
-    if any(k in probe for k in ("lunge", "step", "calf", "弓步", "登阶", "提踵")):
-        return "lunge"
-    if any(k in probe for k in ("push_up", "bench", "floor_press", "俯卧撑", "卧推")):
-        return "push_horizontal"
-    if any(
-        k in probe
-        for k in ("shoulder", "lateral", "triceps", "推举", "侧平举", "臂屈伸")
-    ):
-        return "push_vertical"
-    if any(k in probe for k in ("pull_up", "pulldown", "hang", "引体", "下拉", "悬垂")):
-        return "pull_vertical"
-    if any(k in probe for k in ("row", "curl", "pull_apart", "划船", "弯举")):
-        return "pull_horizontal"
-    if any(k in probe for k in ("plank", "bug", "bird_dog", "平板", "死虫", "鸟狗")):
-        return "core"
-    return "mobility"
+    """Maps an exercise ID or free-text name to its movement pattern."""
+    guide = get_guide(exercise_id, exercise_name)
+    return guide.pattern if guide else "generic"
+
+
+def _exercise_brief(
+    exercise_id: str, exercise_name: str, is_zh: bool
+) -> dict[str, str]:
+    """Name, camera requirement and checkpoints for the vision prompt."""
+    lang = "zh" if is_zh else "en"
+    guide = get_guide(exercise_id, exercise_name)
+    if not guide:
+        return {
+            "name": exercise_name or exercise_id,
+            "view": _GENERIC_VIEW[lang],
+            "checks": "",
+            "mistakes": "",
+        }
+    checks = getattr(guide.checkpoints, lang)
+    mistakes = [getattr(m, lang).bad for m in guide.mistakes]
+    sep = "；" if is_zh else "; "
+    return {
+        "name": getattr(guide.names, lang),
+        "view": getattr(guide.camera_view, lang).rstrip("。."),
+        "checks": sep.join(checks),
+        "mistakes": sep.join(mistakes),
+    }
 
 
 _CUES_ZH: dict[str, list[dict[str, Any]]] = {
@@ -466,7 +366,9 @@ def _insufficient_evidence_response(
     """Returns a strict, honest 'insufficient_evidence' payload (never fabricates scores/reps)."""
     arch = resolve_archetype(exercise_id, exercise_name)
     is_zh = str(lang or "zh").lower().startswith("zh")
-    ex_label = exercise_name or exercise_id or ("当前动作" if is_zh else "this exercise")
+    ex_label = (
+        exercise_name or exercise_id or ("当前动作" if is_zh else "this exercise")
+    )
 
     if is_zh:
         if persona == "iron_leo":
@@ -571,9 +473,7 @@ def _deterministic_form_analysis(
     }
 
 
-def _pcm_to_wav(
-    pcm_bytes: bytes, sample_rate: int = 24000, channels: int = 1
-) -> bytes:
+def _pcm_to_wav(pcm_bytes: bytes, sample_rate: int = 24000, channels: int = 1) -> bytes:
     """Wraps raw 16-bit signed little-endian PCM bytes in a standard RIFF WAV header."""
     if pcm_bytes.startswith(b"RIFF"):
         return pcm_bytes
@@ -634,7 +534,9 @@ def _clean_tts_text(text: str) -> str:
         cleaned = re.sub(r"\bTDEE\b", "全天总消耗", cleaned)
         cleaned = re.sub(r"\bATP-CP\b", "磷酸肌酸", cleaned)
         # Slashes between Chinese words -> 或
-        cleaned = re.sub(r"([\u4e00-\u9fff])\s*/\s*([\u4e00-\u9fff])", r"\1或\2", cleaned)
+        cleaned = re.sub(
+            r"([\u4e00-\u9fff])\s*/\s*([\u4e00-\u9fff])", r"\1或\2", cleaned
+        )
         # Soften stiff written words into natural spoken Mandarin
         cleaned = (
             cleaned.replace("即可", "就能")
@@ -713,7 +615,9 @@ def _call_gemini_tts_sync(
                             if (
                                 "pcm" in mime
                                 or "l16" in mime
-                                or not raw_data.startswith((b"RIFF", b"ID3", b"\xff\xfb", b"\xff\xf3"))
+                                or not raw_data.startswith(
+                                    (b"RIFF", b"ID3", b"\xff\xfb", b"\xff\xf3")
+                                )
                             ):
                                 wav_bytes = _pcm_to_wav(raw_data, sample_rate=24000)
                                 return {
@@ -900,7 +804,9 @@ async def _call_edge_neural_tts(
     is_zh = str(lang or "zh").lower().startswith("zh")
     norm_lang = "zh" if is_zh else "en"
     norm_persona = (persona or "iron_leo").strip().lower()
-    voice_map = _EDGE_PERSONA_VOICES.get(norm_persona) or _EDGE_PERSONA_VOICES["iron_leo"]
+    voice_map = (
+        _EDGE_PERSONA_VOICES.get(norm_persona) or _EDGE_PERSONA_VOICES["iron_leo"]
+    )
     voice_name, rate, pitch = voice_map[norm_lang]
 
     for attempt in range(2):
@@ -915,9 +821,7 @@ async def _call_edge_neural_tts(
                         DRM.clock_skew_seconds = srv_ts - time.time()
                         _EDGE_CLOCK_SYNCED = True
 
-            comm = edge_tts.Communicate(
-                clean_text, voice_name, rate=rate, pitch=pitch
-            )
+            comm = edge_tts.Communicate(clean_text, voice_name, rate=rate, pitch=pitch)
             mp3_buf = bytearray()
             async for chunk in comm.stream():
                 if chunk.get("type") == "audio" and chunk.get("data"):
@@ -966,7 +870,10 @@ async def synthesize_coach_speech(
         _TTS_CACHE.move_to_end(cache_key)
         return _TTS_CACHE[cache_key]
 
-    if os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("FORM_COACH_USE_GEMINI") != "1":
+    if (
+        os.environ.get("PYTEST_CURRENT_TEST")
+        and os.environ.get("FORM_COACH_USE_GEMINI") != "1"
+    ):
         wav_bytes = _pcm_to_wav(b"\x00\x00" * 120, sample_rate=24000)
         stub = {
             "audio_b64": base64.b64encode(wav_bytes).decode("ascii"),
@@ -1055,9 +962,16 @@ def _call_gemini_vision_sync(
 
     is_zh = str(lang or "zh").lower().startswith("zh")
     arch = resolve_archetype(exercise_id, exercise_name)
-    required_view = _ARCHETYPE_REQUIRED_VIEW_ZH.get(
-        arch, _ARCHETYPE_REQUIRED_VIEW_ZH["mobility"]
+    brief = _exercise_brief(exercise_id, exercise_name, is_zh)
+    required_view = (
+        f"{brief['view']}。如果画面缺少这些部位，或用户只是坐在屏幕前、没有在做该动作，"
+        "required_joints_visible / performing_exercise 必须设为 false！"
     )
+    focus_lines = ""
+    if brief["checks"]:
+        focus_lines += f"本动作的关键检查点：{brief['checks']}\n"
+    if brief["mistakes"]:
+        focus_lines += f"本动作最常见的错误（重点检查）：{brief['mistakes']}\n"
     persona_spec = COACH_PERSONAS.get(persona or "") or COACH_PERSONAS["iron_leo"]
     persona_line = (
         persona_spec["prompt_zh"] if is_zh else persona_spec["prompt_en"]
@@ -1069,7 +983,8 @@ def _call_gemini_vision_sync(
     )
 
     prompt = (
-        f"你现在正在通过实时摄像头观测用户训练动作：'{exercise_name or exercise_id}' (id: {exercise_id}, 动作类型: {arch})。\n"
+        f"你现在正在通过实时摄像头观测用户训练动作：'{brief['name']}' (id: {exercise_id}, 动作类型: {arch})。\n"
+        f"{focus_lines}"
         f"{persona_line}"
         f"{lang_instruction}\n\n"
         "【第一铁律：严格证据检查，绝不瞎编、绝不放水！】\n"
@@ -1121,7 +1036,9 @@ def _call_gemini_vision_sync(
                     response = client.models.generate_content(
                         model=model_id,
                         contents=[
-                            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                            types.Part.from_bytes(
+                                data=image_bytes, mime_type=mime_type
+                            ),
                             types.Part.from_text(text=prompt),
                         ],
                         config=types.GenerateContentConfig(
@@ -1206,17 +1123,13 @@ def _call_gemini_vision_sync(
         score = min(score, 84)
         status = "bad" if score < 70 else "adjust"
     else:
-        status = (
-            raw_status if raw_status in ("good", "adjust", "bad") else "good"
-        )
+        status = raw_status if raw_status in ("good", "adjust", "bad") else "good"
         if status in ("adjust", "bad"):
             score = min(score, 85)
 
     phase = str(parsed.get("phase_detected") or "concentric").strip().lower()
     rep_inc = (
-        1
-        if (parsed.get("rep_increment") and phase in ("bottom", "concentric"))
-        else 0
+        1 if (parsed.get("rep_increment") and phase in ("bottom", "concentric")) else 0
     )
 
     return {

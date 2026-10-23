@@ -249,7 +249,7 @@ function workoutCard(d) {
         el("span", { class: "num", text: String(i + 1) }),
         el("div", { class: "ex-row-main" }, [
           el("span", { class: "ex-name", text: guide.displayName }),
-          el("span", { class: "ex-row-sub muted small", text: `${guide.muscles.slice(0, 2).join(" · ")} · ${t("views.formGuide")}` }),
+          el("span", { class: "ex-row-sub muted small", text: [...guide.muscles.slice(0, 2), t("views.formGuide")].join(" · ") }),
         ]),
         el("div", { class: "ex-row-right" }, [
           el("span", { class: "ex-spec", text: exerciseSpec(ex, getLang()) }),
@@ -839,7 +839,7 @@ function sessionCard(s, { isToday, isDone, open, iso = null }) {
         el("div", { class: "ex-body" }, [
           el("p", { class: "ex-name", text: guide.displayName }),
           el("p", { class: "ex-sub" }, [
-            el("span", { class: "tag", text: guide.muscles[0] || "" }),
+            guide.muscles[0] ? el("span", { class: "tag", text: guide.muscles[0] }) : null,
             ex.rest_seconds ? el("span", { text: t("plan.restSec", { n: ex.rest_seconds }) }) : null,
             ex.target_rpe ? el("span", { text: t("plan.rpe", { n: ex.target_rpe }) }) : null,
             ex.notes ? el("span", { class: "tag", text: ex.notes }) : null,

@@ -4,6 +4,16 @@
 // increasing: YYYY-MM-DD plus a letter when there are several in a day).
 export const CHANGELOG = [
   {
+    id: "2026-10-23b",
+    date: "2026-10-23",
+    title: { zh: "动作演示全面重做", en: "Rebuilt exercise guides" },
+    items: [
+      { type: "fixed", zh: "50 个动作的要点、常见错误、呼吸、节奏和目标肌群都改为逐个编写：提踵、腿弯举、弯举、悬垂举膝、有氧和拉伸等动作不再显示别的动作的内容。", en: "All 50 exercises now have their own cues, common mistakes, breathing, tempo and target muscles - calf raises, leg curls, curls, hanging knee raises, cardio and stretches no longer borrow another exercise's guide." },
+      { type: "new", zh: "新增「调整难度」和「安全提示」；火柴人动画扩展到 40 多种动作，有氧动作循环播放，静态动作显示保持姿势。", en: "New “easier / harder” options and safety notes; stick-figure animations now cover 40+ movements, with looping cardio and steady holds." },
+      { type: "improved", zh: "动作名跟随 App 语言显示；不在动作库里的动作会给出通用要点，而不是套用错误的内容。实时摄像头纠错也会按具体动作检查关键点。", en: "Exercise names follow the app language; exercises outside the library get general tips instead of a wrong guide. The live camera coach now checks each exercise's own key points." },
+    ],
+  },
+  {
     id: "2026-10-23a",
     date: "2026-10-23",
     title: { zh: "语言更一致", en: "Consistent language" },
