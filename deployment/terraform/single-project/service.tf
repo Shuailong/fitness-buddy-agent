@@ -32,9 +32,12 @@ resource "google_vertex_ai_reasoning_engine" "app" {
       max_instances         = 10
       container_concurrency = 9
 
+      # Memory is billed around the clock for the always-on instance, CPU
+      # only while requests run; the agent mostly waits on Gemini, so 2 vCPU /
+      # 4 GiB is plenty (was 4 / 8). Keep in sync with deploy.yaml.
       resource_limits = {
-        cpu    = "4"
-        memory = "8Gi"
+        cpu    = "2"
+        memory = "4Gi"
       }
 
       env {

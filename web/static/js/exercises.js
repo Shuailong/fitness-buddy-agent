@@ -755,6 +755,14 @@ export function openLiveFormCoachModal(exOrId, actions) {
 
   const applyVisionHudUpdate = (res) => {
     const status = res.status || "insufficient_evidence";
+    if (status === "daily_limit") {
+      // Daily live-coach allowance used up: stop the loop and say so.
+      statusBadge.className = "live-hud-status insufficient";
+      statusBadge.textContent = translate(lang, "exercises.liveDailyLimit");
+      voiceTextEl.textContent = translate(lang, "exercises.liveDailyLimitDetail");
+      if (isCoaching) setCoachingState(false);
+      return status;
+    }
     const hasValidScore = typeof res.score === "number" && res.evidence_ok !== false && status !== "insufficient_evidence";
 
     if (!hasValidScore) {
@@ -935,12 +943,15 @@ export function openLiveFormCoachModal(exOrId, actions) {
   };
 
   // Sequential loop: waits for frame analysis + voice playback to finish before scheduling next check
+  // One analysed frame every ~4 s keeps feedback useful while bounding the
+  // Gemini vision cost (see the live_frames_per_day limit on the server).
+  const LIVE_FRAME_INTERVAL_MS = 4000;
   const runCoachingLoop = async () => {
     clearLoopTimer();
     if (!isCoaching || !document.body.contains(dialog)) return;
     await analyzeSingleFrame();
     if (isCoaching && document.body.contains(dialog)) {
-      loopTimerId = setTimeout(runCoachingLoop, 2400);
+      loopTimerId = setTimeout(runCoachingLoop, LIVE_FRAME_INTERVAL_MS);
     }
   };
 

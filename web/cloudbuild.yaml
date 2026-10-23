@@ -32,6 +32,7 @@ steps:
           --region="${_REGION}" \
           --service-account="fitness-buddy-agent@${PROJECT_ID}.iam.gserviceaccount.com" \
           --no-allow-unauthenticated \
+          --max-instances=3 \
           --set-env-vars="IS_VISION_WORKER=1,GEMINI_PROJECT=adk-demo-2-l300,GEMINI_LOCATION=global,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},FITNESS_STORAGE_BACKEND=memory,SESSION_SECRET=internal-vision-worker-secret-2026" \
           --quiet; then
           gcloud run services add-iam-policy-binding fitness-buddy-vision \

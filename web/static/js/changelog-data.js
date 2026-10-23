@@ -4,6 +4,14 @@
 // increasing: YYYY-MM-DD plus a letter when there are several in a day).
 export const CHANGELOG = [
   {
+    id: "2026-10-23c",
+    date: "2026-10-23",
+    title: { zh: "实时纠错更省电", en: "Lighter live coaching" },
+    items: [
+      { type: "improved", zh: "实时摄像头纠错改为约每 4 秒分析一次动作，更省流量和电量；每天可用约 40 分钟，用完后第二天恢复。", en: "The live camera coach now checks your form about every 4 seconds, using less data and battery; about 40 minutes a day are included, renewed daily." },
+    ],
+  },
+  {
     id: "2026-10-23b",
     date: "2026-10-23",
     title: { zh: "动作演示全面重做", en: "Rebuilt exercise guides" },

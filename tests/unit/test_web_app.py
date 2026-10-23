@@ -2156,3 +2156,32 @@ def test_workout_history_compares_with_the_plan(memory_repo) -> None:
     assert [s["entry_id"] for s in older["sessions"]] == ["w3"]
     assert older["next_before"] is None
     assert client.get("/api/workouts?before=nope").status_code == 422
+
+
+def test_live_form_coach_frames_have_a_daily_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RATE_LIVE_FRAMES_PER_DAY", "2")
+    client, _ = _dev_client()
+    jpeg = (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
+    )
+    frame = {"exercise_id": "push_up", "lang": "en", "simulation": "0"}
+
+    def send() -> dict[str, Any]:
+        resp = client.post(
+            "/api/form-check",
+            data=frame,
+            files={"image": ("frame.jpg", jpeg, "image/jpeg")},
+        )
+        assert resp.status_code == 200
+        return resp.json()
+
+    assert send()["status"] != "daily_limit"
+    assert send()["status"] != "daily_limit"
+    capped = send()
+    assert capped["status"] == "daily_limit"
+    assert capped["score"] is None and capped["rep_increment"] == 0
+    # Simulation frames never call Gemini, so they are not counted.
+    sim = client.post("/api/form-check", data={**frame, "simulation": "1"})
+    assert sim.json()["status"] != "daily_limit"

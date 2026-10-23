@@ -62,6 +62,11 @@ def default_limits() -> dict[str, Limit]:
         "voice_per_day": Limit(
             "voice_per_day", _int_env("RATE_VOICE_PER_DAY", 150), 86400
         ),
+        # Live camera form coach: each analysed frame is a Gemini vision call.
+        # 600 frames at one frame every ~4 s is about 40 minutes a day.
+        "live_frames_per_day": Limit(
+            "live_frames_per_day", _int_env("RATE_LIVE_FRAMES_PER_DAY", 600), 86400
+        ),
         # Demo mode (no sign-in): small per-account quotas, per-IP and global
         # caps on new demo accounts, and a global cap on demo messages.
         "demo_messages_per_day": Limit(

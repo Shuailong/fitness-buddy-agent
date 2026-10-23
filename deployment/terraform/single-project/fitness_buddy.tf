@@ -247,6 +247,25 @@ resource "google_artifact_registry_repository" "containers" {
   format        = "DOCKER"
   description   = "Fitness Buddy container images"
   depends_on    = [google_project_service.app_services]
+
+  # Every deploy pushes a new image (~0.8 GB); keep the newest 10 so storage
+  # (and its cost) stays flat. Cloud Run only needs the image it is serving.
+  cleanup_policy_dry_run = false
+  cleanup_policies {
+    id     = "keep-recent-10"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = 10
+    }
+  }
+  cleanup_policies {
+    id     = "delete-older-than-7d"
+    action = "DELETE"
+    condition {
+      tag_state  = "ANY"
+      older_than = "604800s"
+    }
+  }
 }
 
 resource "google_cloud_run_v2_service" "web" {

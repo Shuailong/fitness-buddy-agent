@@ -1533,6 +1533,22 @@ def create_app(
             )
         )
 
+    async def live_frame_limited(user: CurrentUser) -> dict[str, Any] | None:
+        """Daily cap on live form-coach frames (each one is a Gemini vision call)."""
+        decision = await app.state.limiter.hit(user.user_id, ["live_frames_per_day"])
+        if decision.allowed:
+            return None
+        log_event("rate_limited", user=user.user_id, scope="live_frames_per_day")
+        return {
+            "ok": True,
+            "status": "daily_limit",
+            "score": None,
+            "voice_cue": "",
+            "checks": [],
+            "rep_increment": 0,
+            "retry_after": decision.retry_after,
+        }
+
     @app.post("/api/form-check")
     async def form_check(
         request: Request,
@@ -1565,6 +1581,8 @@ def create_app(
             mime = sniffed
         norm_lang = normalize_lang(lang)
         is_sim = str(simulation or "").strip().lower() in ("1", "true", "yes")
+        if data and not is_sim and (capped := await live_frame_limited(user)):
+            return capped
         result = await analyze_exercise_form(
             exercise_id=exercise_id.strip()[:80],
             exercise_name=exercise_name.strip()[:80],
@@ -1698,6 +1716,15 @@ def create_app(
                 if len(img_bytes) > MAX_IMAGE_BYTES:
                     img_bytes = b""
                 mime = (_sniff_image(img_bytes) if img_bytes else None) or "image/jpeg"
+                if (
+                    img_bytes
+                    and not is_sim
+                    and (capped := await live_frame_limited(user))
+                ):
+                    await websocket.send_json(
+                        {"type": "vision_result", "frame_index": f_idx, **capped}
+                    )
+                    continue
 
                 # Stage 1: Fast visual evidence + biomechanical check (push HUD immediately)
                 vision_res = await analyze_exercise_form(
