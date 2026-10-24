@@ -230,8 +230,8 @@ const POSES = {
   },
   bench_press(t) {
     const p = between(
-      { hip: [130, 144], ankle: [102, 182], knee: 1, torso: 0, head: 0, hand: [182, 92], elbow: -1 },
-      { hip: [130, 144], ankle: [102, 182], knee: 1, torso: 0, head: 0, hand: [176, 126], elbow: -1 }, t);
+      { hip: [130, 144], ankle: [80, 182], knee: 1, footDir: 180, torso: 0, head: 0, hand: [182, 92], elbow: -1 },
+      { hip: [130, 144], ankle: [80, 182], knee: 1, footDir: 180, torso: 0, head: 0, hand: [176, 126], elbow: -1 }, t);
     return {
       ...p,
       muscles: [mixPt(p.shoulder, p.hip, 0.2), mixPt(p.shoulder, p.elbow, 0.5)],
@@ -240,8 +240,8 @@ const POSES = {
   },
   floor_press(t) {
     const p = between(
-      { hip: [130, 176], ankle: [104, 182], knee: 1, torso: 0, head: 0, hand: [182, 124], elbow: -1 },
-      { hip: [130, 176], ankle: [104, 182], knee: 1, torso: 0, head: 0, hand: [178, 150], elbow: -1 }, t);
+      { hip: [130, 176], ankle: [98, 182], knee: 1, footDir: 180, torso: 0, head: 0, hand: [182, 124], elbow: -1 },
+      { hip: [130, 176], ankle: [98, 182], knee: 1, footDir: 180, torso: 0, head: 0, hand: [178, 150], elbow: -1 }, t);
     return { ...p, muscles: [mixPt(p.shoulder, p.hip, 0.2)], equip: [weight(p.hand)] };
   },
   overhead_press(t) {
@@ -295,12 +295,12 @@ const POSES = {
   },
   chest_supported_row(t) {
     const p = between(
-      { hip: [150, 134], ankle: [118, 182], knee: 1, torso: -36, handRel: [0, 53] },
-      { hip: [150, 134], ankle: [118, 182], knee: 1, torso: -36, handRel: [-12, 14], elbow: 1 }, t);
+      { hip: [150, 134], ankle: [82, 180], knee: -1, footDir: 25, torso: -36, handRel: [0, 53] },
+      { hip: [150, 134], ankle: [82, 180], knee: -1, footDir: 25, torso: -36, handRel: [-12, 14], elbow: 1 }, t);
     return {
       ...p,
       muscles: [mixPt(p.shoulder, p.hip, 0.3)],
-      equip: [line([138, 146], [204, 98], "frame"), line([160, 132], [160, 186], "frame"), weight(p.hand)],
+      equip: [line([136, 154], [200, 108], "frame"), line([162, 138], [162, 186], "frame"), weight(p.hand)],
     };
   },
   seated_row(t) {
