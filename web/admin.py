@@ -33,6 +33,7 @@ from typing import Any
 from fastapi import Request
 
 from fitness_core.models import utc_now
+from web.analytics import build_analytics
 from web.auth import CurrentUser, list_waitlist_entries, save_waitlist_entry
 from web.config import WebSettings, normalize_lang
 from web.ratelimit import default_limits
@@ -363,7 +364,8 @@ async def touch_user_presence(
     active_dates = list(existing.get("active_dates") or [])
     if today_str not in active_dates:
         active_dates.append(today_str)
-        active_dates = sorted(set(active_dates))[-45:]
+        # ~4 months: enough for 28-day retention over a 90-day range.
+        active_dates = sorted(set(active_dates))[-120:]
 
     country = geo["country"]
     if existing.get("country") and country in ("LOCAL", "UNSET"):
@@ -560,7 +562,7 @@ async def _load_all_repo_data(
 
     ops_events = []
     try:
-        query = db.collection("ops_events").where("ts", ">=", cutoff_ts).limit(1500)
+        query = db.collection("ops_events").where("ts", ">=", cutoff_ts).limit(8000)
         async for doc in query.stream():
             ops_events.append(doc.to_dict() or {})
     except Exception:
@@ -648,13 +650,13 @@ async def build_admin_overview(
     """Aggregates all admin dashboard panels: growth, online, geo, features,
     funnel, feedback, model stability/cost, system stability, and access control.
     """
-    days = max(7, min(30, int(days or 14)))
+    days = max(7, min(90, int(days or 14)))
     now = utc_now()
     now_ts = time.time()
     today_date = now.date()
     today_iso = today_date.isoformat()
     month_prefix = today_iso[:7]  # YYYY-MM
-    cutoff_30d_ts = now_ts - 30 * 86400
+    cutoff_30d_ts = now_ts - max(30, days) * 86400
 
     waitlist_map = await list_waitlist_entries(repo)
     ops_users, ops_events, feedback_list, domain_users = await _load_all_repo_data(
@@ -1215,8 +1217,19 @@ async def build_admin_overview(
     total_ops = max(total_turns + len(ui_events) + len(signin_events), 1)
     uptime_pct = round(max(0.0, 100.0 - (system_error_turns / total_ops * 100.0)), 2)
 
+    analytics = build_analytics(
+        users=merged_users,
+        chat_events=chat_events,
+        ui_events=ui_events,
+        feedback=feedback_list,
+        access_entries=access_entries,
+        today=today_date,
+        days=days,
+    )
+
     return {
         "generated_at": now.isoformat(),
+        "analytics": analytics,
         "summary": {
             "total_users": total_users,
             "profiled_users": profiled_users,

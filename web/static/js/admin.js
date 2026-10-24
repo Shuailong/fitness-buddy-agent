@@ -4,10 +4,11 @@ import { api, getJson } from "./api.js";
 import { t, getLang, num, dateShort } from "./i18n.js";
 import { miniRing } from "./charts.js";
 import { loadingView, errorView } from "./views.js";
+import { renderAnalyticsSection } from "./admin-analytics.js";
 
 let cachedOverview = null;
 let currentDays = 14;
-let activeSectionTab = "overview"; // "overview" | "access" | "growth" | "ai"
+let activeSectionTab = "overview"; // "overview" | "analytics" | "access" | "growth" | "ai"
 let activeAccessFilter = "all"; // "all" | "pending" | "approved" | "revoked"
 let accessSearchQuery = "";
 let activeGrowthMode = "dau"; // "dau" | "activity" | "cost"
@@ -1326,6 +1327,7 @@ function paintAdmin(root, data, showToast) {
       [7, "7D"],
       [14, "14D"],
       [30, "30D"],
+      [90, "90D"],
     ],
     currentDays,
     (d) => {
@@ -1338,6 +1340,7 @@ function paintAdmin(root, data, showToast) {
   const sectionTabs = pillTabs(
     [
       ["overview", t("adm.tab.overview")],
+      ["analytics", t("adm.tab.analytics")],
       ["access", t("adm.tab.access"), s.waitlist_pending > 0 ? s.waitlist_pending : null],
       ["growth", t("adm.tab.growth")],
       ["ai", t("adm.tab.ai")],
@@ -1385,6 +1388,9 @@ function paintAdmin(root, data, showToast) {
   const kpis = renderBentoKpis(data, root, showToast);
 
   const panels = [];
+  if (activeSectionTab === "analytics") {
+    panels.push(...renderAnalyticsSection(data, () => paintAdmin(root, cachedOverview, showToast)));
+  }
   if (activeSectionTab === "overview" || activeSectionTab === "growth") {
     panels.push(
       renderGrowthCard(data, root, showToast),

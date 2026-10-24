@@ -1239,10 +1239,14 @@ def create_app(
             session_id=session_id,
         )
         replies = 0
+        agents_seen: set[str] = set()
 
         async def frames(msg: dict[str, Any]) -> AsyncIterator[str]:
             nonlocal last_activity, replies
             async for raw in _run_events(client, user.user_id, session_id, msg):
+                author = str(raw.get("author") or "") if isinstance(raw, dict) else ""
+                if author and author != "user":
+                    agents_seen.add(author)
                 for event in simplify_event(raw, lang):
                     if event["type"] == "activity":
                         if event["label"] == last_activity:
@@ -1365,6 +1369,7 @@ def create_app(
                 latency_ms=latency_ms,
                 has_image=has_img,
                 input_chars=len(preview),
+                agents=sorted(agents_seen),
                 **{f"{k}_events": v for k, v in counts.items()},
                 **cost_meta,
             )
