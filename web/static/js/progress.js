@@ -1,6 +1,7 @@
-// Live progress card for long agent turns: elapsed timer, steps derived from
-// the (localized) activity labels, a duration hint for slow specialists, and
-// a collapsed "N steps · 48 s" summary once the turn finishes.
+// Live "thinking" line for agent turns (ChatGPT-style): one shimmering line
+// with the current step and elapsed time, tap to see all steps; a duration
+// hint for slow specialists; a reconnect status when the connection drops;
+// a collapsed "N steps · 48 s" (or "Stopped") summary once the turn ends.
 import { el, icon } from "./util.js";
 import { t } from "./i18n.js";
 
@@ -33,13 +34,24 @@ export class TurnProgress {
     this.hintKey = null;
     this.timeEl = el("span", { class: "pc-time", "aria-hidden": "true" });
     this.hintEl = el("p", { class: "pc-hint", hidden: true });
-    this.listEl = el("ol", { class: "pc-steps", "aria-label": t("turn.steps"), role: "status", "aria-live": "polite" });
+    this.statusEl = el("p", { class: "pc-status", hidden: true, role: "status" });
+    this.titleEl = el("span", { class: "pc-title pc-shimmer", text: t("coach.thinking") });
+    this.chevEl = el("span", { class: "pc-chev", hidden: true, "aria-hidden": "true" }, [icon("expand-more")]);
+    this.listEl = el("ol", { class: "pc-steps", hidden: true, "aria-label": t("turn.steps"), role: "status", "aria-live": "polite" });
+    this.headEl = el("button", {
+      type: "button",
+      class: "pc-head",
+      "aria-expanded": "false",
+      onclick: () => this.toggle(),
+    }, [
+      el("span", { class: "pc-orb", "aria-hidden": "true" }),
+      this.titleEl,
+      this.timeEl,
+      this.chevEl,
+    ]);
     this.node = el("div", { class: "progress-card live" }, [
-      el("div", { class: "pc-head" }, [
-        el("span", { class: "typing", "aria-hidden": "true" }, [el("i"), el("i"), el("i")]),
-        el("span", { class: "pc-title", text: t("coach.thinking") }),
-        this.timeEl,
-      ]),
+      this.headEl,
+      this.statusEl,
       this.hintEl,
       this.listEl,
     ]);
@@ -48,7 +60,25 @@ export class TurnProgress {
   }
 
   tick() {
-    this.timeEl.textContent = t("turn.elapsed", { t: clockText(Date.now() - this.start) });
+    this.timeEl.textContent = clockText(Date.now() - this.start);
+  }
+
+  toggle() {
+    if (!this.steps.length || this.finished) return;
+    const open = this.listEl.hidden;
+    this.listEl.hidden = !open;
+    this.headEl.setAttribute("aria-expanded", String(open));
+    this.node.classList.toggle("is-open", open);
+  }
+
+  /** Shows (or clears, with null) a status line such as "reconnecting…". */
+  setStatus(text, iconName = "info") {
+    if (!text) {
+      this.statusEl.hidden = true;
+      return;
+    }
+    this.statusEl.replaceChildren(icon(iconName), el("span", { text }));
+    this.statusEl.hidden = false;
   }
 
   /** Adds a step for a new activity label (repeated labels are ignored). */
@@ -59,6 +89,9 @@ export class TurnProgress {
     const li = el("li", { class: "pc-step active" }, [el("span", { class: "pc-step-icon", "aria-hidden": "true" }, [el("span", { class: "pc-spinner" })]), el("span", { text })]);
     this.steps.push({ text, li });
     this.listEl.append(li);
+    // The line always shows what the coach is doing right now.
+    this.titleEl.textContent = text;
+    this.chevEl.hidden = false;
     if (!this.hintKey) {
       const hit = HINTS.find(([re]) => re.test(text));
       if (hit) this.showHint(hit[1]);
@@ -86,21 +119,24 @@ export class TurnProgress {
   }
 
   /** Stops the timer and collapses into a summary line. Returns false if the card was removed. */
-  finish({ error = false } = {}) {
+  finish({ error = false, stopped = false } = {}) {
     if (this.finished) return !!this.node.isConnected;
     this.finished = true;
     clearInterval(this.timer);
     const elapsed = Date.now() - this.start;
     for (const s of this.steps) this.markDone(s);
-    if (!this.steps.length && elapsed < 2500 && !error) {
+    this.listEl.hidden = false;
+    if (!this.steps.length && elapsed < 2500 && !error && !stopped) {
       this.node.remove();
       return false;
     }
-    const label = this.steps.length
-      ? t(this.steps.length === 1 ? "turn.summaryOne" : "turn.summary", { n: this.steps.length, t: durationText(elapsed) })
-      : t("turn.summaryNoSteps", { t: durationText(elapsed) });
-    const summaryIcon = icon(error ? "warning" : "check-circle");
-    this.node.className = `progress-card done${error ? " error" : ""}`;
+    const label = stopped
+      ? t("turn.stopped", { t: durationText(elapsed) })
+      : this.steps.length
+        ? t(this.steps.length === 1 ? "turn.summaryOne" : "turn.summary", { n: this.steps.length, t: durationText(elapsed) })
+        : t("turn.summaryNoSteps", { t: durationText(elapsed) });
+    const summaryIcon = icon(stopped ? "pause" : error ? "warning" : "check-circle");
+    this.node.className = `progress-card done${error ? " error" : ""}${stopped ? " stopped" : ""}`;
     if (this.steps.length) {
       this.listEl.removeAttribute("role");
       this.listEl.removeAttribute("aria-live");

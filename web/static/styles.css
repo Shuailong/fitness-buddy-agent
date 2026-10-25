@@ -1031,9 +1031,35 @@ textarea.text-input { resize: vertical; min-height: 52px; }
 /* ------------------------------------------------------- turn progress */
 .row.progress-row .row-body { justify-items: stretch; }
 .progress-card { width: 100%; max-width: 420px; border-radius: var(--r-lg); background: var(--card); border: 1px solid var(--line); padding: 12px 14px; display: grid; gap: 8px; font-size: 0.85rem; }
-.progress-card.live { border-color: var(--primary-border); box-shadow: 0 4px 18px var(--primary-glow); }
-.pc-head { display: flex; align-items: center; gap: 10px; }
-.pc-title { flex: 1; font-weight: 600; color: var(--text-strong); }
+/* Live "thinking" line (ChatGPT-style): no card, one shimmering line. */
+.progress-card.live { background: transparent; border-color: transparent; box-shadow: none; padding: 2px 0; gap: 6px; }
+.pc-head {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 2px; border: 0;
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pc-title { flex: 1; min-width: 0; font-weight: 600; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pc-shimmer {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 35%, var(--text-strong) 50%, var(--muted) 65%, var(--muted) 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: pcShimmer 2.2s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+@keyframes pcShimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+.pc-orb {
+  flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--primary);
+  box-shadow: 0 0 0 0 var(--primary-glow); animation: pcOrb 1.6s ease-in-out infinite;
+}
+@keyframes pcOrb {
+  0%, 100% { transform: scale(0.85); box-shadow: 0 0 0 0 var(--primary-glow); }
+  50% { transform: scale(1); box-shadow: 0 0 0 6px transparent; }
+}
+.pc-chev { display: inline-flex; color: var(--muted); transition: transform 0.2s ease; }
+.pc-chev .icon { width: 18px; height: 18px; }
+.progress-card.is-open .pc-chev { transform: rotate(180deg); }
+.pc-status { display: flex; align-items: center; gap: 6px; color: var(--warn-text, var(--streak)); font-size: 0.8rem; padding-left: 20px; }
+.pc-status .icon { width: 16px; height: 16px; }
+.progress-card.live .pc-hint { padding-left: 20px; }
+.progress-card.live .pc-steps { padding-left: 20px; }
 .pc-time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
 .pc-hint { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.8rem; }
 .pc-hint .icon { width: 16px; height: 16px; color: var(--primary-text); }
@@ -1051,6 +1077,46 @@ textarea.text-input { resize: vertical; min-height: 52px; }
 .pc-summary summary .chev { width: 18px; height: 18px; color: var(--muted); }
 .pc-summary[open] .pc-steps { padding: 10px 4px 2px 12px; }
 .progress-card.error .pc-summary summary .icon:first-child, .progress-card.error .pc-summary-line .icon { color: var(--warn-text); }
+.progress-card.stopped .pc-summary summary .icon:first-child, .progress-card.stopped .pc-summary-line .icon { color: var(--muted); }
+
+/* Stop button (replaces Send while the coach replies). */
+.stop-btn { background: var(--text-strong); color: var(--card); width: 44px; padding: 0; }
+.stop-btn:hover:not(:disabled) { background: var(--text); }
+.stop-square { width: 12px; height: 12px; border-radius: 3px; background: currentColor; }
+
+/* Edit & resend the latest message. */
+.row.from-user { flex-direction: column; align-items: flex-end; }
+.msg-edit-btn {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 3px 8px;
+  border: 0; border-radius: var(--r-full); background: none; color: var(--muted); font-size: 0.75rem; cursor: pointer;
+  opacity: 0.85;
+}
+.msg-edit-btn .icon { width: 14px; height: 14px; }
+.msg-edit-btn:hover { color: var(--text-strong); background: var(--inset); }
+body.is-streaming .msg-edit-btn { display: none; }
+.row.from-user.is-editing .bubble { outline: 2px solid var(--primary-border); outline-offset: 2px; }
+.edit-banner {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 8px 12px; border-radius: var(--r);
+  background: var(--primary-soft); border: 1px solid var(--primary-border); color: var(--on-primary-soft); font-size: 0.82rem;
+}
+.edit-banner[hidden] { display: none; }
+.edit-banner .icon { width: 16px; height: 16px; }
+.edit-banner-text { flex: 1; font-weight: 600; }
+.edit-banner-cancel { border: 0; background: none; color: inherit; font-weight: 700; cursor: pointer; padding: 2px 6px; }
+.row.is-superseded { opacity: 0.45; }
+.row.is-superseded .msg-edit-btn, .row.is-superseded .coach-msg-foot { display: none; }
+.superseded-tag {
+  display: inline-block; margin-bottom: 4px; padding: 1px 8px; border-radius: var(--r-full);
+  background: rgba(0, 0, 0, 0.12); font-size: 0.7rem; font-weight: 700;
+}
+
+/* Error with Retry. */
+.msg-error .msg-retry-btn {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 3px 10px;
+  border-radius: var(--r-full); border: 1px solid currentColor; background: none; color: inherit;
+  font-size: 0.78rem; font-weight: 700; cursor: pointer;
+}
+.msg-error .msg-retry-btn .icon { width: 14px; height: 14px; }
 
 /* Optimistic meal card while the photo is analyzed. */
 .meal-skeleton .badge .pc-spinner { width: 12px; height: 12px; border-width: 2px; }

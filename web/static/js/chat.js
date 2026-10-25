@@ -9,7 +9,7 @@ import { t, getLang, dateFull, duration } from "./i18n.js";
 import { TurnProgress } from "./progress.js";
 import { feedbackThumbs, dailyPromptAfterTurn } from "./feedback.js";
 import { track } from "./telemetry.js";
-import { openPhotoLightbox } from "./modal.js";
+import { openPhotoLightbox, showToast } from "./modal.js";
 import { isOffline, saveChatSnapshot, appendChatSnapshot, loadChatSnapshot, outbox, queueMessage, dropQueued } from "./offline.js";
 import { startRecording, voiceSupported, releaseMicrophone, warmMicrophone, scheduleMicRelease } from "./voice.js";
 import { coachAvatar, getPersona, getPersonaId, onPersonaChange, openPersonaSelectorModal, speakCoachText, stopCoachSpeech, unlockCoachAudio } from "./personas.js";
@@ -122,9 +122,90 @@ export function addUserMessage(text, imageUrl, hadImage, { voice = false } = {})
   }
   if (text) children.push(el("p", { text }));
   const row = el("div", { class: "row from-user" }, [el("div", { class: "bubble bubble-user" }, children)]);
+  row.dataset.text = text || "";
+  if (voice) row.dataset.voice = "1";
   messagesEl().append(row);
+  refreshEditAffordance();
   scrollToBottom(true);
   return row;
+}
+
+// ------------------------------------------------------------- edit & resend
+// Like ChatGPT: the latest text message can be edited and sent again; the old
+// version and the replies to it stay visible, dimmed, as "previous version".
+let editing = null; // { row, text }
+
+function lastEditableUserRow() {
+  const rows = [...messagesEl().querySelectorAll(".row.from-user")].filter(
+    (r) => !r.classList.contains("is-superseded") && !r.classList.contains("is-queued"),
+  );
+  const last = rows[rows.length - 1];
+  return last && last.dataset.text && !last.dataset.voice ? last : null;
+}
+
+function refreshEditAffordance() {
+  if (renderTarget) return;
+  for (const b of messagesEl().querySelectorAll(".msg-edit-btn")) b.remove();
+  const row = lastEditableUserRow();
+  if (!row) return;
+  row.append(el("button", {
+    type: "button",
+    class: "msg-edit-btn",
+    title: t("chat.edit"),
+    "aria-label": t("chat.edit"),
+    onclick: () => startEditing(row),
+  }, [icon("edit"), el("span", { text: t("chat.edit") })]));
+}
+
+function editBanner() {
+  let banner = $("edit-banner");
+  if (!banner) {
+    banner = el("div", { id: "edit-banner", class: "edit-banner", hidden: true }, [
+      icon("edit"),
+      el("span", { class: "edit-banner-text", text: t("chat.editing") }),
+      el("button", { type: "button", class: "edit-banner-cancel", onclick: () => stopEditing({ clear: true }) }, [t("chat.cancelEdit")]),
+    ]);
+    $("composer").prepend(banner);
+  }
+  return banner;
+}
+
+function startEditing(row) {
+  if (state.streaming) return;
+  editing = { row, text: row.dataset.text };
+  const input = $("message-input");
+  input.value = editing.text;
+  autosize(input);
+  updateComposerActions();
+  editBanner().hidden = false;
+  row.classList.add("is-editing");
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+
+function stopEditing({ clear = false } = {}) {
+  if (editing && editing.row) editing.row.classList.remove("is-editing");
+  editing = null;
+  const banner = $("edit-banner");
+  if (banner) banner.hidden = true;
+  if (clear) {
+    const input = $("message-input");
+    input.value = "";
+    autosize(input);
+    updateComposerActions();
+  }
+}
+
+/** Dims a user message and everything after it as an older version. */
+function supersedeFrom(row) {
+  if (!row) return;
+  row.classList.add("is-superseded");
+  if (!row.querySelector(".superseded-tag")) {
+    row.querySelector(".bubble").prepend(el("span", { class: "superseded-tag", text: t("chat.previousVersion") }));
+  }
+  for (let n = row.nextElementSibling; n; n = n.nextElementSibling) {
+    if (n.classList.contains("row") && !n.classList.contains("day-divider")) n.classList.add("is-superseded");
+  }
 }
 
 function resetTtsBtn(btn) {
@@ -208,8 +289,22 @@ function addCoachMessage(text, author, eventId = null, personaId = null) {
   scrollToBottom();
 }
 
-export function addError(message, { cls = "" } = {}) {
-  appendMessage(el("div", { class: `row system ${cls}`.trim() }, [el("p", { class: "msg-error", role: "alert" }, [icon("warning"), message])]));
+export function addError(message, { cls = "", retry = null } = {}) {
+  const row = el("div", { class: `row system ${cls}`.trim() });
+  const children = [icon("warning"), el("span", { text: message })];
+  if (retry) {
+    children.push(el("button", {
+      type: "button",
+      class: "msg-retry-btn",
+      onclick: () => {
+        if (state.streaming) return;
+        row.remove();
+        retry();
+      },
+    }, [icon("refresh"), t("chat.retry")]));
+  }
+  row.append(el("p", { class: "msg-error", role: "alert" }, children));
+  appendMessage(row);
   scrollToBottom();
 }
 
@@ -281,9 +376,9 @@ function discardTurn() {
   turn = null;
 }
 
-function finishTurn({ error = false } = {}) {
+function finishTurn({ error = false, stopped = false } = {}) {
   if (!turn) return;
-  if (!turn.progress.finish({ error })) turn.row.remove();
+  if (!turn.progress.finish({ error, stopped })) turn.row.remove();
   if (turn.skeleton) turn.skeleton.remove();
   turn = null;
 }
@@ -306,10 +401,30 @@ function addConfirmationCard(card) {
   return node;
 }
 
+function stopButton() {
+  let btn = $("stop-btn");
+  if (!btn) {
+    btn = el("button", {
+      type: "button",
+      id: "stop-btn",
+      class: "send-btn stop-btn",
+      hidden: true,
+      title: t("chat.stopGenerating"),
+      "aria-label": t("chat.stopGenerating"),
+      onclick: () => stopTurn(),
+    }, [el("span", { class: "stop-square", "aria-hidden": "true" })]);
+    $("send-btn").after(btn);
+  }
+  return btn;
+}
+
 function setStreaming(on) {
   state.streaming = on;
   document.body.classList.toggle("is-streaming", on);
-  // The textarea stays usable; only submitting is blocked while a turn runs.
+  // The textarea stays usable (type the next message); sending waits, and
+  // the send button turns into Stop, like ChatGPT.
+  stopButton().hidden = !on;
+  updateComposerActions();
   $("send-btn").disabled = on;
   $("new-chat-btn").disabled = on;
   for (const b of document.querySelectorAll(".suggestions button")) b.disabled = on;
@@ -399,93 +514,146 @@ function handleEvent(ev) {
     case "card": if (ev.kind === "meal_logged") addMealCard(ev); break;
     // An earlier reply finished in the background while this turn waited.
     case "resync": resyncAfterTurn = true; break;
-    case "error": addError(ev.message || t("error.generic")); break;
+    case "error": addError(ev.message || t("error.generic"), { retry: currentRetry }); break;
+    case "stopped": break;
     default: break;
   }
 }
 
-/**
- * The stream broke (phone locked, app switched, flaky network) but the server
- * keeps producing the reply. When the page is visible again, poll the history
- * until the reply is there, then re-render the conversation.
- */
-let recoverTimer = null;
 let resyncAfterTurn = false;
-// Poll for up to ~4 minutes: when the model is slow a photo reply can take
-// three minutes (the server keeps working after the connection drops).
-const RECOVER_MAX_ATTEMPTS = 48;
-function recoverInterruptedTurn() {
-  let attempts = 0;
-  const poll = async () => {
-    recoverTimer = null;
-    if (state.streaming) {
-      // A newer turn is streaming; it reloads the conversation when it ends.
-      resyncAfterTurn = true;
-      return;
-    }
-    attempts += 1;
-    try {
-      const history = await getJson("/api/history");
-      const last = history.messages[history.messages.length - 1];
-      if ((last && last.role !== "user") || history.pending_confirmations.length || attempts >= RECOVER_MAX_ATTEMPTS) {
-        await openSession();
-        actions.refreshDashboard();
-        return;
+let activeStream = null; // { controller, stopping }
+let currentRetry = null; // re-sends the current request (error "Retry")
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Resolves once the page is visible and the device is online. */
+function whenVisibleAndOnline() {
+  if (!document.hidden && navigator.onLine !== false) return Promise.resolve();
+  return new Promise((resolve) => {
+    const check = () => {
+      if (!document.hidden && navigator.onLine !== false) {
+        document.removeEventListener("visibilitychange", check);
+        window.removeEventListener("online", check);
+        resolve();
       }
-    } catch (_) { /* offline: try again */ }
-    recoverTimer = setTimeout(poll, 5000);
-  };
-  const start = () => {
-    document.removeEventListener("visibilitychange", onVisible);
-    clearTimeout(recoverTimer);
-    recoverTimer = setTimeout(poll, 2000);
-  };
-  const onVisible = () => { if (!document.hidden) start(); };
-  if (document.hidden) document.addEventListener("visibilitychange", onVisible);
-  else start();
+    };
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("online", check);
+  });
 }
 
-async function streamRequest(path, options, { photo = false, onRateLimited = null } = {}) {
+/** Reads one SSE response, counting frames so a resume continues after them. */
+async function readTurnStream(res, counter) {
+  const out = { finished: false, failed: false, stopped: false };
+  await readEventStream(res, (ev) => {
+    counter.seen += 1;
+    if (ev.type === "error") out.failed = true;
+    if (ev.type === "stopped") out.stopped = true;
+    if (ev.type === "done") out.finished = true;
+    handleEvent(ev);
+  });
+  return out;
+}
+
+/**
+ * The connection dropped mid-reply (phone locked, app switched, flaky 5G) but
+ * the server keeps generating: re-attach with /api/chat/resume and continue
+ * in the same bubble (ChatGPT-style). Returns done | stopped | error | gone.
+ */
+async function resumeTurn(counter, controller) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (activeStream && activeStream.stopping) return "stopped";
+    if (turn) turn.progress.setStatus(t("chat.reconnecting"), "cloud");
+    await whenVisibleAndOnline();
+    await sleep(attempt === 0 ? 300 : Math.min(8000, 1000 * 2 ** Math.min(attempt, 3)));
+    try {
+      const res = await api(`/api/chat/resume?after=${counter.seen}`, { signal: controller.signal });
+      if (turn) turn.progress.setStatus(null);
+      const r = await readTurnStream(res, counter);
+      if (r.stopped) return "stopped";
+      if (r.finished) return r.failed ? "error" : "done";
+    } catch (err) {
+      if (activeStream && activeStream.stopping) return "stopped";
+      if (err.status === 404) return "gone";
+      if (err.status && err.status < 500) return "gone";
+    }
+  }
+  return "gone";
+}
+
+/** Stops the reply being generated (the Stop button). */
+async function stopTurn() {
+  if (!activeStream || activeStream.stopping) return;
+  activeStream.stopping = true;
+  track("chat_stop");
+  const stream = activeStream;
+  try { await postJson("/api/chat/stop", {}); } catch (_) { /* aborted below */ }
+  // The server answers with "stopped"; abort the read if that doesn't arrive.
+  setTimeout(() => { if (activeStream === stream) stream.controller.abort(); }, 2500);
+}
+
+/**
+ * Runs one turn: POSTs (or, with ``resumeAfter``, re-attaches to a reply that
+ * is already running) and renders the SSE events into a live turn.
+ */
+async function streamRequest(path, options, { photo = false, onRateLimited = null, onBusy = null, resumeAfter = null, retry = null } = {}) {
   setStreaming(true);
   receivedCoachText = false;
   lastCoachEventId = null;
+  currentRetry = retry;
   startTurn({ photo });
+  const controller = new AbortController();
+  activeStream = { controller, stopping: false };
+  const counter = { seen: resumeAfter || 0 };
   let failed = false;
   let limited = null;
-  let finished = false;
-  let interrupted = false;
+  let outcome = null; // done | stopped | busy | gone | error
   try {
-    const res = await api(path, options);
-    await readEventStream(res, (ev) => {
-      if (ev.type === "error") failed = true;
-      if (ev.type === "done") finished = true;
-      handleEvent(ev);
-    });
-    if (!finished) throw new Error(t("error.interrupted"));
-  } catch (err) {
-    // 429s arrive before any SSE, so nothing was rendered for this turn yet.
-    if (isRateLimited(err)) limited = err;
-    else {
-      failed = true;
-      // No HTTP status = the connection dropped mid-turn; the reply may still come.
-      interrupted = !err.status;
-      addError(interrupted ? t("error.interrupted") : err.message || t("error.connection"));
+    try {
+      const res = resumeAfter === null
+        ? await api(path, { ...options, signal: controller.signal })
+        : await api(`/api/chat/resume?after=${resumeAfter}`, { signal: controller.signal });
+      const r = await readTurnStream(res, counter);
+      failed = r.failed;
+      outcome = r.stopped ? "stopped" : r.finished ? "done" : null;
+    } catch (err) {
+      if (activeStream.stopping) outcome = "stopped";
+      else if (isRateLimited(err)) limited = err;
+      else if (err.code === "turn_in_progress") outcome = "busy";
+      else if (resumeAfter !== null && err.status === 404) outcome = "gone";
+      else if (err.status) {
+        failed = true;
+        outcome = "error";
+        addError(err.message || t("error.connection"), { retry });
+      }
+      // No HTTP status: the connection dropped; resume below.
+    }
+    if (!outcome && !limited) {
+      outcome = await resumeTurn(counter, controller);
+      if (outcome === "error") failed = true;
     }
   } finally {
-    if (limited) discardTurn();
-    else finishTurn({ error: failed });
+    activeStream = null;
+    currentRetry = null;
+    if (limited || outcome === "busy") discardTurn();
+    else finishTurn({ error: failed && outcome !== "stopped", stopped: outcome === "stopped" });
     setStreaming(false);
     if (limited) {
       if (onRateLimited) onRateLimited(limited);
       startLimit(limited);
-    } else if (receivedCoachText) {
+    } else if (receivedCoachText && outcome !== "stopped") {
       actions.markUnread();
       const prompt = failed ? null : dailyPromptAfterTurn(lastCoachEventId);
       if (prompt) { messagesEl().append(prompt); scrollToBottom(); }
     }
     actions.refreshDashboard();
-    if (interrupted) recoverInterruptedTurn();
-    else if (resyncAfterTurn) {
+    if (outcome === "busy") {
+      // A reply is still being generated (e.g. started on another tab or
+      // before the app was reopened): show it instead of queueing this one.
+      if (onBusy) onBusy();
+      showToast(t("chat.stillReplying"), { iconName: "schedule" });
+      openSession().catch(() => {});
+    } else if (outcome === "gone" || resyncAfterTurn) {
       resyncAfterTurn = false;
       openSession().catch(() => {});
     }
@@ -493,7 +661,7 @@ async function streamRequest(path, options, { photo = false, onRateLimited = nul
 }
 
 /** Sends a chat turn (text and/or a photo). Hidden turns don't render a bubble. */
-export async function sendChat(text, photoBlob = null, { hidden = false, voiceRow = null, row = null } = {}) {
+export async function sendChat(text, photoBlob = null, { hidden = false, voiceRow = null, row = null, edit = null } = {}) {
   if (state.streaming) return false;
   if (isOffline() && !hidden) {
     // No connection: keep text in the outbox (sent when back online); photos
@@ -521,13 +689,22 @@ export async function sendChat(text, photoBlob = null, { hidden = false, voiceRo
   if (!hidden) form.append("persona", getPersonaId());
   if (photoBlob) form.append("image", photoBlob, "photo.jpg");
   if (voiceRow) form.append("voice", "1");
+  if (edit) {
+    form.append("edited", "1");
+    supersedeFrom(edit);
+  }
   const userRow = hidden ? null : voiceRow || row || addUserMessage(text, photoBlob ? URL.createObjectURL(photoBlob) : null);
   if (!hidden) appendChatSnapshot(snapshotOwner(), { role: "user", text, has_image: Boolean(photoBlob), voice: Boolean(voiceRow) });
   await streamRequest("/api/chat", { method: "POST", body: form }, {
     photo: Boolean(photoBlob),
+    retry: hidden ? null : () => sendChat(text, photoBlob, { row: userRow }),
     onRateLimited: (err) => {
       if (userRow) userRow.remove();
       if (!hidden) restoreComposer(text, err.scope === "photos_per_day" ? null : photoBlob);
+    },
+    onBusy: () => {
+      if (userRow && !row && !voiceRow) userRow.remove();
+      if (!hidden) restoreComposer(text, photoBlob);
     },
   });
   return true;
@@ -574,6 +751,10 @@ function dayDivider(day) {
 
 function renderHistoryMessages(messages) {
   for (const m of messages) {
+    if (m.role === "user" && m.edited) {
+      const prev = [...messagesEl().querySelectorAll(".row.from-user:not(.is-superseded)")].pop();
+      supersedeFrom(prev);
+    }
     if (m.role === "user") addUserMessage(m.text, m.image_url || null, m.has_image, { voice: Boolean(m.voice) });
     else if (m.role === "coach") addCoachMessage(m.text, m.author, m.event_id || null, m.persona || null);
     else if (m.role === "decision") addDecision(m);
@@ -681,7 +862,15 @@ export async function openSession({ fresh = false } = {}) {
     saveChatSnapshot(snapshotOwner(), history.messages);
     for (const card of history.pending_confirmations) addConfirmationCard(card);
     renderQueuedMessages();
+    refreshEditAffordance();
     scrollToBottom(true);
+    if (session.active_turn && !state.streaming) {
+      // The coach is still replying (app reopened mid-reply): follow it live.
+      streamRequest(null, null, {
+        photo: session.active_turn.intent === "photo",
+        resumeAfter: session.active_turn.after || 0,
+      });
+    }
     return session;
   } catch (err) {
     bootSk.remove();
@@ -1045,8 +1234,8 @@ export function updateComposerActions() {
   const input = $("message-input");
   const voiceOn = !$("hold-to-talk").hidden;
   const hasContent = Boolean(input.value.trim()) || Boolean(state.photo);
-  $("send-btn").hidden = voiceOn || !hasContent;
-  $("attach-toggle").hidden = !$("send-btn").hidden;
+  $("send-btn").hidden = state.streaming || voiceOn || !hasContent;
+  $("attach-toggle").hidden = !state.streaming && !$("send-btn").hidden;
 }
 
 function setAttachTray(open) {
@@ -1287,7 +1476,9 @@ export function initChat() {
     input.value = "";
     input.style.height = "";
     clearPhoto();
-    await sendChat(text, photo);
+    const edit = editing && text ? editing.row : null;
+    stopEditing();
+    await sendChat(text, photo, { edit });
   });
   $("message-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing && window.matchMedia("(pointer: fine)").matches) {

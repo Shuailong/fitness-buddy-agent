@@ -121,6 +121,7 @@ from web.demo import (
 from web.events import (
     CONFIRMATION_CALL,
     DEFAULT_TIMEZONE,
+    EDIT_MARKER,
     build_history,
     conversation_day,
     extract_meal_photos_from_events,
@@ -482,6 +483,57 @@ async def with_heartbeat(
         if aclose is not None:
             with contextlib.suppress(Exception):
                 await aclose()
+
+
+# How long a finished turn stays available to re-attach to (resume).
+TURN_KEEP_S = 600.0
+
+
+class TurnRun:
+    """One chat turn running in the background, with replayable SSE frames.
+
+    The request that starts a turn only *follows* it, so a dropped connection
+    (phone locked, flaky 5G) doesn't lose the reply: the browser re-attaches
+    with ``GET /api/chat/resume?after=N`` and receives frames N.. (ChatGPT-style
+    resumable streaming). ``POST /api/chat/stop`` cancels the task.
+    """
+
+    def __init__(self, user_id: str, session_id: str, intent: str) -> None:
+        self.user_id = user_id
+        self.session_id = session_id
+        self.intent = intent
+        self.frames: list[str] = []
+        self.done = False
+        self.stopped = False
+        self.finished_at = 0.0
+        self.task: asyncio.Task[None] | None = None
+        self._changed = asyncio.Event()
+
+    async def produce(self, frames: AsyncIterator[str]) -> None:
+        try:
+            async for frame in frames:
+                self.frames.append(frame)
+                self._changed.set()
+        except asyncio.CancelledError:
+            self.stopped = True
+            self.frames.append(_sse({"type": "stopped"}))
+            self.frames.append(_sse({"type": "done"}))
+        finally:
+            self.done = True
+            self.finished_at = time.time()
+            self._changed.set()
+
+    async def follow(self, after: int = 0) -> AsyncIterator[str]:
+        """Yields frames from index ``after`` until the turn is finished."""
+        i = max(0, after)
+        while True:
+            while i < len(self.frames):
+                yield self.frames[i]
+                i += 1
+            if self.done:
+                return
+            self._changed.clear()
+            await self._changed.wait()
 
 
 def create_app(
@@ -1097,6 +1149,11 @@ def create_app(
             "started_at": started,
             "day": conversation_day(started, timezone, settings.day_rollover_hour),
         }
+        run = _turn_for(session_id, user.user_id)
+        if run is not None and not run.done:
+            # Frames produced so far are (mostly) already in the history
+            # below; the browser follows the rest from here.
+            payload["active_turn"] = {"intent": run.intent, "after": len(run.frames)}
         if body and body.include_history and not is_new:
             for entry_id, (mime, raw_bytes) in extract_meal_photos_from_events(
                 events
@@ -1217,13 +1274,47 @@ def create_app(
                 else None
             )
         )
-        while True:
-            kind, item = await queue.get()
-            if kind == "end":
-                return
-            if kind == "error":
-                raise item
-            yield item
+        try:
+            while True:
+                kind, item = await queue.get()
+                if kind == "end":
+                    return
+                if kind == "error":
+                    raise item
+                yield item
+        finally:
+            # The consumer stopped early (user pressed Stop): stop the agent too.
+            if not task.done():
+                task.cancel()
+
+    # Background turn runs, one per conversation (see TurnRun).
+    _runs: dict[str, TurnRun] = {}
+
+    def _turn_for(session_id: str, user_id: str) -> TurnRun | None:
+        run = _runs.get(session_id)
+        return run if run is not None and run.user_id == user_id else None
+
+    def _start_run(
+        user: CurrentUser, session_id: str, intent: str, frames: AsyncIterator[str]
+    ) -> TurnRun:
+        now = time.time()
+        for sid, old in list(_runs.items()):
+            if old.done and now - old.finished_at > TURN_KEEP_S:
+                _runs.pop(sid, None)
+        run = TurnRun(user.user_id, session_id, intent)
+        run.task = asyncio.create_task(run.produce(frames))
+        _runs[session_id] = run
+        return run
+
+    def _busy_response(run: TurnRun) -> JSONResponse:
+        return JSONResponse(
+            {
+                "detail": "Your coach is still replying.",
+                "code": "turn_in_progress",
+                "intent": run.intent,
+            },
+            status_code=409,
+        )
 
     async def _decline_stale_confirmations(
         client: AgentClient, user_id: str, session_id: str
@@ -1498,8 +1589,13 @@ def create_app(
         lang: Annotated[str | None, Form()] = None,
         persona: Annotated[str | None, Form()] = None,
         voice: Annotated[str | None, Form()] = None,
-    ) -> StreamingResponse:
+        edited: Annotated[str | None, Form()] = None,
+    ) -> Response:
         session_id = active_session_id(request, user)
+        running = _turn_for(session_id, user.user_id)
+        if running is not None and not running.done:
+            # Like ChatGPT: one reply at a time. The browser re-attaches to it.
+            return _busy_response(running)
         text = text.strip()
         if len(text) > MAX_TEXT_CHARS:
             raise HTTPException(
@@ -1521,6 +1617,8 @@ def create_app(
                 else ""
             )
             marker = VOICE_MARKER if voice == "1" else ""
+            if edited == "1":
+                marker = EDIT_MARKER + marker
             parts.append({"text": f"{prefix}{marker}{text}"})
         if image is not None and (image.filename or image.size):
             data = await image.read(MAX_IMAGE_BYTES + 1)
@@ -1569,7 +1667,10 @@ def create_app(
             )
         preview = redact_text(text) + (" [+photo]" if intent == "photo" else "")
         message = {"role": "user", "parts": parts}
-        return _sse_response(
+        run = _start_run(
+            user,
+            session_id,
+            intent,
             stream_turn(
                 user,
                 session_id,
@@ -1578,8 +1679,33 @@ def create_app(
                 preview,
                 norm_lang,
                 request=request,
-            )
+            ),
         )
+        return _sse_response(run.follow())
+
+    @app.get("/api/chat/resume")
+    async def resume_chat(
+        request: Request,
+        user: UserDep,
+        after: int = Query(0, ge=0, le=100000),
+    ) -> Response:
+        """Re-attaches to the current turn and streams frames from ``after``."""
+        run = _turn_for(active_session_id(request, user), user.user_id)
+        if run is None:
+            return JSONResponse(
+                {"detail": "Nothing to resume.", "code": "no_turn"}, status_code=404
+            )
+        return _sse_response(run.follow(after))
+
+    @app.post("/api/chat/stop")
+    async def stop_chat(request: Request, user: UserDep) -> dict[str, Any]:
+        """Stops the reply that is being generated (like ChatGPT's Stop)."""
+        run = _turn_for(active_session_id(request, user), user.user_id)
+        if run is None or run.done or run.task is None:
+            return {"ok": True, "stopped": False}
+        run.task.cancel()
+        log_event("turn_stopped", user=_pseudonym(user.user_id), intent=run.intent)
+        return {"ok": True, "stopped": True}
 
     async def live_frame_limited(user: CurrentUser) -> dict[str, Any] | None:
         """Daily cap on live form-coach frames (each one is a Gemini vision call)."""
@@ -1844,8 +1970,11 @@ def create_app(
         request: Request,
         user: UserDep,
         client: AgentDep,
-    ) -> StreamingResponse:
+    ) -> Response:
         session_id = active_session_id(request, user)
+        running = _turn_for(session_id, user.user_id)
+        if running is not None and not running.done:
+            return _busy_response(running)
         if limited := await rate_limited(user, ["messages_per_minute"]):
             return limited
         session = await client.get_session(user.user_id, session_id)
@@ -1872,7 +2001,10 @@ def create_app(
             ],
         }
         intent = "confirm" if body.confirmed else "reject"
-        return _sse_response(
+        run = _start_run(
+            user,
+            session_id,
+            intent,
             stream_turn(
                 user,
                 session_id,
@@ -1881,8 +2013,9 @@ def create_app(
                 intent,
                 normalize_lang(body.lang),
                 request=request,
-            )
+            ),
         )
+        return _sse_response(run.follow())
 
     # ------------------------------------------------------------ dashboard
     @app.get("/api/meals/{entry_id}/photo")

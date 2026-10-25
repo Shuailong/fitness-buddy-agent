@@ -34,32 +34,40 @@
   <style>
     html,body{margin:0;padding:0;background:#0F1215;color:#F3F5F7;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
     html[data-theme="light"],html[data-theme="light"] body{background:#F8FAFC;color:#0F172A}
-    .boot-splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at 50% 28%,rgba(163,230,53,.13),transparent 58%),#0F1215;color:#F3F5F7;transition:opacity .24s cubic-bezier(.22,1,.36,1),transform .24s cubic-bezier(.22,1,.36,1)}
+    .boot-splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at 50% 28%,rgba(163,230,53,.13),transparent 58%),#0F1215;color:#F3F5F7}
     html[data-theme="light"] .boot-splash{background:radial-gradient(circle at 50% 28%,rgba(101,163,13,.12),transparent 58%),#F8FAFC;color:#0F172A}
-    .boot-splash.is-leaving{opacity:0;transform:scale(.985);pointer-events:none}
+    /* Smooth launch: only transform/opacity animate (GPU), eased curves, a
+       staggered entrance and a soft exit. Layout matches the iOS launch image. */
+    .boot-splash{will-change:opacity,transform}
+    .boot-splash.is-leaving{opacity:0;transform:scale(1.015);filter:blur(4px);pointer-events:none;transition:opacity .34s cubic-bezier(.22,1,.36,1),transform .34s cubic-bezier(.22,1,.36,1),filter .34s ease}
     .boot-splash[hidden]{display:none!important}
     .boot-core{position:relative;width:76px;height:76px;display:grid;place-items:center;margin-bottom:18px}
-    .boot-ring{position:absolute;inset:0;width:76px;height:76px;animation:bootSpin 1.35s linear infinite}
-    .boot-pulse{position:absolute;inset:8px;border-radius:999px;background:rgba(163,230,53,.14);animation:bootPulse 1.8s ease-in-out infinite}
-    .boot-emblem{position:relative;width:48px;height:48px;border-radius:16px;background:linear-gradient(135deg,#A3E635,#65A30D);color:#0B0F07;display:grid;place-items:center;box-shadow:0 10px 28px rgba(163,230,53,.32)}
+    .boot-halo{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,rgba(163,230,53,0) 0deg,rgba(163,230,53,.05) 120deg,rgba(163,230,53,.55) 300deg,#A3E635 350deg,rgba(163,230,53,0) 360deg);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 3px));mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 3px));animation:bootHalo 2.4s cubic-bezier(.55,.15,.45,.85) infinite;will-change:transform}
+    .boot-track{position:absolute;inset:0;border-radius:50%;box-shadow:inset 0 0 0 3px rgba(255,255,255,.07)}
+    html[data-theme="light"] .boot-track{box-shadow:inset 0 0 0 3px rgba(15,23,42,.07)}
+    .boot-pulse{position:absolute;inset:6px;border-radius:999px;background:radial-gradient(circle,rgba(163,230,53,.28),rgba(163,230,53,0) 70%);animation:bootBreath 2.4s ease-in-out infinite;will-change:transform,opacity}
+    .boot-emblem{position:relative;width:48px;height:48px;border-radius:16px;background:linear-gradient(135deg,#A3E635,#65A30D);color:#0B0F07;display:grid;place-items:center;box-shadow:0 10px 28px rgba(163,230,53,.32);animation:bootIn .6s cubic-bezier(.34,1.56,.64,1) both,bootFloat 2.4s ease-in-out .6s infinite;will-change:transform}
     .boot-emblem svg{width:26px;height:26px;fill:currentColor}
     .boot-badge{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#A3E635;background:rgba(163,230,53,.12);border:1px solid rgba(163,230,53,.28);padding:4px 10px;border-radius:999px;margin-bottom:8px}
     html[data-theme="light"] .boot-badge{color:#4D7C0F;background:rgba(101,163,13,.1);border-color:rgba(101,163,13,.28)}
     .boot-title{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px}
     .boot-status{font-size:13.5px;color:#9BA3AE;margin:0 0 18px;text-align:center}
     html[data-theme="light"] .boot-status{color:#64748B}
+    .boot-badge,.boot-title,.boot-status,.boot-bar{animation:bootUp .5s cubic-bezier(.22,1,.36,1) both}
+    .boot-badge{animation-delay:.08s}.boot-title{animation-delay:.14s}.boot-status{animation-delay:.2s}.boot-bar{animation-delay:.26s}
     html[lang^="zh"] .boot-en{display:none}
     html:not([lang^="zh"]) .boot-zh{display:none}
-    .boot-bar{width:min(220px,68vw);height:4px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;position:relative;margin-bottom:24px}
+    .boot-bar{width:min(200px,60vw);height:3px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;position:relative;margin-bottom:24px}
     html[data-theme="light"] .boot-bar{background:rgba(15,23,42,.08)}
-    .boot-bar::after{content:"";position:absolute;inset:0;width:45%;border-radius:999px;background:linear-gradient(90deg,transparent,#A3E635,transparent);animation:bootSweep 1.15s ease-in-out infinite}
-    .boot-preview{width:min(350px,88vw);display:grid;gap:10px;opacity:.62}
-    .boot-sk-card{height:58px;border-radius:14px;background:linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.09) 50%,rgba(255,255,255,.04) 75%);background-size:200% 100%;animation:bootShimmer 1.5s linear infinite;border:1px solid rgba(255,255,255,.06)}
-    html[data-theme="light"] .boot-sk-card{background:linear-gradient(90deg,rgba(15,23,42,.04) 25%,rgba(15,23,42,.08) 50%,rgba(15,23,42,.04) 75%);background-size:200% 100%;border-color:rgba(15,23,42,.06)}
-    @keyframes bootSpin{to{transform:rotate(360deg)}}
-    @keyframes bootPulse{0%,100%{transform:scale(.94);opacity:.55}50%{transform:scale(1.1);opacity:.95}}
-    @keyframes bootSweep{0%{transform:translateX(-110%)}100%{transform:translateX(230%)}}
-    @keyframes bootShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+    .boot-bar::after{content:"";position:absolute;top:0;bottom:0;left:0;width:40%;border-radius:999px;background:linear-gradient(90deg,rgba(163,230,53,0),#A3E635 50%,rgba(163,230,53,0));animation:bootGlide 1.6s cubic-bezier(.65,0,.35,1) infinite;will-change:transform}
+    .boot-preview{width:min(350px,88vw);height:126px;visibility:hidden}
+    @keyframes bootHalo{to{transform:rotate(360deg)}}
+    @keyframes bootBreath{0%,100%{transform:scale(.9);opacity:.5}50%{transform:scale(1.12);opacity:1}}
+    @keyframes bootFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-2px) scale(1.03)}}
+    @keyframes bootIn{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+    @keyframes bootUp{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
+    @keyframes bootGlide{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
+    @media (prefers-reduced-motion:reduce){.boot-halo,.boot-pulse,.boot-emblem,.boot-bar::after,.boot-badge,.boot-title,.boot-status,.boot-bar{animation:none!important}}
   </style>
   <link rel="modulepreload" href="/static/app.js?v=__ASSET_VERSION__">
   <link rel="modulepreload" href="/static/js/util.js">
@@ -87,10 +95,8 @@
   <div id="app-boot-splash" class="boot-splash" role="status" aria-live="polite">
     <div class="boot-core" aria-hidden="true">
       <div class="boot-pulse"></div>
-      <svg class="boot-ring" viewBox="0 0 76 76" fill="none">
-        <circle cx="38" cy="38" r="34" stroke="currentColor" stroke-opacity="0.12" stroke-width="3"/>
-        <path d="M38 4a34 34 0 0 1 31.4 21" stroke="#A3E635" stroke-width="3.2" stroke-linecap="round"/>
-      </svg>
+      <div class="boot-track"></div>
+      <div class="boot-halo"></div>
       <div class="boot-emblem">
         <svg viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66l.1-.16L13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15L11 21Z"/></svg>
       </div>
@@ -102,10 +108,7 @@
       <span class="boot-en">Waking up your AI coach &amp; today's dashboard…</span>
     </p>
     <div class="boot-bar" aria-hidden="true"></div>
-    <div class="boot-preview" aria-hidden="true">
-      <div class="boot-sk-card"></div>
-      <div class="boot-sk-card"></div>
-    </div>
+    <div class="boot-preview" aria-hidden="true"></div>
   </div>
   <!-- The full stylesheet loads after the splash so the splash (inline styles
        above) paints on the first HTML bytes instead of waiting for ~200 KB of CSS. -->

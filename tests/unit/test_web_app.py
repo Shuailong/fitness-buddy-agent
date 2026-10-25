@@ -2204,3 +2204,116 @@ def test_sse_heartbeat_keeps_slow_streams_alive() -> None:
     assert frames[0] == "data: 1\n\n" and frames[-1] == "data: 2\n\n"
     assert frames.count(SSE_HEARTBEAT) >= 2
     assert all(f == SSE_HEARTBEAT for f in frames[1:-1])
+
+
+class _SlowAgent(FakeAgentClient):
+    """Replies in two parts with a pause, so a turn is still running mid-test."""
+
+    def __init__(self, pause: float = 0.6) -> None:
+        super().__init__(
+            turn_events=[
+                {
+                    "author": "fitness_coach",
+                    "id": "ev-a",
+                    "content": {"parts": [{"text": "Part one."}]},
+                },
+                {
+                    "author": "fitness_coach",
+                    "id": "ev-b",
+                    "content": {"parts": [{"text": "Part two."}]},
+                },
+            ]
+        )
+        self.pause = pause
+
+    async def stream_query(
+        self, user_id: str, session_id: str, message: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        session = self.sessions[user_id][session_id]
+        self.messages.append(message)
+        session["events"].append({"author": "user", "content": message})
+        for i, event in enumerate(self.turn_events):
+            if i:
+                await asyncio.sleep(self.pause)
+            session["events"].append(event)
+            yield event
+
+
+def _chat_in_background(client: TestClient) -> tuple[Any, dict[str, Any]]:
+    """Posts a chat turn on a thread; returns (thread, result holder)."""
+    import threading
+
+    out: dict[str, Any] = {}
+
+    def run() -> None:
+        resp = client.post("/api/chat", data={"text": "Plan my dinner"})
+        out["status"] = resp.status_code
+        out["events"] = _parse_sse(resp.text)
+
+    th = threading.Thread(target=run)
+    th.start()
+    time.sleep(0.25)  # the turn is now running (first part sent)
+    return th, out
+
+
+def _slow_app(pause: float) -> Any:
+    return create_app(
+        _settings(dev_auth_bypass_requested=True),
+        agent_client=_SlowAgent(pause=pause),
+        rate_limiter=RateLimiter(MemoryCounterStore()),
+    )
+
+
+def test_turns_resume_after_a_dropped_connection_and_block_new_messages() -> None:
+    with TestClient(_slow_app(0.8)) as client:
+        client.post("/api/session")
+        th, out = _chat_in_background(client)
+        # One reply at a time: a second message while it runs is refused.
+        busy = client.post("/api/chat", data={"text": "hello?"})
+        assert busy.status_code == 409
+        assert busy.json()["code"] == "turn_in_progress"
+        assert (
+            client.post(
+                "/api/confirm", json={"call_id": "x", "confirmed": True}
+            ).status_code
+            == 409
+        )
+        # The session reports the running turn so a reopened app re-attaches.
+        active = client.post("/api/session").json()["active_turn"]
+        assert active["intent"] == "message" and active["after"] >= 1
+        # A browser whose connection dropped after the first part re-attaches
+        # and receives only the rest of the reply.
+        rest = _parse_sse(client.get("/api/chat/resume?after=1").text)
+        assert [e.get("text") for e in rest if e["type"] == "text"] == ["Part two."]
+        assert rest[-1]["type"] == "done"
+        th.join(5)
+        assert out["status"] == 200 and out["events"][-1]["type"] == "done"
+        # Finished: new messages are accepted again.
+        assert client.post("/api/chat", data={"text": "thanks"}).status_code == 200
+
+
+def test_stop_cancels_the_running_turn() -> None:
+    with TestClient(_slow_app(5.0)) as client:
+        client.post("/api/session")
+        th, out = _chat_in_background(client)
+        assert client.post("/api/chat/stop").json() == {"ok": True, "stopped": True}
+        th.join(5)
+        types = [e["type"] for e in out["events"]]
+        assert types[0] == "text" and types[-2:] == ["stopped", "done"]
+        assert "Part two." not in [e.get("text") for e in out["events"]]
+        assert client.post("/api/chat/stop").json()["stopped"] is False
+        assert client.post("/api/chat", data={"text": "again"}).status_code == 200
+
+
+def test_edited_message_is_marked_for_the_coach_and_flagged_in_history() -> None:
+    from web.events import EDIT_MARKER
+
+    client, agent = _dev_client()
+    client.post("/api/session")
+    client.post("/api/chat", data={"text": "I had 2 eggs", "edited": "1"})
+    sent = agent.messages[-1]["parts"][0]["text"]
+    assert EDIT_MARKER + "I had 2 eggs" in sent
+    hist = client.get("/api/history").json()
+    user_msgs = [m for m in hist["messages"] if m["role"] == "user"]
+    assert user_msgs[-1]["text"] == "I had 2 eggs"
+    assert user_msgs[-1]["edited"] is True

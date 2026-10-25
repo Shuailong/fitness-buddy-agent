@@ -126,6 +126,19 @@ def _function_response(part: dict[str, Any]) -> dict[str, Any] | None:
 
 
 UI_LANG_MARKER = "[UI language: "
+# Added in front of a message the user edited and re-sent (ChatGPT-style
+# edit): tells the coach to answer this version, hidden from the history.
+EDIT_MARKER = (
+    "[Edited message - the user corrected their previous message; "
+    "answer this version instead] "
+)
+
+
+def strip_edit_marker(text: str) -> tuple[str, bool]:
+    """Splits the edit marker off a stored user message."""
+    if text.startswith(EDIT_MARKER):
+        return text[len(EDIT_MARKER) :], True
+    return text, False
 
 
 def ui_language_part(lang: str) -> dict[str, str]:
@@ -398,6 +411,7 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
                 end_idx = text.find("]\n\n")
                 if end_idx != -1:
                     text = text[end_idx + 3 :].lstrip()
+            text, is_edited = strip_edit_marker(text)
             text, is_voice = strip_voice_marker(text)
             if (text and text not in _HIDDEN_GREETINGS) or has_image:
                 user_msg: dict[str, Any] = {
@@ -407,6 +421,8 @@ def build_history(events: list[dict[str, Any]]) -> dict[str, Any]:
                 }
                 if is_voice:
                     user_msg["voice"] = True
+                if is_edited:
+                    user_msg["edited"] = True
                 if image_url:
                     user_msg["image_url"] = image_url
                 if index in swallowed:

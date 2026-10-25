@@ -4,6 +4,17 @@
 // increasing: YYYY-MM-DD plus a letter when there are several in a day).
 export const CHANGELOG = [
   {
+    id: "2026-10-26a",
+    date: "2026-10-26",
+    title: { zh: "对话体验升级", en: "A smoother chat" },
+    items: [
+      { type: "new", zh: "回复过程中发送键会变成「停止」，随时可以停下；一次只回复一条，不会再排队卡住。", en: "While the coach replies, Send becomes Stop - stop any time. One reply at a time, so nothing gets stuck in a queue." },
+      { type: "new", zh: "网络断了或切到后台，回来后回复会接着显示，不用重发；重新打开 App 也能看到还在生成的回复。", en: "If the connection drops or you switch apps, the reply continues where it left off when you're back - even after reopening the app." },
+      { type: "new", zh: "最新一条消息可以「编辑」后重新发送，旧版本会淡化保留；出错时可以一键「重试」。", en: "Edit and resend your latest message (the old version stays, dimmed), and retry with one tap when something goes wrong." },
+      { type: "improved", zh: "思考过程改为一行流动的文字，显示教练正在做什么，点开可看全部步骤；启动画面动画更顺滑。", en: "The thinking indicator is now one flowing line showing what the coach is doing (tap for all steps), and the launch animation is smoother." },
+    ],
+  },
+  {
     id: "2026-10-23d",
     date: "2026-10-23",
     title: { zh: "全屏实时纠错", en: "Full-screen live coaching" },

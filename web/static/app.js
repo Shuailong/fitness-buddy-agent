@@ -35,7 +35,7 @@ function hideBootSplash() {
   setTimeout(() => {
     splash.hidden = true;
     splash.remove();
-  }, 240);
+  }, 360);
 }
 
 function readBootCache() {
