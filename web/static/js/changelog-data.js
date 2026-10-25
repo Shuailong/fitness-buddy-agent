@@ -4,6 +4,14 @@
 // increasing: YYYY-MM-DD plus a letter when there are several in a day).
 export const CHANGELOG = [
   {
+    id: "2026-10-26b",
+    date: "2026-10-26",
+    title: { zh: "朗读声音更稳定", en: "Steadier coach voice" },
+    items: [
+      { type: "fixed", zh: "朗读回复时始终使用所选教练自己的声音，不会再中途变成生硬的机器音；长回复也能完整、顺畅地读完。", en: "Read-aloud now always uses your chosen coach's own voice - no more switching to a flat robotic voice midway - and long replies play smoothly to the end." },
+    ],
+  },
+  {
     id: "2026-10-26a",
     date: "2026-10-26",
     title: { zh: "对话体验升级", en: "A smoother chat" },

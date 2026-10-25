@@ -36,6 +36,7 @@ import json
 import logging
 import os
 import re
+import time
 import wave
 from collections import OrderedDict
 from typing import Any
@@ -639,76 +640,143 @@ def _call_gemini_tts_sync(
     return None
 
 
-def _call_cloud_tts_sync(
-    clean_text: str, persona: str, lang: str
-) -> dict[str, str] | None:
-    """Synthesizes natural neural speech via Google Cloud Text-to-Speech (Chirp3-HD / WaveNet)."""
+# Each coach has ONE voice per language. The fallback is the same coach's
+# WaveNet voice (same gender and character, ~3x faster) - never a generic one.
+# Chirp3-HD takes ~1 s + ~20 ms per character, so the timeout scales with text.
+COACH_CLOUD_VOICES: dict[str, dict[str, tuple[str, str]]] = {
+    "iron_leo": {
+        "zh": ("cmn-CN-Chirp3-HD-Fenrir", "cmn-CN-Wavenet-B"),
+        "en": ("en-US-Chirp3-HD-Fenrir", "en-US-Neural2-D"),
+    },
+    "warm_maya": {
+        "zh": ("cmn-CN-Chirp3-HD-Aoede", "cmn-CN-Wavenet-A"),
+        "en": ("en-US-Chirp3-HD-Aoede", "en-US-Neural2-F"),
+    },
+    "science_dr_chen": {
+        "zh": ("cmn-CN-Chirp3-HD-Charon", "cmn-CN-Wavenet-C"),
+        "en": ("en-US-Chirp3-HD-Charon", "en-US-Neural2-J"),
+    },
+}
+
+_tts_creds: Any = None
+_tts_http: httpx.Client | None = None
+
+
+def _tts_session() -> tuple[str, httpx.Client]:
+    """Cached credentials + keep-alive HTTP client (no token refresh per call)."""
+    global _tts_creds, _tts_http
     import google.auth
     from google.auth.transport.requests import Request as GoogleAuthRequest
 
-    is_zh = str(lang or "zh").lower().startswith("zh")
-    lang_code = "cmn-CN" if is_zh else "en-US"
-    voice_candidates = {
-        "iron_leo": (
-            ("cmn-CN-Chirp3-HD-Fenrir", "cmn-CN-Wavenet-B")
-            if is_zh
-            else ("en-US-Chirp3-HD-Fenrir", "en-US-Neural2-D")
-        ),
-        "warm_maya": (
-            ("cmn-CN-Chirp3-HD-Aoede", "cmn-CN-Wavenet-A")
-            if is_zh
-            else ("en-US-Chirp3-HD-Aoede", "en-US-Neural2-F")
-        ),
-        "science_dr_chen": (
-            ("cmn-CN-Chirp3-HD-Charon", "cmn-CN-Wavenet-C")
-            if is_zh
-            else ("en-US-Chirp3-HD-Charon", "en-US-Neural2-J")
-        ),
-    }.get(persona or "iron_leo") or (
-        ("cmn-CN-Chirp3-HD-Fenrir", "cmn-CN-Wavenet-B")
-        if is_zh
-        else ("en-US-Chirp3-HD-Fenrir", "en-US-Neural2-D")
-    )
-
-    try:
-        creds, _ = google.auth.default(
+    if _tts_creds is None:
+        _tts_creds, _ = google.auth.default(
             scopes=["https://www.googleapis.com/auth/cloud-platform"]
         )
-        creds.refresh(GoogleAuthRequest())
-        token = creds.token
-        if not token:
-            return None
-        # Bill TTS to the service's own project: a service account's calls go
-        # there by default (the web SA has no access to the Gemini project).
-        # Set TTS_QUOTA_PROJECT to override, e.g. with user creds locally.
-        headers = {"Authorization": f"Bearer {token}"}
-        quota_proj = os.environ.get("TTS_QUOTA_PROJECT", "").strip()
-        if quota_proj:
-            headers["x-goog-user-project"] = quota_proj
-        for v_name in voice_candidates:
-            r = httpx.post(
+    if not _tts_creds.valid:
+        _tts_creds.refresh(GoogleAuthRequest())
+    if _tts_http is None:
+        _tts_http = httpx.Client(timeout=10.0)
+    return _tts_creds.token, _tts_http
+
+
+_SENTENCE_END = re.compile(r"(?<=[。！？!?；;\n.])")
+_CLAUSE_BREAK = re.compile(r"[，,、：:]")
+
+
+def _chirp_safe(text: str, max_sentence: int = 40) -> str:
+    """Makes text safe for Chirp3-HD, which rejects (HTTP 400 "sentences too
+    long") text whose sentences it cannot split. Its splitter intermittently
+    misses full-width "。" with no whitespace after it, so every sentence end
+    gets a newline; overly long sentences are also broken at commas."""
+    out: list[str] = []
+    for sentence in _SENTENCE_END.split(text):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        while len(sentence) > max_sentence:
+            cut = max(
+                (m.start() for m in _CLAUSE_BREAK.finditer(sentence, 0, max_sentence)),
+                default=-1,
+            )
+            if cut <= 0:
+                cut = max_sentence - 1
+            is_zh = bool(re.search(r"[\u4e00-\u9fff]", sentence))
+            out.append(sentence[:cut] + ("。" if is_zh else "."))
+            sentence = sentence[cut + 1 :].lstrip()
+        if sentence:
+            out.append(sentence)
+    return "\n".join(out)
+
+
+def _call_cloud_tts_sync(
+    clean_text: str, persona: str, lang: str
+) -> dict[str, str] | None:
+    """Speaks ``clean_text`` in the coach's Cloud TTS voice (Chirp3-HD, then WaveNet)."""
+    is_zh = str(lang or "zh").lower().startswith("zh")
+    lang_key = "zh" if is_zh else "en"
+    voices = COACH_CLOUD_VOICES.get(persona or "") or COACH_CLOUD_VOICES["iron_leo"]
+    primary, fallback = voices[lang_key]
+    try:
+        token, http = _tts_session()
+    except Exception:
+        return None
+    # Bill TTS to the service's own project: a service account's calls go
+    # there by default (the web SA has no access to the Gemini project).
+    # Set TTS_QUOTA_PROJECT to override, e.g. with user creds locally.
+    headers = {"Authorization": f"Bearer {token}"}
+    quota_proj = os.environ.get("TTS_QUOTA_PROJECT", "").strip()
+    if quota_proj:
+        headers["x-goog-user-project"] = quota_proj
+    chirp_timeout = min(9.0, 2.5 + 0.035 * len(clean_text))
+    attempts = [
+        (primary, _chirp_safe(clean_text), chirp_timeout),
+        # Chirp's "too long" 400 is intermittent: one tighter retry in the
+        # coach's own voice beats switching to another voice.
+        (primary, _chirp_safe(clean_text, 18), chirp_timeout),
+        (fallback, clean_text, 4.0),
+    ]
+    last_status = 0
+    for idx, (v_name, text, timeout) in enumerate(attempts):
+        if idx == 1 and last_status != 400:
+            continue
+        last_status = 0
+        try:
+            r = http.post(
                 "https://texttospeech.googleapis.com/v1/text:synthesize",
                 headers=headers,
                 json={
-                    "input": {"text": clean_text},
-                    "voice": {"languageCode": lang_code, "name": v_name},
+                    "input": {"text": text},
+                    "voice": {
+                        "languageCode": "-".join(v_name.split("-")[:2]),
+                        "name": v_name,
+                    },
                     "audioConfig": {
                         "audioEncoding": "MP3",
                         "speakingRate": 1.03 if is_zh else 1.0,
                     },
                 },
-                timeout=3.0,
+                timeout=timeout,
             )
-            if r.status_code == 200:
-                audio_b64 = r.json().get("audioContent")
-                if audio_b64:
-                    return {
-                        "audio_b64": audio_b64,
-                        "audio_mime": "audio/mpeg",
-                        "source": f"cloud_tts:{v_name}",
-                    }
-    except Exception:
-        pass
+        except Exception as exc:
+            log_event(
+                "tts_voice_error", severity=logging.WARNING, voice=v_name, err=repr(exc)
+            )
+            continue  # timed out: try the coach's faster voice
+        last_status = r.status_code
+        if r.status_code != 200:
+            log_event(
+                "tts_voice_error",
+                severity=logging.WARNING,
+                voice=v_name,
+                status=r.status_code,
+                body=r.text[:200],
+            )
+        elif audio_b64 := r.json().get("audioContent"):
+            return {
+                "audio_b64": audio_b64,
+                "audio_mime": "audio/mpeg",
+                "source": f"cloud_tts:{v_name}",
+            }
     return None
 
 
@@ -734,38 +802,19 @@ def _split_tts_chunks(text: str, max_len: int = 160) -> list[str]:
     return chunks or [text[:max_len]]
 
 
-def _call_neural_http_tts_sync(
-    clean_text: str, lang: str, persona: str = "iron_leo"
-) -> dict[str, str] | None:
-    """Fast neural MP3 TTS via Google neural TTS endpoint with persona-matched locale."""
-    is_zh = str(lang or "zh").lower().startswith("zh")
-    norm_persona = (persona or "iron_leo").strip().lower()
-    if is_zh:
-        tl = "zh-TW" if norm_persona == "warm_maya" else "zh-CN"
-    else:
-        tl = "en-GB" if norm_persona == "science_dr_chen" else "en-US"
+def _proxy_headers(proxy_url: str) -> dict[str, str]:
+    """Builds headers for calling the internal vision/TTS Cloud Run worker."""
+    headers = {"X-Coach-Internal": _INTERNAL_HEADER}
+    try:
+        from google.auth.transport.requests import Request as GoogleAuthRequest
+        from google.oauth2 import id_token as google_id_token
 
-    chunks = _split_tts_chunks(clean_text, max_len=160)
-    mp3_parts: list[bytes] = []
-    with httpx.Client(timeout=3.0, headers={"User-Agent": "Mozilla/5.0"}) as client:
-        for chunk in chunks:
-            resp = client.get(
-                "https://translate.google.com/translate_tts",
-                params={"ie": "UTF-8", "client": "tw-ob", "tl": tl, "q": chunk},
-            )
-            if resp.status_code == 200 and len(resp.content) > 256:
-                mp3_parts.append(resp.content)
-            else:
-                return None
-
-    joined = b"".join(mp3_parts)
-    if len(joined) > 512:
-        return {
-            "audio_b64": base64.b64encode(joined).decode("ascii"),
-            "audio_mime": "audio/mpeg",
-            "source": f"google_neural_mp3:{tl}",
-        }
-    return None
+        tok = google_id_token.fetch_id_token(GoogleAuthRequest(), proxy_url)
+        if tok:
+            headers["Authorization"] = f"Bearer {tok}"
+    except Exception:
+        pass
+    return headers
 
 
 _EDGE_CLOCK_SYNCED = False
@@ -888,8 +937,26 @@ async def synthesize_coach_speech(
             _TTS_CACHE.popitem(last=False)
         return res
 
-    # Every engine below maps each coach to its own voice, so a fallback never
-    # swaps the coach's voice for a generic one.
+    started = time.monotonic()
+
+    def _served(res: dict[str, str]) -> dict[str, str]:
+        source = str(res.get("source") or "")
+        primary = COACH_CLOUD_VOICES.get(norm_persona, COACH_CLOUD_VOICES["iron_leo"])[
+            norm_lang
+        ][0]
+        log_event(
+            "tts_served",
+            severity=logging.INFO if primary in source else logging.WARNING,
+            persona=norm_persona,
+            lang=norm_lang,
+            source=source,
+            chars=len(clean_text),
+            ms=int((time.monotonic() - started) * 1000),
+        )
+        return _remember(res)
+
+    # Every engine below speaks with the coach's own voice; there is no
+    # generic fallback (that is what made replies sound robotic / wrong).
     # 1. Optional Gemini native-audio TTS (when explicitly enabled).
     if os.environ.get("FORM_COACH_GEMINI_TTS") == "1":
         try:
@@ -900,50 +967,41 @@ async def synthesize_coach_speech(
                 timeout=2.2,
             )
             if res and res.get("audio_b64"):
-                return _remember(res)
+                return _served(res)
         except Exception:
             pass
 
-    # 2. Cloud Text-to-Speech (Chirp3-HD per coach): official API, ~1 s.
+    # 2. Cloud Text-to-Speech: the coach's Chirp3-HD voice, then its WaveNet.
     try:
         res = await asyncio.wait_for(
             asyncio.to_thread(
                 _call_cloud_tts_sync, clean_text, norm_persona, norm_lang
             ),
-            timeout=4.0,
+            timeout=14.0,
         )
         if res and res.get("audio_b64"):
-            return _remember(res)
+            return _served(res)
     except Exception:
         pass
 
-    # 3. Edge neural voices (Yunjian / Xiaoxiao / Yunxi), best effort.
+    # 3. Edge neural voices mapped per coach (best effort, same gender).
     try:
         res = await asyncio.wait_for(
             _call_edge_neural_tts(clean_text, norm_persona, norm_lang),
-            timeout=4.0,
+            timeout=5.0,
         )
         if res and res.get("audio_b64"):
-            return _remember(res)
+            return _served(res)
     except Exception:
         pass
 
-    # 4. Last resort (one generic voice per language): Google MP3 TTS.
-    try:
-        res = await asyncio.wait_for(
-            asyncio.to_thread(
-                _call_neural_http_tts_sync, clean_text, norm_lang, norm_persona
-            ),
-            timeout=3.0,
-        )
-        if res and res.get("audio_b64"):
-            _TTS_CACHE[cache_key] = res
-            if len(_TTS_CACHE) > _TTS_CACHE_MAX:
-                _TTS_CACHE.popitem(last=False)
-            return res
-    except Exception:
-        pass
-
+    log_event(
+        "tts_failed",
+        severity=logging.WARNING,
+        persona=norm_persona,
+        lang=norm_lang,
+        chars=len(clean_text),
+    )
     return None
 
 

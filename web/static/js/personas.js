@@ -504,6 +504,17 @@ export function splitSpeechSentences(text, maxLen = 140) {
   return chunks.slice(0, 8);
 }
 
+/**
+ * Chunks a coach reply for neural TTS: the first chunk is short (fast start),
+ * later ones <= 90 chars so each request stays well inside server timeouts.
+ */
+export function splitCoachSpeech(text) {
+  const all = splitSpeechSentences(text, 90);
+  if (!all.length || all[0].length <= 45) return all;
+  const head = splitSpeechSentences(all[0], 45);
+  return [...head, ...all.slice(1)].slice(0, 10);
+}
+
 function speakSingleWebSpeechUtterance(spokenText, { persona, lang, token, onStart } = {}) {
   return new Promise((resolve) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window) || !spokenText || token !== currentPlayToken) {
@@ -588,7 +599,8 @@ async function fetchNeuralTts(clean, personaId, lang) {
   }
   const job = (async () => {
     const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), 6500) : null;
+    // Chirp3-HD needs ~1s + ~20ms/char on the server, so allow for slow ones.
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 15000) : null;
     try {
       const resp = await fetch("/api/tts", {
         method: "POST",
@@ -732,13 +744,15 @@ export async function speakCoachText(
       }
     }
 
-    // 2. Split long messages into sentence chunks (<= 150 chars) so first chunk plays fast
-    const chunks = splitSpeechSentences(clean, 150);
+    // 2. Split long messages into short sentence chunks: a short first chunk
+    //    starts speaking fast, later ones are fetched while earlier ones play.
+    const chunks = splitCoachSpeech(clean);
     if (chunks.length > 0) {
       // Prefetch first two chunks in parallel for zero gap between sentences
       const pending = chunks.map((chunk, idx) => (idx <= 1 ? fetchNeuralTts(chunk, p.id, lang) : null));
       let started = false;
       let allNeuralOk = true;
+      let failedAt = -1;
       for (let i = 0; i < chunks.length; i++) {
         if (token !== currentPlayToken) {
           doneEnd();
@@ -748,13 +762,18 @@ export async function speakCoachText(
         if (i + 1 < chunks.length && !pending[i + 1]) {
           pending[i + 1] = fetchNeuralTts(chunks[i + 1], p.id, lang);
         }
-        const entry = await pending[i];
+        let entry = await pending[i];
+        // One retry in the coach's voice before giving up on it.
+        if ((!entry || !entry.uri) && token === currentPlayToken) {
+          entry = await fetchNeuralTts(chunks[i], p.id, lang);
+        }
         if (token !== currentPlayToken) {
           doneEnd();
           return false;
         }
         if (!entry || !entry.uri) {
           allNeuralOk = false;
+          failedAt = i;
           break;
         }
         const played = await playAudioDataUri(entry.uri, {
@@ -764,12 +783,26 @@ export async function speakCoachText(
         });
         if (!played) {
           allNeuralOk = false;
+          failedAt = i;
           break;
         }
       }
       if (allNeuralOk || token !== currentPlayToken) {
         doneEnd();
         return allNeuralOk;
+      }
+      if (started && failedAt > 0) {
+        // Never restart from the top in a different voice: only finish the
+        // part that is still unspoken.
+        const rest = chunks.slice(failedAt).join(" ");
+        const restPlayed = await speakWithWebSpeechFallback(rest, {
+          personaId: p.id,
+          lang,
+          token,
+          onEnd: doneEnd,
+        });
+        doneEnd();
+        return restPlayed;
       }
     }
 
