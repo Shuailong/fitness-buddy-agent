@@ -323,8 +323,8 @@ PENDING_CONFIRMATION_KEEP_S = 6 * 3600
 
 _TURN_LABELS = {
     "busy": {
-        "en": "Finishing your previous message first…",
-        "zh": "上一条消息还在处理中，马上就好…",  # noqa: RUF001
+        "en": "Still working on your previous message - this one is next…",
+        "zh": "上一条消息还在分析中，完成后马上回复这条…",  # noqa: RUF001
     },
     "declined": {
         "en": "Cancelled an unanswered change request",
@@ -445,6 +445,43 @@ def _sniff_image(data: bytes) -> str | None:
 
 def _sse(event: dict[str, Any]) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+# While the coach works (a photo analysis can take a minute or more when the
+# model is slow) nothing else is sent. Mobile networks and proxies drop idle
+# connections after ~30 s, so send an SSE comment as a keep-alive.
+SSE_HEARTBEAT_S = 10.0
+SSE_HEARTBEAT = ": keep-alive\n\n"
+
+
+async def with_heartbeat(
+    frames: AsyncIterator[str], interval: float = SSE_HEARTBEAT_S
+) -> AsyncIterator[str]:
+    """Re-yields ``frames``, adding a keep-alive comment after ``interval`` idle."""
+    it = frames.__aiter__()
+    pending: asyncio.Task[str] | None = None
+    try:
+        while True:
+            if pending is None:
+                pending = asyncio.ensure_future(it.__anext__())
+            done, _ = await asyncio.wait({pending}, timeout=interval)
+            if not done:
+                yield SSE_HEARTBEAT
+                continue
+            try:
+                frame = pending.result()
+            except StopAsyncIteration:
+                return
+            finally:
+                pending = None
+            yield frame
+    finally:
+        if pending is not None:
+            pending.cancel()
+        aclose = getattr(it, "aclose", None)
+        if aclose is not None:
+            with contextlib.suppress(Exception):
+                await aclose()
 
 
 def create_app(
@@ -1240,6 +1277,7 @@ def create_app(
         )
         replies = 0
         agents_seen: set[str] = set()
+        waited_for_previous = False
 
         async def frames(msg: dict[str, Any]) -> AsyncIterator[str]:
             nonlocal last_activity, replies
@@ -1283,6 +1321,7 @@ def create_app(
                 # The browser lost the stream (phone locked, app switched) but
                 # the reply is still being produced: wait for it instead of
                 # interleaving a second run into the same conversation.
+                waited_for_previous = True
                 yield _sse({"type": "activity", "label": _label("busy", lang)})
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(asyncio.shield(previous), INFLIGHT_WAIT_S)
@@ -1403,11 +1442,15 @@ def create_app(
                 session_id=session_id,
                 **{f"{k}_events": v for k, v in counts.items()},
             )
+        if waited_for_previous:
+            # The previous reply finished in the background while this request
+            # waited: tell the browser to reload the conversation so it shows.
+            yield _sse({"type": "resync"})
         yield _sse({"type": "done"})
 
     def _sse_response(generator: AsyncIterator[str]) -> StreamingResponse:
         return StreamingResponse(
-            generator,
+            with_heartbeat(generator),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )

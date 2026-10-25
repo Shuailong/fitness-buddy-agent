@@ -48,6 +48,7 @@ steps:
           --update-env-vars="GEMINI_PROJECT=adk-demo-2-l300,GEMINI_LOCATION=global,FORM_COACH_SERVICE_URL=$${VISION_URL},VAPID_PUBLIC_KEY=BPa2UAr9j8FAuT-WkBGHckBenJkPtC7CK8C8TnB7Sei9vAkjqC1Y3f-rdTljUwuycsCfrM9SqkByNOGLtcaVp_A,VAPID_SUBJECT=mailto:admin@fitnessbuddy.online" \
           --update-secrets="VAPID_PRIVATE_KEY=fitness-buddy-vapid-private:latest,PUSH_DISPATCH_TOKEN=fitness-buddy-push-dispatch-token:latest" \
           --session-affinity \
+          --timeout=600 \
           --quiet
 
 substitutions:

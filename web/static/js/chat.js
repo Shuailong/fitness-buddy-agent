@@ -397,6 +397,8 @@ function handleEvent(ev) {
       break;
     }
     case "card": if (ev.kind === "meal_logged") addMealCard(ev); break;
+    // An earlier reply finished in the background while this turn waited.
+    case "resync": resyncAfterTurn = true; break;
     case "error": addError(ev.message || t("error.generic")); break;
     default: break;
   }
@@ -408,16 +410,24 @@ function handleEvent(ev) {
  * until the reply is there, then re-render the conversation.
  */
 let recoverTimer = null;
+let resyncAfterTurn = false;
+// Poll for up to ~4 minutes: when the model is slow a photo reply can take
+// three minutes (the server keeps working after the connection drops).
+const RECOVER_MAX_ATTEMPTS = 48;
 function recoverInterruptedTurn() {
   let attempts = 0;
   const poll = async () => {
     recoverTimer = null;
-    if (state.streaming) return;
+    if (state.streaming) {
+      // A newer turn is streaming; it reloads the conversation when it ends.
+      resyncAfterTurn = true;
+      return;
+    }
     attempts += 1;
     try {
       const history = await getJson("/api/history");
       const last = history.messages[history.messages.length - 1];
-      if ((last && last.role !== "user") || history.pending_confirmations.length || attempts >= 8) {
+      if ((last && last.role !== "user") || history.pending_confirmations.length || attempts >= RECOVER_MAX_ATTEMPTS) {
         await openSession();
         actions.refreshDashboard();
         return;
@@ -475,6 +485,10 @@ async function streamRequest(path, options, { photo = false, onRateLimited = nul
     }
     actions.refreshDashboard();
     if (interrupted) recoverInterruptedTurn();
+    else if (resyncAfterTurn) {
+      resyncAfterTurn = false;
+      openSession().catch(() => {});
+    }
   }
 }
 

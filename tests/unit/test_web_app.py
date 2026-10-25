@@ -2185,3 +2185,22 @@ def test_live_form_coach_frames_have_a_daily_cap(
     # Simulation frames never call Gemini, so they are not counted.
     sim = client.post("/api/form-check", data={**frame, "simulation": "1"})
     assert sim.json()["status"] != "daily_limit"
+
+
+def test_sse_heartbeat_keeps_slow_streams_alive() -> None:
+    import asyncio
+
+    from web.main import SSE_HEARTBEAT, with_heartbeat
+
+    async def slow() -> Any:
+        yield "data: 1\n\n"
+        await asyncio.sleep(0.25)
+        yield "data: 2\n\n"
+
+    async def collect() -> list[str]:
+        return [f async for f in with_heartbeat(slow(), interval=0.05)]
+
+    frames = asyncio.run(collect())
+    assert frames[0] == "data: 1\n\n" and frames[-1] == "data: 2\n\n"
+    assert frames.count(SSE_HEARTBEAT) >= 2
+    assert all(f == SSE_HEARTBEAT for f in frames[1:-1])
